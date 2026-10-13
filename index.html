@@ -147,6 +147,12 @@ textarea.input{min-height:90px;resize:vertical}
 /* ── toast & dialog ── */
 #toast{position:fixed;inset-inline:16px;bottom:96px;margin:auto;max-width:420px;background:var(--ink);color:#fff;border-radius:12px;padding:12px 16px;text-align:center;z-index:50;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
 #toast.show{opacity:1;transform:none}
+#toast.has-action.show{pointer-events:auto}
+.toast-act{background:none;border:0;color:var(--yellow);font-weight:700;text-decoration:underline;min-height:var(--tap);padding:0 8px;cursor:pointer}
+/* list row action ("סגירת עסקה" / "החזרה לפעילות") under the date */
+.deal-row{position:relative}
+.deal-row>a{padding-bottom:56px!important}
+.row-act{position:absolute;inset-inline-end:10px;bottom:8px;min-height:40px;padding:0 14px;font-size:.88rem}
 dialog{border:0;border-radius:var(--radius);padding:20px;width:min(420px,calc(100% - 32px))}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 14px;font-size:1.2rem}
@@ -366,9 +372,14 @@ function estimatePricePerSqm(purposeText, builtSqm) {
   return Math.round(base * factor / 100) * 100;
 }
 
-function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+// toast(msg) or toast(msg, { label: 'ביטול', run }) – the action button keeps the toast up a bit longer
+function toast(msg, action) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show'); t.classList.toggle('has-action', !!action);
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); }; t.append(' ', b);
+  }
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2600);
 }
 
 /* ════════════ data layer ════════════ */
@@ -619,15 +630,26 @@ function listView(module) {
         .filter(d => q || (st.tab === 'active') === (d.status === 'active'))
         .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
         .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
-      const ul = $('#rows');
+      const ul = $('#rows'); if (!ul) return; // list no longer on screen (e.g. undo from elsewhere)
       if (!rows.length) {
         ul.innerHTML = `<li class="state">${q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
         return;
       }
-      ul.innerHTML = rows.map(d => `<li><a href="#/m/${module}/${d.id}">
+      ul.innerHTML = rows.map(d => `<li class="deal-row" data-id="${d.id}"><a href="#/m/${module}/${d.id}">
         <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
-        <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a></li>`).join('');
+        <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a>
+        ${d.status === 'active' ? '<button type="button" class="btn row-act" data-a="close">סגירת עסקה</button>'
+          : '<button type="button" class="btn row-act" data-a="restore">החזרה לפעילות</button>'}</li>`).join('');
+    };
+    // quick daily sweep: close / restore straight from the list, without leaving it or jumping to the top
+    $('#rows').onclick = async (e) => {
+      const b = e.target.closest('.row-act'); if (!b) return;
+      const d = findDeal(module, b.closest('li').dataset.id); if (!d) return;
+      if (b.dataset.a === 'close') return closeDialog(module, d, draw);
+      b.disabled = true;
+      try { await setStatusWithUndo(module, d, 'active', 'העסקה הוחזרה לפעילות', draw); }
+      catch (ex) { console.error(ex); toast('הפעולה נכשלה. נסי שוב.'); b.disabled = false; }
     };
     $('#q').oninput = (e) => { st.q = e.target.value; draw(); };
     $$('input[name=tab]').forEach(r => r.onchange = () => { st.tab = r.value; draw(); });
@@ -721,7 +743,17 @@ function cardView(module, id) {
   return { html, mount };
 }
 
-function closeDialog(module, d) {
+// change status, refresh, and offer "ביטול" that puts the previous status back
+async function setStatusWithUndo(module, d, status, msg, after) {
+  const prev = d.status;
+  await DB.setStatus(module, d.id, status); await reload(); after();
+  toast(msg, { label: 'ביטול', run: async () => {
+    try { await DB.setStatus(module, d.id, prev); await reload(); after(); toast('בוטל'); }
+    catch (ex) { console.error(ex); toast('הביטול נכשל. נסי שוב.'); }
+  } });
+}
+
+function closeDialog(module, d, after = render) {
   const dlg = $('#dlg');
   dlg.innerHTML = `<h2>סגירת עסקה – מה הסיבה?</h2><div class="stack">
     <button class="btn primary" data-s="closed">נסגרה</button>
@@ -732,7 +764,7 @@ function closeDialog(module, d) {
     const b = e.target.closest('[data-s]'); if (!b) return;
     if (!b.dataset.s) return dlg.close();
     $$('button', dlg).forEach(x => x.disabled = true);
-    try { await DB.setStatus(module, d.id, b.dataset.s); await reload(); dlg.close(); toast('העסקה עברה לארכיון'); render(); }
+    try { await setStatusWithUndo(module, d, b.dataset.s, 'העסקה עברה לארכיון', () => { dlg.close(); after(); }); }
     catch (ex) { console.error(ex); $$('button', dlg).forEach(x => x.disabled = false); toast('הפעולה נכשלה. נסי שוב.'); }
   };
   dlg.showModal();

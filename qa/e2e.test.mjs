@@ -110,6 +110,26 @@ try {
   assert.equal(await page.isVisible('.fab'), true); assert.equal(await page.isVisible('.new-top'), false);
   ok('phone: "+ חדש" floats at the bottom, not in the top bar');
 
+  /* daily sweep: close / restore from the list */
+  const firstName = await page.locator('#rows li .name').first().innerText();
+  await page.locator('#rows li .row-act').first().click();
+  await page.click('dialog button:has-text("לא רלוונטית")');
+  await page.waitForFunction(() => document.querySelectorAll('#rows li.deal-row').length === 1);
+  assert.equal(await page.evaluate(() => location.hash), '#/m/lead');
+  await page.click('#toast .toast-act');
+  await page.waitForFunction(() => document.querySelectorAll('#rows li.deal-row').length === 2);
+  assert.equal(await page.locator('#rows li .name').first().innerText(), firstName);
+  ok('list: "סגירת עסקה" on a row → reason → archived, stays on the list; "ביטול" in the toast brings it back');
+  await radio('tab', 'archive');
+  await page.locator('#rows li .row-act:has-text("החזרה לפעילות")').click();
+  await page.waitForFunction(() => !document.querySelector('#rows li.deal-row'));
+  await radio('tab', 'active');
+  assert.equal(await page.locator('#rows li.deal-row').count(), 3);
+  await page.locator('#rows li .row-act').nth(2).click();
+  await page.click('dialog button:has-text("נסגרה")');
+  await page.waitForFunction(() => document.querySelectorAll('#rows li.deal-row').length === 2);
+  ok('archive tab: "החזרה לפעילות" on a row restores it');
+
   /* ── new lead: validation ── */
   await page.click('.fab');
   await page.waitForSelector('#deal-form');

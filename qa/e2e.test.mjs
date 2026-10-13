@@ -22,7 +22,15 @@ const BASE = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'he-IL', hasTouch: false });
 await ctx.addInitScript({ path: fileURLToPath(new URL('./local-db.js', import.meta.url)) });
-let geoCalls = 0;
+let geoCalls = 0, photonCalls = 0;
+await ctx.route('https://photon.komoot.io/**', (route) => {
+  photonCalls++;
+  const q = decodeURIComponent(new URL(route.request().url()).searchParams.get('q') || '');
+  const features = q.includes('חולון') ? [{ geometry: { coordinates: [34.8035, 32.0167] },
+    properties: { countrycode: 'IL', name: 'אזור התעשייה חולון', district: 'אזור תעשייה ב', city: 'חולון' } }]
+    : q.includes('קריית גת') ? [{ geometry: { coordinates: [34.77, 31.61] }, properties: { countrycode: 'IL', name: 'קריית גת', city: 'קריית גת' } }] : [];
+  route.fulfill({ contentType: 'application/json', body: JSON.stringify({ type: 'FeatureCollection', features }) });
+});
 await ctx.route('https://nominatim.openstreetmap.org/**', (route) => {
   geoCalls++;
   const u = route.request().url();
@@ -91,11 +99,15 @@ try {
   await shot('04-archive');
   await page.fill('#q', 'לוי'); assert.equal(await page.locator('#rows li a').count(), 1);
   await radio('tab', 'active');
-  assert.match(await text('#rows'), /לא נמצאו תוצאות/);
+  assert.equal(await page.locator('#rows li a').count(), 1);
+  assert.equal(await page.locator('#rows .row-chip').innerText(), 'ארכיון');
+  await page.fill('#q', 'אין כזה'); assert.match(await text('#rows'), /לא נמצאו תוצאות/);
   await page.fill('#q', '0541110001'); assert.equal(await page.locator('#rows li a').count(), 2);
   await page.fill('#q', 'אברהם לוגיסטיקה'); assert.equal(await page.locator('#rows li a').count(), 2);
   await page.fill('#q', '');
-  ok('list: active/archive tabs, search by name, phone, company, empty-search state');
+  ok('list: tabs; search covers active + archive (archived row marked "ארכיון"); name, phone, company; empty state');
+  assert.equal(await page.isVisible('.fab'), true); assert.equal(await page.isVisible('.new-top'), false);
+  ok('phone: "+ חדש" floats at the bottom, not in the top bar');
 
   /* ── new lead: validation ── */
   await page.click('.fab');
@@ -121,7 +133,8 @@ try {
   assert.equal(await page.inputValue('#phone'), '052-1110002');
   assert.equal(await page.inputValue('#name'), 'מירב כהן');
   assert.equal(await text('#phone-err'), '');
-  ok('existing phone (+972 format) → normalized, "לקוח קיים – הפרטים מולאו", name prefilled');
+  assert.equal(await text('#existing-note'), 'לקוח קיים – אין צורך למלא שוב פרטים');
+  ok('existing phone (+972 format) → normalized, "לקוח קיים – אין צורך למלא שוב פרטים", name prefilled');
 
   /* stale phone lookup must not overwrite a newer phone */
   await page.evaluate(() => { const f = PL_TEST_DB.findContact.bind(PL_TEST_DB);
@@ -142,18 +155,41 @@ try {
   assert.equal(await page.inputValue('#size_value'), '2');
   ok('"+ חדש" adds "לחכור", selects it, keeps everything typed');
 
+  await page.click('[data-field=purpose_id] .opt-edit');
+  const rowOf = (v) => page.locator('.opt-rows li').filter({ has: page.locator(`input[value="${v}"]`) });
+  const mrl = rowOf('מרלוג');
+  assert.match(await mrl.locator('.hint').first().innerText(), /בשימוש ב-1 רשומות/);
+  await mrl.locator('input').fill('מרלוג / לוגיסטיקה');
+  assert.equal(await mrl.locator('.warn').isVisible(), true);
+  await mrl.locator('[data-a=save]').click();
+  await page.waitForSelector('.opt-rows input[value="מרלוג / לוגיסטיקה"]');
+  const off = rowOf('פרטי');
+  await off.locator('[data-a=remove]').click();
+  assert.match(await off.locator('.confirm').innerText(), /להסיר את "פרטי"/);
+  await off.locator('[data-a=remove-yes]').click();
+  await page.waitForFunction(() => !document.querySelector('.opt-rows input[value="פרטי"]'));
+  await page.click('dialog [data-a=close]');
+  await page.waitForFunction(() => [...document.querySelectorAll('#purpose_id option')].some(o => o.textContent === 'מרלוג / לוגיסטיקה'));
+  const purposeOpts = await page.locator('#purpose_id option').allInnerTexts();
+  assert.ok(purposeOpts.includes('מרלוג / לוגיסטיקה') && !purposeOpts.includes('פרטי') && !purposeOpts.includes('מרלוג'));
+  assert.equal(await page.inputValue('#name'), 'מירב כהן');
+  ok('"עריכת הרשימה": rename warns when in use, remove hides value; form keeps typed data');
   await page.selectOption('#purpose_id', { label: 'מחסן' });
   await radio('size_unit', 'dunam');
   await fill('#height_m', '7');
-  await page.fill('#geo-q', 'קריית גת'); await page.click('#geo-go');
+  await page.fill('#address', 'אזור התעשיה חולון'); await page.click('#geo-go');
   await page.click('#geo-results button');
   await page.waitForSelector('.leaflet-marker-icon');
+  assert.equal(await page.inputValue('#address'), 'אזור התעשייה חולון, חולון');
+  ok('approximate search "אזור התעשיה חולון" (missing י) finds the zone, fills the one address field + pin');
   assert.equal(await page.locator('path.leaflet-interactive').count(), 1);
   await page.locator('#radius').fill('10000');
   assert.equal(await text('#radius-out'), '10 ק״מ');
   ok('map: address search → pin + radius circle, slider 10 km');
   await fill('#budget_value', '1500000');
   assert.equal(await page.inputValue('#budget_value'), '1,500,000');
+  await radio('budget_currency', 'USD');
+  assert.equal(await page.locator('[data-field=budget_value] .affix span').innerText(), '$');
   await page.fill('#needed_by', '2027-02-01');
   await shot('05-form-lead', true);
 
@@ -181,6 +217,9 @@ try {
   /* card */
   assert.match(await text('.dl'), /לחכור/);
   assert.match(await text('.dl'), /2 דונם/);
+  assert.match(await text('.dl'), /\$ 1,500,000 סה״כ/);
+  assert.match(await text('.dl'), /אזור התעשייה חולון/);
+  ok('budget in $ shown on the card; lead keeps the address / area');
   assert.equal(await page.getAttribute('a:has-text("WhatsApp")', 'href'), 'https://wa.me/972521110002');
   assert.equal(await page.getAttribute('a:has-text("חיוג")', 'href'), 'tel:0521110002');
   ok('card: details, WhatsApp wa.me/972… and tel: links');
@@ -195,15 +234,17 @@ try {
   const today = await page.evaluate(() => todayISO());
   assert.equal(await page.inputValue('#lead_date'), today);
   /* add custom field inside the form */
-  await page.click('#add-field');
+  await page.click('.add-field[data-section=property]');
   await page.fill('#nf_label', 'קומה'); await page.selectOption('#nf_type', 'number');
   await page.click('#nf_save');
-  await page.waitForSelector('#custom-fields .field label:has-text("קומה")');
-  await page.locator('#custom-fields input').fill('3');
+  await page.waitForSelector('.cf-list[data-section=property] .field label:has-text("קומה")');
+  await page.locator('.cf-list[data-section=property] input').fill('3');
   await page.click('#save');
   await page.waitForSelector('.card-head');
   assert.match(await text('.dl'), /קומה\s*3/);
-  ok('duplicate: prefilled form, today\'s date; "+ שדה חדש" appears at once and saves to the card');
+  const dtOrder = await page.locator('.dl dt').allInnerTexts();
+  assert.ok(dtOrder.indexOf('קומה') > dtOrder.indexOf('גובה נדרש') && dtOrder.indexOf('קומה') < dtOrder.indexOf('כתובת / אזור'), dtOrder.join(','));
+  ok('duplicate: prefilled form, today\'s date; "+ שדה חדש" inside "הנכס" appears there in the form and on the card');
   const leadsActive = await page.evaluate(() => PL_TEST_DB._db.lead.filter(d => d.status === 'active').length);
   assert.equal(leadsActive, 4);
 
@@ -233,7 +274,6 @@ try {
   await fill('#company_name', 'חברת בדיקה');
   await page.selectOption('#purpose_id', { label: 'חנות' });
   await fill('#built_sqm', '100'); await fill('#plot_sqm', '120');
-  await page.fill('#description', 'חנות לבדיקה');
   await page.locator('#form-map').click({ position: { x: 180, y: 120 } });
   await page.waitForFunction(() => document.querySelector('#address').value === 'הגפן 5, קריית גת');
   ok('owner map tap → pin + address filled from reverse search (editable)');
@@ -247,7 +287,8 @@ try {
   await page.click('#save');
   await page.waitForSelector('.card-head');
   assert.match(await text('.dl'), /תשואה\s*6\.0%/);
-  ok('owner rent deal saved, yield on card');
+  assert.doesNotMatch(await text('.dl'), /תיאור/);
+  ok('owner rent deal saved without a description (optional), yield on card');
   await shot('08-card-owner', true);
 
   /* owner sale → estimate */
@@ -272,8 +313,8 @@ try {
   assert.deepEqual(cases, ['050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', null, null, null, null]);
   ok('phone tests: valid, spaces, dashes, brackets, +972, 00972, 972; invalid rejected');
 
-  assert.ok(geoCalls <= 3, 'nominatim calls: ' + geoCalls);
-  ok(`Nominatim: ${geoCalls} requests total (explicit search + 1 reverse)`);
+  assert.ok(geoCalls <= 2, 'nominatim calls: ' + geoCalls);
+  ok(`geocoding: ${photonCalls} Photon searches, ${geoCalls} Nominatim requests (map-tap reverse only)`);
 
   /* desktop layout: side nav */
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -281,7 +322,8 @@ try {
   assert.equal(await page.isVisible('.side-nav'), true);
   assert.equal(await page.isVisible('.bottom-nav'), false);
   assert.equal(await page.locator('.side-nav a[aria-current=page]').innerText(), 'בעלים / משכיר');
-  ok('desktop: right side menu with active module, no bottom bar');
+  assert.equal(await page.isVisible('.topbar .new-top'), true); assert.equal(await page.isVisible('.fab'), false);
+  ok('desktop: right side menu with active module, no bottom bar, "+ חדש" in the top bar');
   await shot('09-desktop-list');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));

@@ -224,6 +224,15 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
   .hero{padding:34px 48px}.home-buttons{flex-direction:row;align-items:center;max-width:1040px;margin-top:clamp(70px,13vh,150px)}.home-btn{flex:1;min-height:310px}.hero-logo{width:150px}
 }
 @media (max-width:420px){.topbar{min-height:66px;padding:10px 16px}.topbar h1{font-size:1.35rem}.brand-mini{width:38px;height:38px;flex-basis:38px}.content{padding-inline:16px}.hero{padding:18px 16px}.login-box{padding:28px 22px}.home-buttons{margin-top:42px}.home-btn{min-height:160px;padding:20px}.row{gap:8px}.form-section{padding:20px 14px}.dl{grid-template-columns:minmax(84px,auto) 1fr}.dl dt{font-size:.88rem}}
+/* functional: + חדש in the top bar on desktop, floating on phone; archive marker; option editor */
+.new-top{display:none}
+@media (min-width:900px){.new-top{display:inline-flex}.fab{display:none}}
+.row-chip{margin-inline-start:6px;vertical-align:middle}
+.opt-edit{font-size:.88rem;padding:4px 0;min-height:var(--tap)}
+.opt-rows{list-style:none;margin:0 0 12px;padding:0;max-height:55vh;overflow:auto}
+.opt-rows li{padding:10px 0;border-bottom:1px solid var(--line)}
+.opt-rows .add-inline{margin:0}
+.cf-list:empty{display:none}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
@@ -266,8 +275,9 @@ const Phone = {
   wa: (p) => 'https://wa.me/972' + p.replace(/\D/g, '').slice(1),
   tel: (p) => 'tel:' + p.replace(/\D/g, ''),
 };
+const CURRENCY = { ILS: '₪', USD: '$' };
 const fmt = {
-  money: (n) => n == null || n === '' ? '' : '₪ ' + Math.round(Number(n)).toLocaleString('en-US'),
+  money: (n, cur = 'ILS') => n == null || n === '' ? '' : (CURRENCY[cur] || '₪') + ' ' + Math.round(Number(n)).toLocaleString('en-US'),
   num: (n) => n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }),
   date: (iso) => { if (!iso) return ''; const [y, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}/${y}`; },
   pct: (n) => n == null ? '' : Number(n).toFixed(1) + '%',
@@ -319,6 +329,7 @@ function supabaseDB() {
     async saveDeal(module, p) { return must(await sb.rpc(module === 'lead' ? 'save_lead_deal' : 'save_owner_deal', { p })); },
     async addOption(listKey, value) { return must(await sb.rpc('add_option', { p_list_key: listKey, p_value: value })); },
     async addField(f) { return must(await sb.from('custom_fields').insert(f).select().single()); },
+    async updateOption(id, patch) { return must(await sb.from('option_lists').update(patch).eq('id', id).select().single()); },
     async setStatus(module, id, status) {
       must(await sb.from(module === 'lead' ? 'lead_deals' : 'owner_deals')
         .update({ status, closed_at: status === 'active' ? null : new Date().toISOString() }).eq('id', id));
@@ -332,9 +343,12 @@ const S = {
   session: null, data: null, loadError: null,
   list: { lead: { tab: 'active', q: '' }, owner: { tab: 'active', q: '' } },
 };
-const opts = (key) => (S.data?.options || []).filter(o => o.list_key === key);
+// hidden ("removed") values stay readable on old deals, and selectable only on a deal that already uses them
+const opts = (key, keepId) => (S.data?.options || []).filter(o => o.list_key === key && (!o.hidden || o.id === keepId));
 const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value || '';
 const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module);
+const SECTIONS = ['contact', 'property', 'location', 'money'];
+const sectionOf = (f) => SECTIONS.includes(f.section) ? f.section : 'money';
 const deals = (module) => S.data?.[module] || [];
 const findDeal = (module, id) => deals(module).find(d => d.id === id);
 
@@ -402,9 +416,9 @@ function shell(r, html) {
     ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('')}</nav>` : ''}
   </div>`;
 }
-const topbar = (title, backHref, backText = 'חזרה') => `<header class="topbar">
+const topbar = (title, backHref, backText = 'חזרה', action = '') => `<header class="topbar">
   ${backHref ? `<a class="back" href="${backHref}">${backText}</a>` : ''}
-  <h1>${esc(title)}</h1>
+  <h1>${esc(title)}</h1>${action}
   <a class="brand-mini" href="#/" aria-label="דף הבית"><img src="assets/pin.png" alt=""></a>
 </header>`;
 
@@ -521,9 +535,9 @@ const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.creat
 
 function listView(module) {
   const st = S.list[module], M = MODULES[module];
-  const html = `${topbar(M.title)}
+  const html = `${topbar(M.title, '', '', `<a class="btn primary new-top" href="#/m/${module}/new">+ חדש</a>`)}
   <div class="content">
-    <input class="input search" id="q" type="search" placeholder="חיפוש: שם, טלפון, חברה${module === 'owner' ? ', כתובת' : ''}" value="${esc(st.q)}" aria-label="חיפוש">
+    <input class="input search" id="q" type="search" placeholder="חיפוש: שם, טלפון, חברה, כתובת" value="${esc(st.q)}" aria-label="חיפוש">
     <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
       <label><input type="radio" name="tab" value="active" ${st.tab === 'active' ? 'checked' : ''}><span>פעילות</span></label>
       <label><input type="radio" name="tab" value="archive" ${st.tab === 'archive' ? 'checked' : ''}><span>ארכיון</span></label>
@@ -534,8 +548,9 @@ function listView(module) {
   const mount = () => {
     const draw = () => {
       const q = st.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+      // a search looks in all records (active + archive); without a search the tab filters
       const rows = deals(module)
-        .filter(d => (st.tab === 'active') === (d.status === 'active'))
+        .filter(d => q || (st.tab === 'active') === (d.status === 'active'))
         .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
         .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
       const ul = $('#rows');
@@ -544,7 +559,7 @@ function listView(module) {
         return;
       }
       ul.innerHTML = rows.map(d => `<li><a href="#/m/${module}/${d.id}">
-        <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}</span>
+        <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
         <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a></li>`).join('');
     };
@@ -561,26 +576,33 @@ function cardView(module, id) {
   if (!d) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
   const c = d.contact || {}, active = d.status === 'active';
   const statusText = active ? 'פעילה' : d.status === 'closed' ? 'נסגרה' : 'לא רלוונטית';
-  const rows = [];
-  const add = (k, v) => { if (v !== '' && v != null) rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+  const groups = { contact: [], property: [], location: [], money: [] };
+  let sec = 'contact';
+  const add = (k, v) => { if (v !== '' && v != null) groups[sec].push(`<dt>${k}</dt><dd>${v}</dd>`); };
   add('טלפון', fmt.ltr(c.phone));
   add('סוג', c.entity_type === 'company' ? 'חברה' : 'פרטי');
+  sec = 'property';
   if (module === 'lead') {
     add('תאריך פנייה', fmt.ltr(fmt.date(d.lead_date)));
     add('צורך', esc(optText(d.need_id)));
     add('ייעוד', esc(optText(d.purpose_id)));
     add('גודל', fmt.bi(fmt.size(d.size_value, d.size_unit)));
     add('גובה נדרש', fmt.bi(fmt.num(d.height_m) + ' מ׳'));
+    sec = 'location';
+    add('כתובת / אזור', esc(d.address));
     add('רדיוס חיפוש', fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ'));
-    add('תקציב', fmt.ltr(fmt.money(d.budget_value)) + (d.budget_kind === 'per_sqm' ? ' למ״ר' : ' סה״כ'));
+    sec = 'money';
+    add('תקציב', fmt.ltr(fmt.money(d.budget_value, d.budget_currency)) + (d.budget_kind === 'per_sqm' ? ' למ״ר' : ' סה״כ'));
     add('נדרש עד', fmt.ltr(fmt.date(d.needed_by)));
     add('הערות', esc(d.notes));
   } else {
     add('ייעוד', esc(optText(d.purpose_id)));
     add('שטח בנוי', fmt.bi(fmt.size(d.built_sqm, 'sqm')));
     add('שטח מגרש', fmt.bi(fmt.size(d.plot_sqm, 'sqm')));
-    add('כתובת', esc(d.address));
     add('תיאור', esc(d.description));
+    sec = 'location';
+    add('כתובת', esc(d.address));
+    sec = 'money';
     add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : 'מכירה');
     add('מחיר מבוקש / שווי', fmt.ltr(fmt.money(d.asking_price)));
     if (d.deal_kind === 'rent') {
@@ -593,8 +615,10 @@ function cardView(module, id) {
   }
   for (const f of fieldsOf(module)) {
     const v = d.custom?.[f.key];
+    sec = sectionOf(f);
     add(esc(f.label), v == null || v === '' ? '' : f.type === 'date' ? fmt.ltr(fmt.date(v)) : f.type === 'number' ? fmt.ltr(fmt.num(v)) : esc(v));
   }
+  const rows = SECTIONS.flatMap(k => groups[k]);
   const html = `${topbar(c.name || M.one, `#/m/${module}`)}
   <div class="content">
     <div class="card-head">
@@ -648,20 +672,92 @@ function closeDialog(module, d) {
   dlg.showModal();
 }
 
+/* ════════════ option list editor ════════════ */
+const LIST_TITLES = { lead_need: 'צורך', lead_purpose: 'ייעוד – מתעניינים', owner_purpose: 'ייעוד – בעלים' };
+const optionUsage = (id) => ['lead', 'owner'].reduce((n, m) => n + deals(m).filter(d => d.need_id === id || d.purpose_id === id).length, 0);
+function optionsDialog(listKey, onDone) {
+  const dlg = $('#dlg');
+  const draw = () => {
+    const rows = opts(listKey);
+    dlg.innerHTML = `<h2>עריכת הרשימה: ${esc(LIST_TITLES[listKey] || '')}</h2>
+      <ul class="opt-rows">${rows.map(o => { const n = optionUsage(o.id); return `<li data-id="${o.id}" data-used="${n}">
+        <div class="add-inline"><input class="input" value="${esc(o.value)}" aria-label="שם הערך">
+          <button type="button" class="btn" data-a="save" hidden>שמירה</button>
+          <button type="button" class="link" data-a="remove">הסרה</button></div>
+        <p class="hint">${n ? `בשימוש ב-${n} רשומות` : 'לא בשימוש'}</p>
+        <p class="hint warn" hidden>${n ? `השינוי ישפיע על כל ${n} הרשומות שמשתמשות בערך הזה.` : ''}</p>
+        <div class="confirm" hidden><p class="hint">${n ? `הערך בשימוש ב-${n} רשומות. הן ישמרו אותו, אבל הוא לא יופיע יותר לבחירה.` : `להסיר את "${esc(o.value)}" מהרשימה?`}</p>
+          <div class="row"><button type="button" class="btn" data-a="remove-yes">הסרה מהרשימה</button><button type="button" class="link" data-a="remove-no">ביטול</button></div></div>
+        <p class="err" aria-live="polite"></p></li>`; }).join('') || '<li class="hint">הרשימה ריקה.</li>'}</ul>
+      <div class="stack"><button type="button" class="btn primary" data-a="close">סיום</button></div>`;
+  };
+  const replace = (row) => { const i = S.data.options.findIndex(o => o.id === row.id); if (i >= 0) S.data.options[i] = row; };
+  dlg.oninput = (e) => {
+    const li = e.target.closest('li[data-id]'); if (!li) return;
+    const o = S.data.options.find(x => x.id === li.dataset.id), changed = e.target.value.trim() !== o.value;
+    $('[data-a=save]', li).hidden = !changed;
+    $('.warn', li).hidden = !(changed && +li.dataset.used);
+  };
+  dlg.onclick = async (e) => {
+    if (e.target === dlg) { dlg.close(); return; }
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    const li = b.closest('li[data-id]'), a = b.dataset.a;
+    if (a === 'close') return dlg.close();
+    const err = $('.err', li); err.textContent = '';
+    if (a === 'remove') { $('.confirm', li).hidden = false; b.hidden = true; return; }
+    if (a === 'remove-no') { $('.confirm', li).hidden = true; $('[data-a=remove]', li).hidden = false; return; }
+    b.disabled = true;
+    try {
+      if (a === 'save') {
+        const v = $('input', li).value.trim(); if (!v) { err.textContent = 'יש למלא שם'; b.disabled = false; return; }
+        replace(await DB.updateOption(li.dataset.id, { value: v })); toast(`השם עודכן ל-"${v}"`);
+      } else if (a === 'remove-yes') {
+        replace(await DB.updateOption(li.dataset.id, { hidden: true })); toast('הערך הוסר מהרשימה');
+      }
+      draw();
+    } catch (ex) {
+      console.error(ex);
+      err.textContent = ex?.code === '23505' || /duplicate/i.test(ex?.message || '') ? 'הערך הזה כבר קיים ברשימה' : 'הפעולה נכשלה. נסי שוב.';
+      b.disabled = false;
+    }
+  };
+  dlg.onclose = () => { dlg.onclose = null; dlg.oninput = null; onDone?.(); };
+  draw(); dlg.showModal();
+}
+
 /* ════════════ map helpers ════════════ */
 const tiles = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
 const zoomForRadius = (r) => r > 12000 ? 10 : r > 6000 ? 11 : r > 2500 ? 12 : 13;
 
-// Nominatim: explicit search only (no autocomplete), max 1 request/second, cached.
+// Search: Photon (komoot, free, tolerant of approximate text and spelling) limited to Israel;
+// if it finds nothing, Nominatim with normalized spelling. Nominatim: max 1 request/second, cached.
+const IL_BBOX = '34.2,29.4,35.95,33.4';
 const Geo = {
   last: 0, cache: new Map(),
   async wait() { const gap = Date.now() - this.last; if (gap < 1100) await new Promise(r => setTimeout(r, 1100 - gap)); this.last = Date.now(); },
+  uniq: (parts) => parts.filter((x, i, a) => x && a.indexOf(x) === i),
+  async photon(q) {
+    const res = await (await fetch(`https://photon.komoot.io/api/?limit=6&bbox=${IL_BBOX}&q=${encodeURIComponent(q)}`)).json();
+    return (res.features || []).filter(f => f.properties?.countrycode === 'IL').map(f => {
+      const p = f.properties, street = p.street ? [p.street, p.housenumber].filter(Boolean).join(' ') : '';
+      const city = p.city || p.town || p.village || p.county || '';
+      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
+        label: this.uniq([p.name || street, city]).join(', '),
+        full: this.uniq([p.name, street, p.district, city]).join(', ') };
+    });
+  },
+  async nominatim(q) {
+    await this.wait();
+    const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json();
+    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name }));
+  },
   async search(q) {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
-    await this.wait();
-    const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`;
-    const res = await (await fetch(u)).json(); this.cache.set(key, res); return res;
+    let res = [];
+    try { res = await this.photon(q); } catch (e) { console.error(e); }
+    if (!res.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
+    this.cache.set(key, res); return res;
   },
   async reverse(lat, lng) {
     const key = `r:${lat.toFixed(5)},${lng.toFixed(5)}`; if (this.cache.has(key)) return this.cache.get(key);
@@ -669,9 +765,10 @@ const Geo = {
     const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=he&zoom=18&lat=${lat}&lon=${lng}`;
     const res = await (await fetch(u)).json(); this.cache.set(key, res); return res;
   },
-  short(r) { const a = r.address || {}; const street = [a.road, a.house_number].filter(Boolean).join(' ');
+  short(r) { const a = r.address || {}; const street = a.road ? [a.road, a.house_number].filter(Boolean).join(' ') : '';
     const city = a.city || a.town || a.village || a.municipality || '';
-    return [street || r.name, city].filter(Boolean).join(', ') || r.display_name; },
+    const place = street || a.industrial || a.commercial || a.neighbourhood || a.quarter || a.suburb || r.name || '';
+    return this.uniq([place, city]).join(', ') || r.display_name; },
 };
 
 /* ════════════ form ════════════ */
@@ -682,13 +779,14 @@ function field(id, label, control, { required = true, hint = '', cls = '' } = {}
 }
 const textInput = (id, v = '', a = '') => `<input class="input" id="${id}" name="${id}" value="${esc(v)}" ${a}>`;
 const numInput = (id, v, suffix = '', a = '') => `<div class="affix"><input class="input num" id="${id}" name="${id}" inputmode="decimal" dir="ltr" value="${v == null ? '' : esc(fmt.num(v))}" ${a}>${suffix ? `<span>${suffix}</span>` : ''}</div>`;
-const moneyInput = (id, v) => numInput(id, v, '₪', 'data-money');
+const moneyInput = (id, v, cur = 'ILS') => numInput(id, v, CURRENCY[cur] || '₪', 'data-money');
 const dateInput = (id, v) => `<input class="input num" type="date" id="${id}" name="${id}" value="${esc(v || '')}">`;
 const seg = (name, choices, val) => `<div class="seg" role="radiogroup" aria-labelledby="${name}-lbl" id="${name}">${choices.map(([v, t]) =>
   `<label><input type="radio" name="${name}" value="${v}" ${String(val) === String(v) ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
-const optSelect = (id, listKey, val) => `<select class="input" id="${id}" name="${id}" data-list="${listKey}">
-  <option value="">בחירה…</option>${opts(listKey).map(o => `<option value="${o.id}" ${o.id === val ? 'selected' : ''}>${esc(o.value)}</option>`).join('')}
-  <option value="__new">+ חדש</option></select>
+const optOptions = (listKey, val) => `<option value="">בחירה…</option>${opts(listKey, val).map(o =>
+  `<option value="${o.id}" ${o.id === val ? 'selected' : ''}>${esc(o.value)}</option>`).join('')}<option value="__new">+ חדש</option>`;
+const optSelect = (id, listKey, val) => `<select class="input" id="${id}" name="${id}" data-list="${listKey}">${optOptions(listKey, val)}</select>
+  <button type="button" class="link opt-edit" data-list="${listKey}">עריכת הרשימה</button>
   <div class="add-inline" id="${id}-new" hidden><input class="input" aria-label="ערך חדש" placeholder="ערך חדש"><button type="button" class="btn">הוספה</button><button type="button" class="link">ביטול</button></div>`;
 
 function customControl(f, v) {
@@ -712,6 +810,10 @@ function formView(r) {
   const title = mode === 'edit' ? 'עריכת עסקה' : mode === 'dup' ? 'שכפול עסקה' : (isLead ? 'מתעניין חדש' : 'נכס חדש');
   const back = mode === 'new' ? `#/m/${module}` : `#/m/${module}/${r.id}`;
   const lat = d.lat ?? null, lng = d.lng ?? null;
+  // custom fields of one section + the "+ שדה חדש" link at its end
+  const cfBlock = (section) => `<div class="cf-list" data-section="${section}">${fieldsOf(module).filter(f => sectionOf(f) === section)
+    .map(f => customFieldHTML(f, d.custom?.[f.key])).join('')}</div>
+    <button type="button" class="link add-field" data-section="${section}">+ שדה חדש</button>`;
 
   const leadProperty = `
     ${field('lead_date', 'תאריך פנייה', dateInput('lead_date', d.lead_date || todayISO()))}
@@ -722,19 +824,20 @@ function formView(r) {
   const ownerProperty = `
     ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.owner_purpose, d.purpose_id))}
     <div class="row">${field('built_sqm', 'שטח בנוי', numInput('built_sqm', d.built_sqm, 'מ״ר'))}${field('plot_sqm', 'שטח מגרש', numInput('plot_sqm', d.plot_sqm, 'מ״ר'))}</div>
-    ${field('description', 'תיאור הנכס', `<textarea class="input" id="description" name="description">${esc(d.description)}</textarea>`)}`;
+    ${field('description', 'תיאור הנכס', `<textarea class="input" id="description" name="description">${esc(d.description)}</textarea>`, { required: false })}`;
   const locSection = `
-    <div class="field"><label for="geo-q">חיפוש כתובת</label>
-      <div class="add-inline" style="margin:0"><input class="input" id="geo-q" type="search" placeholder="למשל: שדרות לכיש, קריית גת" enterkeyhint="search">
-      <button type="button" class="btn" id="geo-go">חיפוש</button></div>
-      <ul class="geo-results" id="geo-results"></ul></div>
-    ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקישי על המפה כדי להציב סיכה' })}
+    ${field('address', isLead ? 'כתובת / אזור' : 'כתובת', `<div class="add-inline geo-box" style="margin:0">
+        <input class="input" id="address" name="address" type="search" autocomplete="off" enterkeyhint="search" placeholder="למשל: אזור התעשייה, קריית גת" value="${esc(d.address)}">
+        <button type="button" class="btn" id="geo-go">חיפוש</button></div>
+      <ul class="geo-results" id="geo-results" aria-live="polite"></ul>`,
+      { required: !isLead, hint: 'הקלידי כתובת או אזור ובחרי מהרשימה, או הקישי על המפה' })}
+    ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה וממלאת את הכתובת' })}
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
       <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
-      <output id="radius-out" class="num"></output></div>`
-    : field('address', 'כתובת', textInput('address', d.address, 'autocomplete="off"'), { hint: 'מתמלאת מהחיפוש, אפשר לערוך' })}`;
+      <output id="radius-out" class="num"></output></div>` : ''}`;
   const leadMoney = `
-    ${field('budget_value', 'תקציב', `<div class="row">${moneyInput('budget_value', d.budget_value)}${seg('budget_kind', [['total', 'סה״כ'], ['per_sqm', 'למ״ר']], d.budget_kind || 'total')}</div>`)}
+    ${field('budget_value', 'תקציב', `<div class="row">${moneyInput('budget_value', d.budget_value, d.budget_currency || 'ILS')}${seg('budget_currency', [['ILS', 'ש״ח'], ['USD', '$']], d.budget_currency || 'ILS')}</div>
+      <div class="row" style="margin-top:8px">${seg('budget_kind', [['total', 'סה״כ'], ['per_sqm', 'למ״ר']], d.budget_kind || 'total')}</div>`)}
     ${field('needed_by', 'נדרש עד', dateInput('needed_by', d.needed_by))}
     ${field('notes', 'הערות', `<textarea class="input" id="notes" name="notes">${esc(d.notes)}</textarea>`, { required: false })}`;
   const ownerMoney = `
@@ -753,25 +856,21 @@ function formView(r) {
   <form class="content" id="deal-form" novalidate>
     <section class="form-section"><h2>פרטי לקוח</h2>
       ${field('phone', 'טלפון נייד', `<input class="input num" id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="050-0000000" value="${esc(c.phone)}">`)}
-      <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – הפרטים מולאו</p>
+      <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – אין צורך למלא שוב פרטים</p>
       ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'))}
       ${field('entity_type', 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה']], c.entity_type || 'private'))}
       ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only' })}
+      ${cfBlock('contact')}
     </section>
-    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}</section>
-    <section class="form-section"><h2>מיקום</h2>${locSection}</section>
-    <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}</section>
-    <section class="form-section"><h2>שדות נוספים</h2>
-      <div id="custom-fields">${fieldsOf(module).map(f => customFieldHTML(f, d.custom?.[f.key])).join('')}</div>
-      <p class="hint" id="custom-empty" ${fieldsOf(module).length ? 'hidden' : ''}>אין עדיין שדות נוספים.</p>
-      <button type="button" class="link" id="add-field">+ שדה חדש</button>
+    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${cfBlock('property')}</section>
+    <section class="form-section"><h2>מיקום</h2>${locSection}${cfBlock('location')}</section>
+    <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}${cfBlock('money')}</section>
       <div id="new-field" hidden class="form-section" style="margin-top:8px">
         ${field('nf_label', 'שם השדה', textInput('nf_label', '', 'placeholder="למשל: קומה"'))}
         ${field('nf_type', 'סוג', `<select class="input" id="nf_type"><option value="text">טקסט</option><option value="number">מספר</option><option value="date">תאריך</option><option value="list">רשימה</option></select>`)}
         ${field('nf_options', 'ערכים לבחירה', textInput('nf_options', '', 'placeholder="מופרדים בפסיק: א, ב, ג"'), { cls: 'nf-list-only' })}
         <div class="row"><button type="button" class="btn primary" id="nf_save">הוספת השדה</button><button type="button" class="link" id="nf_cancel">ביטול</button></div>
       </div>
-    </section>
     <div class="sticky-save"><button class="btn primary block" type="submit" id="save">שמירה</button></div>
   </form>`;
 
@@ -824,7 +923,6 @@ function mountForm({ module, mode, dealId, lat, lng }) {
   } else {
     posNum('built_sqm', 'יש למלא שטח בנוי');
     posNum('plot_sqm', 'יש למלא שטח מגרש');
-    rules.description = () => val('description').trim() ? '' : 'יש למלא תיאור';
     rules.address = () => val('address').trim() ? '' : 'יש למלא כתובת';
     rules.deal_kind = () => radio('deal_kind') ? '' : 'יש לבחור השכרה או מכירה';
     posNum('asking_price', 'יש למלא מחיר');
@@ -847,7 +945,9 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     if (id && form.querySelector(`[data-field="${id}"]`)?.classList.contains('invalid')) check(id);
     sync();
   });
-  form.addEventListener('change', (e) => { const id = fieldIdOf(e.target); sync(); if (id && touched.has(id)) check(id);
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'budget_currency') $('#budget_value').nextElementSibling.textContent = CURRENCY[e.target.value];
+    const id = fieldIdOf(e.target); sync(); if (id && touched.has(id)) check(id);
     if (e.target.type === 'radio') { touched.add(id); check(id); } });
   // format numbers on blur
   form.addEventListener('focusout', (e) => { if (e.target.classList?.contains('num') && e.target.inputMode === 'decimal') {
@@ -902,13 +1002,19 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     cancelBtn.onclick = () => { sel.value = prev; box.hidden = true; sel.focus(); };
   });
 
+  /* "עריכת הרשימה": rename / remove (hide) values */
+  const refreshSelects = (listKey) => $$(`select[data-list="${listKey}"]`, form).forEach(sel => {
+    const cur = sel.value === '__new' ? '' : sel.value; sel.innerHTML = optOptions(listKey, cur); sel.value = cur;
+  });
+  $$('.opt-edit', form).forEach(b => b.onclick = () => optionsDialog(b.dataset.list, () => refreshSelects(b.dataset.list)));
+
   /* map */
   let map, marker, circle;
   const radiusEl = $('#radius');
   const radiusLabel = () => { if (radiusEl) $('#radius-out').textContent = `${fmt.num(radiusEl.value / 1000)} ק״מ`; };
   radiusLabel();
-  let addressAuto = !$('#address')?.value;
-  $('#address')?.addEventListener('input', () => { addressAuto = false; });
+  const addrEl = $('#address');
+  let addressAuto = !addrEl.value;
   const place = async (latlng, { fromSearch, label } = {}) => {
     pin.lat = latlng.lat; pin.lng = latlng.lng;
     if (map) {
@@ -916,11 +1022,12 @@ function mountForm({ module, mode, dealId, lat, lng }) {
       if (radiusEl) { if (!circle) circle = L.circle(latlng, { radius: +radiusEl.value, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(map); else circle.setLatLng(latlng); }
     }
     check('pin');
-    if (!isLead) {
-      if (fromSearch && label) { $('#address').value = label; addressAuto = true; check('address'); }
-      else if (!fromSearch && (addressAuto || !$('#address').value)) {
-        try { const r = await Geo.reverse(pin.lat, pin.lng); if (r && !r.error) { $('#address').value = Geo.short(r); addressAuto = true; check('address'); } } catch {}
-      }
+    if (fromSearch && label) { addrEl.value = label; addressAuto = true; check('address'); }
+    else if (!fromSearch && (addressAuto || !addrEl.value.trim())) {
+      try {
+        const r = await Geo.reverse(pin.lat, pin.lng);
+        if (r && !r.error && pin.lat === latlng.lat && pin.lng === latlng.lng) { addrEl.value = Geo.short(r); addressAuto = true; check('address'); Dirty.on = true; }
+      } catch (ex) { console.error(ex); }
     }
   };
   if (window.L) {
@@ -934,30 +1041,38 @@ function mountForm({ module, mode, dealId, lat, lng }) {
   radiusEl?.addEventListener('input', () => { radiusLabel(); circle?.setRadius(+radiusEl.value); });
   radiusEl?.addEventListener('change', () => { if (circle && map) map.fitBounds(circle.getBounds(), { padding: [10, 10] }); });
 
-  const geoSearch = async () => {
-    const q = $('#geo-q').value.trim(), ul = $('#geo-results');
-    if (q.length < 3) { ul.innerHTML = '<li class="hint" style="padding:8px">יש להקליד לפחות 3 תווים</li>'; return; }
+  // one field: typing shows suggestions (debounced), Enter / "חיפוש" searches now, picking one places the pin
+  let geoSeq = 0, geoTimer;
+  const geoSearch = async (explicit) => {
+    const q = addrEl.value.trim(), ul = $('#geo-results'), seq = ++geoSeq;
+    if (q.length < 3) { ul.innerHTML = explicit ? '<li class="hint" style="padding:8px">יש להקליד לפחות 3 תווים</li>' : ''; return; }
     ul.innerHTML = '<li class="hint" style="padding:8px"><span class="spinner"></span> מחפשת…</li>';
     try {
       const res = await Geo.search(q);
-      ul.innerHTML = res.length ? res.map((r, i) => `<li><button type="button" data-i="${i}">${esc(r.display_name)}</button></li>`).join('')
-        : '<li class="hint" style="padding:8px">לא נמצאה כתובת. אפשר להקיש על המפה.</li>';
+      if (seq !== geoSeq) return; // a newer search started
+      ul.innerHTML = res.length ? res.map((r, i) => `<li><button type="button" data-i="${i}">${esc(r.full || r.label)}</button></li>`).join('')
+        : '<li class="hint" style="padding:8px">לא נמצאה כתובת. נסי לכתוב אחרת, או הקישי על המפה.</li>';
       $$('button', ul).forEach(b => b.onclick = () => {
-        const r = res[b.dataset.i], ll = { lat: +r.lat, lng: +r.lon };
-        ul.innerHTML = ''; place(ll, { fromSearch: true, label: Geo.short(r) });
-        map?.setView([ll.lat, ll.lng], isLead ? zoomForRadius(+radiusEl.value) : 16);
+        const r = res[b.dataset.i];
+        ul.innerHTML = ''; place({ lat: r.lat, lng: r.lng }, { fromSearch: true, label: r.label });
+        map?.setView([r.lat, r.lng], isLead ? zoomForRadius(+radiusEl.value) : 16);
       });
-    } catch (ex) { console.error(ex); ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
+    } catch (ex) { console.error(ex); if (seq === geoSeq) ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
   };
-  $('#geo-go').onclick = geoSearch;
-  $('#geo-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); geoSearch(); } });
+  addrEl.addEventListener('input', () => { addressAuto = false; clearTimeout(geoTimer); geoTimer = setTimeout(() => geoSearch(false), 700); });
+  $('#geo-go').onclick = () => { clearTimeout(geoTimer); geoSearch(true); };
+  addrEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(geoTimer); geoSearch(true); } });
 
   /* + שדה חדש */
   const nf = $('#new-field');
   const nfSync = () => $$('.nf-list-only', nf).forEach(el => el.hidden = $('#nf_type').value !== 'list');
-  $('#add-field').onclick = () => { nf.hidden = false; $('#add-field').hidden = true; nfSync(); $('#nf_label').focus(); };
+  const nfClose = () => { nf.hidden = true; $$('.add-field', form).forEach(b => b.hidden = false); };
+  $$('.add-field', form).forEach(b => b.onclick = () => {
+    nfClose(); b.after(nf); nf.dataset.section = b.dataset.section;
+    nf.hidden = false; b.hidden = true; nfSync(); $('#nf_label').focus();
+  });
   $('#nf_type').onchange = nfSync;
-  $('#nf_cancel').onclick = () => { nf.hidden = true; $('#add-field').hidden = false; };
+  $('#nf_cancel').onclick = nfClose;
   $('#nf_save').onclick = async (e) => {
     const label = $('#nf_label').value.trim(), type = $('#nf_type').value;
     const options = type === 'list' ? $('#nf_options').value.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -967,11 +1082,11 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     e.currentTarget.disabled = true;
     try {
       const sort = (fieldsOf(module).at(-1)?.sort || 0) + 10;
-      const f = await DB.addField({ module, label, type, options, sort });
+      const section = nf.dataset.section || 'money';
+      const f = await DB.addField({ module, label, type, options, sort, section });
       S.data.fields.push(f);
-      $('#custom-fields').insertAdjacentHTML('beforeend', customFieldHTML(f, ''));
-      $('#custom-empty').hidden = true;
-      nf.hidden = true; $('#add-field').hidden = false; $('#nf_label').value = ''; $('#nf_options').value = '';
+      form.querySelector(`.cf-list[data-section="${section}"]`).insertAdjacentHTML('beforeend', customFieldHTML(f, ''));
+      nfClose(); $('#nf_label').value = ''; $('#nf_options').value = '';
       $('#cf_' + f.key).focus(); toast(`השדה "${f.label}" נוסף`);
     } catch (ex) { console.error(ex); toast('הוספת השדה נכשלה. נסי שוב.'); }
     e.currentTarget.disabled = false;
@@ -1006,11 +1121,12 @@ function mountForm({ module, mode, dealId, lat, lng }) {
       p = { id: dealId, contact, lead_date: val('lead_date'), need_id: val('need_id'), purpose_id: val('purpose_id'),
         size_value: parseNum(val('size_value')), size_unit: radio('size_unit'), lat: pin.lat, lng: pin.lng,
         radius_m: +radiusEl.value, height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,
-        budget_value: parseNum(val('budget_value')), budget_kind: radio('budget_kind'), needed_by: val('needed_by'), custom };
+        budget_value: parseNum(val('budget_value')), budget_kind: radio('budget_kind'), budget_currency: radio('budget_currency') || 'ILS',
+        needed_by: val('needed_by'), address: val('address').trim() || null, custom };
     } else {
       const kind = radio('deal_kind'), rented = kind === 'rent' ? radio('is_rented') === 'true' : null;
       p = { id: dealId, contact, purpose_id: val('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
-        lat: pin.lat, lng: pin.lng, address: val('address').trim(), description: val('description').trim(), deal_kind: kind,
+        lat: pin.lat, lng: pin.lng, address: val('address').trim(), description: val('description').trim() || null, deal_kind: kind,
         asking_price: parseNum(val('asking_price')), is_rented: rented, monthly_rent: rented ? parseNum(val('monthly_rent')) : null,
         ai_price_per_sqm: kind === 'sale' ? estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, parseNum(val('built_sqm'))) : null,
         custom };

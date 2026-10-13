@@ -71,7 +71,13 @@
     async addOption(list_key, value) {
       let o = db.options.find(x => x.list_key === list_key && x.value === value.trim());
       if (!o) { o = { id: id(), list_key, value: value.trim(), sort: 999, created_at: now() }; db.options.push(o); }
+      o.hidden = false;
       return clone(o);
+    },
+    async updateOption(oid, patch) {
+      const o = db.options.find(x => x.id === oid);
+      if (patch.value && db.options.some(x => x.id !== oid && x.list_key === o.list_key && x.value === patch.value)) { const e = new Error('duplicate key'); e.code = '23505'; throw e; }
+      Object.assign(o, patch); return clone(o);
     },
     async addField(f) { const row = { id: id(), key: 'f_' + Math.random().toString(16).slice(2, 12), created_at: now(), ...f }; db.fields.push(row); return clone(row); },
     async setStatus(module, did, status) { const r = db[module].find(x => x.id === did); r.status = status; r.closed_at = status === 'active' ? null : now(); },

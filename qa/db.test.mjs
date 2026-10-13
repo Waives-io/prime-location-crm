@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'Leah@Example.com');
+const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'leah2@example.com');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -23,6 +24,8 @@ await db.exec(`
 `);
 await db.exec(schema);
 await db.exec(schema); // idempotent re-run
+await db.exec(migration);
+await db.exec(migration); // idempotent re-run
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -149,6 +152,26 @@ await as('authenticated', LEAH, async () => {
   const del = await q('delete from lead_deals where id=$1 returning id', [id]);
   assert.equal(del.length, 0);
   ok('no hard delete (0 rows)');
+
+  // migration 002
+  const r2 = (await q('select save_lead_deal($1::jsonb) r', [{ ...base, id: null, budget_currency: 'USD', address: ' אזור התעשייה, חולון ' }]))[0].r;
+  const l2 = (await q('select budget_currency, address from lead_deals where id=$1', [r2.id]))[0];
+  assert.deepEqual(l2, { budget_currency: 'USD', address: 'אזור התעשייה, חולון' });
+  const l3 = (await q('select budget_currency from lead_deals where id=$1', [id]))[0];
+  assert.equal(l3.budget_currency, 'ILS');
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ ...base, id: null, budget_currency: 'EUR' }]), /check constraint/);
+  ok('002: lead address + currency (default ₪, $ allowed, other rejected)');
+  const ro2 = (await q('select save_owner_deal($1::jsonb) r', [{ ...own, description: '  ' }]))[0].r;
+  assert.equal((await q('select description from owner_deals where id=$1', [ro2.id]))[0].description, null);
+  ok('002: owner description optional');
+  const oid = (await q(`select (add_option('lead_need','לחכור')).id`))[0].id;
+  await q('update option_lists set hidden = true where id=$1', [oid]);
+  assert.equal((await q(`select (add_option('lead_need','לחכור')).hidden`))[0].hidden, false);
+  await q('update option_lists set value = $2 where id=$1', [oid, 'לחכור לטווח ארוך']);
+  await fails(() => q('update option_lists set value = $2 where id=$1', [oid, 'לשכור']), /duplicate key/);
+  ok('002: rename option, hide/unhide, duplicate rename rejected');
+  await fails(() => q(`insert into custom_fields (module,label,type,section) values ('lead','x','text','nowhere')`), /check constraint/);
+  ok('002: custom field section validated');
 
   const cf = (await q(`insert into custom_fields (module,label,type) values ('lead','קומה','number') returning key`))[0];
   assert.match(cf.key, /^f_[0-9a-f]{10}$/);

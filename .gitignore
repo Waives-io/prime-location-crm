@@ -1,0 +1,8 @@
+﻿From Liah/
+node_modules/
+qa/screens/
+*.log
+.env
+.DS_Store
+Thumbs.db
+desktop.ini

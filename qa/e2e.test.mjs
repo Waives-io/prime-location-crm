@@ -108,6 +108,15 @@ try {
   assert.equal(await text('#phone-err'), '');
   ok('existing phone (+972 format) → normalized, "לקוח קיים – הפרטים מולאו", name prefilled');
 
+  /* stale phone lookup must not overwrite a newer phone */
+  await page.evaluate(() => { const f = PL_TEST_DB.findContact.bind(PL_TEST_DB);
+    PL_TEST_DB.findContact = async (p) => { if (p === '054-1110001') await new Promise(r => setTimeout(r, 400)); return f(p); }; });
+  await fill('#phone', '0541110001');
+  await page.fill('#phone', '0521110002'); await page.locator('#phone').blur();
+  await page.waitForTimeout(600);
+  assert.equal(await page.inputValue('#name'), 'מירב כהן');
+  ok('slow lookup for an older phone does not overwrite the newer contact');
+
   /* + חדש in dropdown keeps typed data */
   await fill('#size_value', '2');
   await page.selectOption('#need_id', '__new');
@@ -132,6 +141,15 @@ try {
   assert.equal(await page.inputValue('#budget_value'), '1,500,000');
   await page.fill('#needed_by', '2027-02-01');
   await shot('05-form-lead', true);
+
+  /* leaving a dirty form asks first */
+  let asked = 0;
+  page.once('dialog', d => { asked++; d.dismiss(); });
+  await page.click('.back');
+  await page.waitForTimeout(200);
+  assert.equal(asked, 1);
+  assert.equal(await page.inputValue('#name'), 'מירב כהן');
+  ok('back on a form with typing → confirm; cancel keeps everything');
 
   /* save failure keeps data, retry uses same id */
   await page.evaluate(() => { window.PL_TEST_FAIL_NEXT_SAVE = true; });

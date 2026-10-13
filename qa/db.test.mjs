@@ -4,7 +4,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'Leah@Example.com');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -19,6 +19,7 @@ await db.exec(`
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on functions to anon, authenticated;
   insert into auth.users values ('${LEAH}', 'leah@example.com');
+  insert into auth.users values ('44444444-4444-4444-8444-444444444444', 'stale-test@example.com'); -- existed before the run
 `);
 await db.exec(schema);
 await db.exec(schema); // idempotent re-run
@@ -42,7 +43,7 @@ const counts = await q(`select
   (select count(*)::int from lead_deals) l, (select count(*)::int from lead_deals where status <> 'active') la,
   (select count(*)::int from owner_deals) o, (select count(*)::int from owner_deals where status <> 'active') oa,
   (select count(*)::int from option_lists) opts, (select count(*)::int from crm_members) m`);
-assert.deepEqual(counts[0], { l: 10, la: 2, o: 8, oa: 2, opts: 15, m: 1 }); ok('seed: 10 leads, 8 owners, 2+2 archived, 15 options, 1 member');
+assert.deepEqual(counts[0], { l: 10, la: 2, o: 8, oa: 2, opts: 15, m: 1 }); ok('seed: 10 leads, 8 owners, 2+2 archived, 15 options; only Leah email is a member (stale user is not)');
 const both = await q(`select count(*)::int n from contacts c where exists (select 1 from lead_deals where contact_id=c.id)
   and exists (select 1 from owner_deals where contact_id=c.id)`);
 assert.equal(both[0].n, 1); ok('seed: one contact in both modules');

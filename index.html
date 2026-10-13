@@ -355,7 +355,17 @@ function parseRoute() {
   return { name: 'card', module, id: p[2] };
 }
 const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
-window.addEventListener('hashchange', () => render());
+// Leaving a form with unsaved typing asks first (in-app links, back button, and tab close/refresh).
+const Dirty = { on: false, hash: '' };
+const LEAVE_MSG = 'לצאת בלי לשמור? מה שהוקלד בטופס יימחק.';
+window.addEventListener('hashchange', () => {
+  if (Dirty.on && location.hash !== Dirty.hash) {
+    if (!confirm(LEAVE_MSG)) { history.pushState(null, '', Dirty.hash); return; }
+    Dirty.on = false;
+  }
+  render();
+});
+window.addEventListener('beforeunload', (e) => { if (Dirty.on) { e.preventDefault(); e.returnValue = ''; } });
 
 let mapsToCleanup = [];
 async function render() {
@@ -367,6 +377,7 @@ async function render() {
   if (S.loadError) return renderLoadError(app);
   const r = parseRoute();
   document.body.dataset.screen = r.name;
+  if (r.name !== 'form') Dirty.on = false;
   if (r.name === 'home') return renderHome(app);
   const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
   app.innerHTML = shell(r, inner.html);
@@ -724,6 +735,9 @@ function formView(r) {
 
 function mountForm({ module, mode, dealId, lat, lng }) {
   const form = $('#deal-form'), isLead = module === 'lead';
+  Dirty.on = false; Dirty.hash = location.hash;
+  form.addEventListener('input', () => { Dirty.on = true; });
+  form.addEventListener('change', () => { Dirty.on = true; });
   const val = (id) => form.elements[id]?.value ?? '';
   const radio = (name) => form.querySelector(`input[name="${name}"]:checked`)?.value ?? '';
   const pin = { lat, lng };
@@ -804,6 +818,7 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     lastPhone = p;
     try {
       const c = await DB.findContact(p);
+      if (Phone.normalize(phoneEl.value) !== p || !document.body.contains(phoneEl)) return; // stale answer: phone changed meanwhile
       $('#existing-note').hidden = !c;
       if (c) {
         form.elements.name.value = c.name;
@@ -959,6 +974,7 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     try {
       await DB.saveDeal(module, p);
       await reload();
+      Dirty.on = false;
       toast(mode === 'edit' ? 'השינויים נשמרו' : 'העסקה נשמרה');
       go(`#/m/${module}/${dealId}`);
     } catch (ex) {

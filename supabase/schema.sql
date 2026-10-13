@@ -1,6 +1,6 @@
 -- Prime Location CRM – phase 1 schema
 -- Run in Supabase → SQL Editor → Run. Safe to re-run (idempotent).
--- Create Leah's user (Authentication → Users) BEFORE running, so the last block adds her to crm_members.
+-- Create Leah's user (Authentication → Users) BEFORE running; the last block adds ONLY her email to crm_members.
 
 -- ───────────────────────── helpers ─────────────────────────
 create or replace function public.set_updated_at() returns trigger
@@ -382,5 +382,8 @@ insert into public.owner_deals (id, contact_id, purpose_id, built_sqm, plot_sqm,
 on conflict (id) do nothing;
 
 -- ───────────────────────── members ─────────────────────────
--- Adds every existing auth user (only Leah – sign-ups are off). Re-run this line after adding a user.
-insert into public.crm_members (user_id) select id from auth.users on conflict do nothing;
+-- Explicit allowlist: only this email gets access. Replace the placeholder with Leah's email before running.
+-- To allow another user later, run this line again with their email.
+insert into public.crm_members (user_id)
+  select id from auth.users where lower(email) = lower('LEAH_EMAIL@example.com')
+on conflict do nothing;

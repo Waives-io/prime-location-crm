@@ -803,7 +803,7 @@ const Geo = {
   async wait() { const gap = Date.now() - this.last; if (gap < 1100) await new Promise(r => setTimeout(r, 1100 - gap)); this.last = Date.now(); },
   uniq: (parts) => parts.filter((x, i, a) => x && a.indexOf(x) === i),
   async photon(q) {
-    const res = await (await fetch(`https://photon.komoot.io/api/?limit=6&bbox=${IL_BBOX}&q=${encodeURIComponent(q)}`)).json();
+    const res = await (await fetch(`https://photon.komoot.io/api/?limit=6&lang=default&bbox=${IL_BBOX}&q=${encodeURIComponent(q)}`)).json();
     return (res.features || []).filter(f => f.properties?.countrycode === 'IL').map(f => {
       const p = f.properties, street = p.street ? [p.street, p.housenumber].filter(Boolean).join(' ') : '';
       const city = p.city || p.town || p.village || p.county || '';

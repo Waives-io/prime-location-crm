@@ -25,6 +25,7 @@ await ctx.addInitScript({ path: fileURLToPath(new URL('./local-db.js', import.me
 let geoCalls = 0, photonCalls = 0;
 await ctx.route('https://photon.komoot.io/**', (route) => {
   photonCalls++;
+  if (!route.request().url().includes('lang=default')) throw new Error('Photon must be asked for local (Hebrew) names: lang=default');
   const q = decodeURIComponent(new URL(route.request().url()).searchParams.get('q') || '');
   const features = q.includes('חולון') ? [{ geometry: { coordinates: [34.8035, 32.0167] },
     properties: { countrycode: 'IL', name: 'אזור התעשייה חולון', district: 'אזור תעשייה ב', city: 'חולון' } }]

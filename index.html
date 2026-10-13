@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="he" dir="rtl" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="google" content="notranslate">
+<meta name="theme-color" content="#FFD400">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">
+<title>פריים לוקיישן · CRM</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<style>
+/* ── tokens ── */
+:root{
+  --yellow:#FFD400; --ink:#1A1A1A; --charcoal:#3C3C3B;
+  --bg:#FFFFFF; --surface:#F6F6F4; --line:#E6E6E2; --error:#C62828;
+  --radius:16px; --tap:44px;
+  --font:'Heebo',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.45}
+body{min-height:100dvh}
+button,input,select,textarea{font:inherit;color:inherit}
+.num,bdi.num,.tabnum{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+a{color:inherit}
+
+/* ── layout shell ── */
+.shell{display:flex;min-height:100dvh}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.side-nav{display:none}
+.bottom-nav{position:fixed;inset-inline:0;bottom:0;display:flex;background:var(--bg);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:20}
+.bottom-nav a{flex:1;min-height:56px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:700;color:var(--charcoal)}
+.bottom-nav a[aria-current=page]{color:var(--ink);box-shadow:inset 0 3px 0 var(--yellow)}
+.has-bottom-nav .main{padding-bottom:72px}
+@media (min-width:900px){
+  .side-nav{display:flex;flex-direction:column;gap:6px;width:240px;padding:20px 14px;border-inline-start:0;border-inline-end:1px solid var(--line);position:sticky;top:0;height:100dvh;background:var(--surface)}
+  .side-nav a.mod{min-height:var(--tap);display:flex;align-items:center;padding-inline:14px;border-radius:999px;text-decoration:none;font-weight:700}
+  .side-nav a.mod[aria-current=page]{background:var(--yellow);box-shadow:0 0 0 2px var(--ink) inset}
+  .side-nav .spacer{flex:1}
+  .bottom-nav{display:none}
+  .has-bottom-nav .main{padding-bottom:0}
+}
+.topbar{position:sticky;top:0;z-index:15;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);min-height:60px}
+.topbar h1{margin:0;font-size:1.35rem;font-weight:800;flex:1}
+.brand-mini{display:block;width:34px;height:34px;margin-inline-start:auto}
+.brand-mini img{width:100%;height:100%;object-fit:contain}
+.back{display:inline-flex;align-items:center;gap:4px;min-height:var(--tap);padding-inline:8px;background:none;border:0;font-weight:700;cursor:pointer;text-decoration:none}
+.back::before{content:"→";font-size:1.1em}
+.content{padding:16px;max-width:760px;width:100%;margin-inline:auto}
+
+/* ── controls ── */
+.btn{min-height:var(--tap);padding:0 22px;border-radius:999px;border:2px solid var(--ink);background:var(--bg);font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn.primary{background:var(--yellow)}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.6;cursor:progress}
+.link{background:none;border:0;padding:8px 0;min-height:var(--tap);font-weight:700;text-decoration:underline;cursor:pointer}
+.field{margin-bottom:16px}
+.field label,.field .lbl{display:block;font-weight:700;margin-bottom:6px}
+.req{color:var(--charcoal)}
+.input,select.input,textarea.input{width:100%;min-height:var(--tap);border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--bg)}
+textarea.input{min-height:90px;resize:vertical}
+.input:focus{outline:2px solid var(--ink);outline-offset:1px}
+.field.invalid .input{border-color:var(--error)}
+.err{color:var(--error);font-size:.9rem;margin:4px 0 0;min-height:0}
+.err:empty{display:none}
+.hint{color:var(--charcoal);font-size:.9rem;margin:4px 0 0}
+.note{background:var(--surface);border-radius:10px;padding:8px 12px;font-size:.95rem;margin:-6px 0 14px}
+.row{display:flex;gap:10px;align-items:flex-start}
+.row>*{flex:1}
+.affix{position:relative}
+.affix .input{padding-left:36px}
+.affix span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--charcoal)}
+.seg{display:inline-flex;border:2px solid var(--ink);border-radius:999px;overflow:hidden}
+.seg label{margin:0;min-height:40px;display:flex;align-items:center;padding:0 16px;cursor:pointer;font-weight:700}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg input:checked+span{background:var(--ink);color:var(--bg)}
+.seg label span{display:flex;align-items:center;min-height:40px;padding:0 4px;border-radius:999px}
+.seg label:has(input:checked){background:var(--ink);color:var(--bg)}
+.seg label:has(input:focus-visible){outline:2px solid var(--yellow);outline-offset:-4px}
+.add-inline{display:flex;gap:8px;margin-top:8px}
+.add-inline .input{flex:1}
+
+/* ── form ── */
+.form-section{border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.form-section h2{margin:0 0 14px;font-size:1.15rem;font-weight:800}
+.sticky-save{position:sticky;bottom:0;background:var(--bg);padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);z-index:10}
+.calc{background:var(--surface);border-radius:12px;padding:10px 12px;font-weight:700;margin-bottom:12px}
+.calc small{font-weight:400;color:var(--charcoal)}
+
+/* ── map ── */
+.map{height:240px;border-radius:12px;border:1px solid var(--line);z-index:0}
+.map.small{height:170px}
+.geo-results{list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.geo-results:empty{display:none}
+.geo-results li button{width:100%;text-align:start;background:var(--bg);border:0;border-bottom:1px solid var(--line);padding:10px 12px;min-height:var(--tap);cursor:pointer}
+.range-row{display:flex;align-items:center;gap:12px;margin-top:10px}
+.range-row input{flex:1;accent-color:var(--ink)}
+
+/* ── list ── */
+.search{width:100%}
+.tabs{display:flex;margin:12px 0}
+.list{list-style:none;margin:0;padding:0}
+.list li a{display:block;padding:12px 4px;border-bottom:1px solid var(--line);text-decoration:none;min-height:var(--tap)}
+.list .r1{display:flex;justify-content:space-between;gap:8px}
+.list .name{font-weight:800}
+.list .meta{color:var(--charcoal);font-size:.92rem}
+.fab{position:fixed;bottom:88px;inset-inline-start:auto;inset-inline-end:16px;z-index:25;min-height:56px;padding:0 26px;font-size:1.1rem;box-shadow:0 2px 0 var(--ink)}
+@media (min-width:900px){.fab{bottom:24px}}
+.state{padding:32px 8px;text-align:center;color:var(--charcoal)}
+
+/* ── card ── */
+.chip{display:inline-block;padding:2px 12px;border-radius:999px;font-size:.85rem;font-weight:700}
+.chip.active{background:var(--yellow);color:var(--ink)}
+.chip.archived{background:var(--surface);color:var(--charcoal)}
+.dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0}
+.dl dt{color:var(--charcoal)}
+.dl dd{margin:0;font-weight:500}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.card-head h2{margin:0;font-size:1.5rem;font-weight:800}
+.card-head p{margin:2px 0 8px;color:var(--charcoal)}
+
+/* ── home & login ── */
+.hero{min-height:100dvh;display:flex;flex-direction:column;padding:16px;background:linear-gradient(160deg,var(--bg) 62%,var(--yellow) 62.2%)}
+.hero-top{display:flex;justify-content:space-between;align-items:center;min-height:var(--tap)}
+.hero-logo{width:72px}
+.home-buttons{flex:1;display:flex;flex-direction:column;justify-content:center;gap:18px;max-width:480px;width:100%;margin:0 auto}
+.home-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:150px;border:2px solid var(--ink);border-radius:var(--radius);text-decoration:none;overflow:hidden;background:var(--ink) center/cover no-repeat;color:#fff}
+.home-btn::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.home-btn>*{position:relative}
+.home-btn strong{font-size:1.7rem;font-weight:800}
+.home-btn small{font-size:.95rem}
+.login-box{margin:auto;width:100%;max-width:380px;background:var(--bg);padding:24px;border-radius:var(--radius)}
+.login-box img{display:block;width:200px;margin:0 auto 20px}
+.pw{position:relative}
+.pw .eye{position:absolute;inset-inline-end:4px;top:0;height:var(--tap);width:var(--tap);background:none;border:0;cursor:pointer}
+
+/* ── toast & dialog ── */
+#toast{position:fixed;inset-inline:16px;bottom:96px;margin:auto;max-width:420px;background:var(--ink);color:#fff;border-radius:12px;padding:12px 16px;text-align:center;z-index:50;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
+#toast.show{opacity:1;transform:none}
+dialog{border:0;border-radius:var(--radius);padding:20px;width:min(420px,calc(100% - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog h2{margin:0 0 14px;font-size:1.2rem}
+dialog .stack{display:flex;flex-direction:column;gap:10px}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid currentColor;border-inline-end-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app" aria-live="polite"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+
+<script>
+'use strict';
+/* ════════════ config ════════════ */
+const CONFIG = {
+  url: 'https://YOUR-PROJECT.supabase.co',
+  key: 'YOUR-PUBLISHABLE-OR-ANON-KEY',
+};
+const MAP_CENTER = [31.61, 34.77]; // קריית גת
+const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
+const MODULES = {
+  lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
+  owner: { title: 'בעלים / משכיר', one: 'נכס',       empty: 'אין עדיין נכסים של בעלים.' },
+};
+
+/* ════════════ helpers ════════════ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+
+const Phone = {
+  // returns '05X-XXXXXXX' or null
+  normalize(raw) {
+    let d = String(raw || '').replace(/[\s\-().]/g, '').replace(/^\+/, '');
+    if (d.startsWith('00972')) d = '0' + d.slice(5);
+    else if (d.startsWith('972')) d = '0' + d.slice(3);
+    return /^05\d{8}$/.test(d) ? d.slice(0, 3) + '-' + d.slice(3) : null;
+  },
+  error: 'מספר נייד צריך להכיל 10 ספרות ולהתחיל ב-05',
+  wa: (p) => 'https://wa.me/972' + p.replace(/\D/g, '').slice(1),
+  tel: (p) => 'tel:' + p.replace(/\D/g, ''),
+};
+const fmt = {
+  money: (n) => n == null || n === '' ? '' : '₪ ' + Math.round(Number(n)).toLocaleString('en-US'),
+  num: (n) => n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }),
+  date: (iso) => { if (!iso) return ''; const [y, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}/${y}`; },
+  pct: (n) => n == null ? '' : Number(n).toFixed(1) + '%',
+  bi: (s) => `<bdi class="num">${esc(s)}</bdi>`, // number + Hebrew unit: keep natural RTL order
+  ltr: (s, cls = 'num') => `<bdi dir="ltr" class="${cls}">${esc(s)}</bdi>`,
+  size: (v, unit) => v == null ? '' : `${fmt.num(v)} ${unit === 'dunam' ? 'דונם' : 'מ״ר'}`,
+};
+const parseNum = (s) => { const t = String(s ?? '').replace(/[^\d.]/g, ''); return t === '' ? null : Number(t); };
+
+/* Simulated price-per-sqm estimate (phase 2 → Edge Function). Always shown as "הערכה". */
+function estimatePricePerSqm(purposeText, builtSqm) {
+  if (!builtSqm) return null;
+  const p = purposeText || '';
+  let base = 8000;
+  if (p.includes('מחסן')) base = 6000;
+  else if (p.includes('תעשי')) base = 7000;
+  else if (p.includes('חנות')) base = 14000;
+  else if (p.includes('מסחר')) base = 12000;
+  const factor = builtSqm > 2000 ? 0.9 : builtSqm < 200 ? 1.15 : 1;
+  return Math.round(base * factor / 100) * 100;
+}
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ════════════ data layer ════════════ */
+function supabaseDB() {
+  const sb = window.supabase.createClient(CONFIG.url, CONFIG.key, { auth: { persistSession: true, autoRefreshToken: true } });
+  const must = (r) => { if (r.error) throw r.error; return r.data; };
+  return {
+    async session() { return must(await sb.auth.getSession()).session; },
+    onAuth(cb) { sb.auth.onAuthStateChange((_e, s) => cb(s)); },
+    async signIn(email, password) { must(await sb.auth.signInWithPassword({ email, password })); },
+    async signOut() { await sb.auth.signOut(); },
+    async isMember() { return !!must(await sb.from('crm_members').select('user_id').maybeSingle()); },
+    async loadAll() {
+      const [options, fields, lead, owner] = await Promise.all([
+        sb.from('option_lists').select('*').order('sort').order('created_at'),
+        sb.from('custom_fields').select('*').order('sort').order('created_at'),
+        sb.from('lead_deals').select('*, contact:contacts(*)'),
+        sb.from('owner_deals').select('*, contact:contacts(*)'),
+      ]);
+      return { options: must(options), fields: must(fields), lead: must(lead), owner: must(owner) };
+    },
+    async findContact(phone) { return must(await sb.from('contacts').select('*').eq('phone', phone).maybeSingle()); },
+    async saveDeal(module, p) { return must(await sb.rpc(module === 'lead' ? 'save_lead_deal' : 'save_owner_deal', { p })); },
+    async addOption(listKey, value) { return must(await sb.rpc('add_option', { p_list_key: listKey, p_value: value })); },
+    async addField(f) { return must(await sb.from('custom_fields').insert(f).select().single()); },
+    async setStatus(module, id, status) {
+      must(await sb.from(module === 'lead' ? 'lead_deals' : 'owner_deals')
+        .update({ status, closed_at: status === 'active' ? null : new Date().toISOString() }).eq('id', id));
+    },
+  };
+}
+const DB = window.PL_TEST_DB || supabaseDB();
+
+/* ════════════ state ════════════ */
+const S = {
+  session: null, data: null, loadError: null,
+  list: { lead: { tab: 'active', q: '' }, owner: { tab: 'active', q: '' } },
+};
+const opts = (key) => (S.data?.options || []).filter(o => o.list_key === key);
+const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value || '';
+const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module);
+const deals = (module) => S.data?.[module] || [];
+const findDeal = (module, id) => deals(module).find(d => d.id === id);
+
+async function reload() {
+  S.loadError = null;
+  try { S.data = await DB.loadAll(); }
+  catch (e) { console.error(e); S.loadError = e; }
+}
+
+/* ════════════ router ════════════ */
+// #/  ·  #/m/lead  ·  #/m/lead/new  ·  #/m/lead/new/dup/<id>  ·  #/m/lead/<id>  ·  #/m/lead/<id>/edit
+function parseRoute() {
+  const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  if (p[0] !== 'm' || !MODULES[p[1]]) return { name: 'home' };
+  const module = p[1];
+  if (!p[2]) return { name: 'list', module };
+  if (p[2] === 'new') return { name: 'form', module, mode: p[3] === 'dup' ? 'dup' : 'new', id: p[4] };
+  if (p[3] === 'edit') return { name: 'form', module, mode: 'edit', id: p[2] };
+  return { name: 'card', module, id: p[2] };
+}
+const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
+window.addEventListener('hashchange', () => render());
+
+let mapsToCleanup = [];
+async function render() {
+  mapsToCleanup.forEach(m => m.remove()); mapsToCleanup = [];
+  const app = $('#app');
+  if (!S.session) return renderLogin(app);
+  if (S.member === false) return renderNoAccess(app);
+  if (!S.data && !S.loadError) { app.innerHTML = `<div class="state"><span class="spinner"></span> טוען…</div>`; await reload(); }
+  if (S.loadError) return renderLoadError(app);
+  const r = parseRoute();
+  document.body.dataset.screen = r.name;
+  if (r.name === 'home') return renderHome(app);
+  const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
+  app.innerHTML = shell(r, inner.html);
+  inner.mount?.();
+  window.scrollTo(0, 0);
+}
+
+function shell(r, html) {
+  const navLinks = (cls) => Object.entries(MODULES).map(([k, m]) =>
+    `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}>${m.title}</a>`).join('');
+  const bottom = r.name !== 'form';
+  return `<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
+    <nav class="side-nav" aria-label="מודולים">
+      <a href="#/" class="brand-side"><img src="assets/logo.png" alt="פריים לוקיישן – לדף הבית" style="width:150px"></a>
+      ${navLinks('mod')}
+      <div class="spacer"></div>
+      <button class="link" data-act="logout">יציאה</button>
+    </nav>
+    <div class="main">${html}</div>
+    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('')}</nav>` : ''}
+  </div>`;
+}
+const topbar = (title, backHref, backText = 'חזרה') => `<header class="topbar">
+  ${backHref ? `<a class="back" href="${backHref}">${backText}</a>` : ''}
+  <h1>${esc(title)}</h1>
+  <a class="brand-mini" href="#/" aria-label="דף הבית"><img src="assets/pin.png" alt=""></a>
+</header>`;
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act="logout"]');
+  if (b) { await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
+});
+
+/* ════════════ login ════════════ */
+function renderLogin(app) {
+  document.body.dataset.screen = 'login';
+  app.innerHTML = `<main class="hero">
+    <form class="login-box" id="login" novalidate>
+      <img src="assets/logo.png" alt="פריים לוקיישן – נדל״ן במרכז העניינים">
+      <div class="field"><label for="email">אימייל</label>
+        <input class="input" id="email" type="email" inputmode="email" autocomplete="username" dir="ltr" required></div>
+      <div class="field"><label for="password">סיסמה</label>
+        <div class="pw"><input class="input" id="password" type="password" autocomplete="current-password" dir="ltr" required>
+        <button type="button" class="eye" aria-label="הצגת הסיסמה" aria-pressed="false">👁</button></div></div>
+      <p class="err" id="login-err" aria-live="polite"></p>
+      <button class="btn primary block" type="submit">כניסה</button>
+    </form></main>`;
+  const pw = $('#password');
+  $('.eye').onclick = (e) => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password';
+    e.currentTarget.setAttribute('aria-pressed', show); e.currentTarget.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'); };
+  $('#login').onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $('#email').value.trim().toLowerCase(), err = $('#login-err'), btn = e.submitter || $('#login button[type=submit]');
+    if (!email || !pw.value) { err.textContent = 'יש למלא אימייל וסיסמה'; return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> נכנסת…'; err.textContent = '';
+    try { await DB.signIn(email, pw.value); await afterLogin(); }
+    catch (ex) { console.error(ex); err.textContent = /invalid/i.test(ex.message || '') ? 'האימייל או הסיסמה שגויים' : 'הכניסה נכשלה. בדקי את החיבור ונסי שוב.'; btn.disabled = false; btn.textContent = 'כניסה'; }
+  };
+}
+function renderNoAccess(app) {
+  app.innerHTML = `<main class="hero"><div class="login-box"><img src="assets/logo.png" alt="פריים לוקיישן">
+    <p>החשבון הזה לא מורשה לצפות בנתונים.</p><button class="btn block" data-act="logout">יציאה</button></div></main>`;
+}
+function renderLoadError(app) {
+  app.innerHTML = `<main class="content"><div class="state"><p>לא הצלחנו לטעון את הנתונים. בדקי את החיבור לאינטרנט.</p>
+    <button class="btn primary" id="retry">נסי שוב</button></div></main>`;
+  $('#retry').onclick = async () => { S.data = null; S.loadError = null; render(); };
+}
+
+/* ════════════ home ════════════ */
+function renderHome(app) {
+  const count = (m) => deals(m).filter(d => d.status === 'active').length;
+  const photo = { lead: 'assets/photo-building.jpg', owner: 'assets/photo-warehouse.jpg' };
+  app.innerHTML = `<main class="hero">
+    <div class="hero-top">
+      <button class="link" data-act="logout">יציאה</button>
+      <img class="hero-logo" src="assets/logo.png" alt="פריים לוקיישן">
+    </div>
+    <div class="home-buttons">
+      ${Object.entries(MODULES).map(([k, m]) => `<a class="home-btn" href="#/m/${k}" style="background-image:url('${photo[k]}')">
+        <strong>${m.title}</strong><small><bdi class="num">${count(k)}</bdi> פעילות</small></a>`).join('')}
+    </div></main>`;
+}
+
+/* ════════════ list ════════════ */
+function dealSearchText(d) {
+  const c = d.contact || {};
+  return [c.name, c.company_name, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
+}
+function rowSummary(module, d) {
+  if (module === 'lead') return [optText(d.need_id), optText(d.purpose_id), fmt.size(d.size_value, d.size_unit)];
+  return [d.deal_kind === 'rent' ? 'השכרה' : 'מכירה', optText(d.purpose_id), fmt.size(d.built_sqm, 'sqm')];
+}
+const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
+
+function listView(module) {
+  const st = S.list[module], M = MODULES[module];
+  const html = `${topbar(M.title)}
+  <div class="content">
+    <input class="input search" id="q" type="search" placeholder="חיפוש: שם, טלפון, חברה${module === 'owner' ? ', כתובת' : ''}" value="${esc(st.q)}" aria-label="חיפוש">
+    <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
+      <label><input type="radio" name="tab" value="active" ${st.tab === 'active' ? 'checked' : ''}><span>פעילות</span></label>
+      <label><input type="radio" name="tab" value="archive" ${st.tab === 'archive' ? 'checked' : ''}><span>ארכיון</span></label>
+    </div></div>
+    <ul class="list" id="rows"></ul>
+  </div>
+  <a class="btn primary fab" href="#/m/${module}/new">+ חדש</a>`;
+  const mount = () => {
+    const draw = () => {
+      const q = st.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+      const rows = deals(module)
+        .filter(d => (st.tab === 'active') === (d.status === 'active'))
+        .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
+        .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
+      const ul = $('#rows');
+      if (!rows.length) {
+        ul.innerHTML = `<li class="state">${q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
+        return;
+      }
+      ul.innerHTML = rows.map(d => `<li><a href="#/m/${module}/${d.id}">
+        <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}</span>
+        <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
+        <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a></li>`).join('');
+    };
+    $('#q').oninput = (e) => { st.q = e.target.value; draw(); };
+    $$('input[name=tab]').forEach(r => r.onchange = () => { st.tab = r.value; draw(); });
+    draw();
+  };
+  return { html, mount };
+}
+
+/* ════════════ card ════════════ */
+function cardView(module, id) {
+  const d = findDeal(module, id), M = MODULES[module];
+  if (!d) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
+  const c = d.contact || {}, active = d.status === 'active';
+  const statusText = active ? 'פעילה' : d.status === 'closed' ? 'נסגרה' : 'לא רלוונטית';
+  const rows = [];
+  const add = (k, v) => { if (v !== '' && v != null) rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+  add('טלפון', fmt.ltr(c.phone));
+  add('סוג', c.entity_type === 'company' ? 'חברה' : 'פרטי');
+  if (module === 'lead') {
+    add('תאריך פנייה', fmt.ltr(fmt.date(d.lead_date)));
+    add('צורך', esc(optText(d.need_id)));
+    add('ייעוד', esc(optText(d.purpose_id)));
+    add('גודל', fmt.bi(fmt.size(d.size_value, d.size_unit)));
+    add('גובה נדרש', fmt.bi(fmt.num(d.height_m) + ' מ׳'));
+    add('רדיוס חיפוש', fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ'));
+    add('תקציב', fmt.ltr(fmt.money(d.budget_value)) + (d.budget_kind === 'per_sqm' ? ' למ״ר' : ' סה״כ'));
+    add('נדרש עד', fmt.ltr(fmt.date(d.needed_by)));
+    add('הערות', esc(d.notes));
+  } else {
+    add('ייעוד', esc(optText(d.purpose_id)));
+    add('שטח בנוי', fmt.bi(fmt.size(d.built_sqm, 'sqm')));
+    add('שטח מגרש', fmt.bi(fmt.size(d.plot_sqm, 'sqm')));
+    add('כתובת', esc(d.address));
+    add('תיאור', esc(d.description));
+    add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : 'מכירה');
+    add('מחיר מבוקש / שווי', fmt.ltr(fmt.money(d.asking_price)));
+    if (d.deal_kind === 'rent') {
+      add('מושכר כרגע', d.is_rented ? 'כן' : 'לא');
+      if (d.is_rented) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', fmt.ltr(fmt.pct(d.yield_pct))); }
+    } else {
+      add('מחיר למ״ר מבוקש', fmt.ltr(fmt.money(d.asking_price / d.built_sqm)));
+      if (d.ai_price_per_sqm) add('הערכת מחיר למ״ר', fmt.ltr(fmt.money(d.ai_price_per_sqm)) + ' <small>(הערכה)</small>');
+    }
+  }
+  for (const f of fieldsOf(module)) {
+    const v = d.custom?.[f.key];
+    add(esc(f.label), v == null || v === '' ? '' : f.type === 'date' ? fmt.ltr(fmt.date(v)) : f.type === 'number' ? fmt.ltr(fmt.num(v)) : esc(v));
+  }
+  const html = `${topbar(c.name || M.one, `#/m/${module}`)}
+  <div class="content">
+    <div class="card-head">
+      <span class="chip ${active ? 'active' : 'archived'}">${statusText}</span>
+      <h2>${esc(c.name)}</h2>${c.company_name ? `<p>${esc(c.company_name)}</p>` : ''}
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="${Phone.tel(c.phone)}">חיוג</a>
+      <a class="btn" href="${Phone.wa(c.phone)}" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+    <dl class="dl">${rows.join('')}</dl>
+    <div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>
+    <div class="actions">
+      <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
+      <a class="btn" href="#/m/${module}/new/dup/${d.id}">שכפול</a>
+      ${active ? `<button class="btn" id="close-deal">סגירת עסקה</button>` : `<button class="btn" id="restore-deal">החזרה לפעילות</button>`}
+    </div>
+  </div>`;
+  const mount = () => {
+    if (window.L) {
+      const m = L.map('card-map', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, keyboard: false, attributionControl: true })
+        .setView([d.lat, d.lng], module === 'lead' ? zoomForRadius(d.radius_m) : 15);
+      tiles().addTo(m); L.marker([d.lat, d.lng]).addTo(m);
+      if (module === 'lead') L.circle([d.lat, d.lng], { radius: d.radius_m, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(m);
+      mapsToCleanup.push(m);
+    }
+    $('#close-deal')?.addEventListener('click', () => closeDialog(module, d));
+    $('#restore-deal')?.addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      try { await DB.setStatus(module, d.id, 'active'); await reload(); toast('העסקה הוחזרה לפעילות'); render(); }
+      catch (ex) { console.error(ex); toast('הפעולה נכשלה. נסי שוב.'); e.currentTarget.disabled = false; }
+    });
+  };
+  return { html, mount };
+}
+
+function closeDialog(module, d) {
+  const dlg = $('#dlg');
+  dlg.innerHTML = `<h2>סגירת עסקה – מה הסיבה?</h2><div class="stack">
+    <button class="btn primary" data-s="closed">נסגרה</button>
+    <button class="btn" data-s="irrelevant">לא רלוונטית</button>
+    <button class="link" data-s="">ביטול</button></div>`;
+  dlg.onclick = async (e) => {
+    if (e.target === dlg) return dlg.close();
+    const b = e.target.closest('[data-s]'); if (!b) return;
+    if (!b.dataset.s) return dlg.close();
+    $$('button', dlg).forEach(x => x.disabled = true);
+    try { await DB.setStatus(module, d.id, b.dataset.s); await reload(); dlg.close(); toast('העסקה עברה לארכיון'); render(); }
+    catch (ex) { console.error(ex); $$('button', dlg).forEach(x => x.disabled = false); toast('הפעולה נכשלה. נסי שוב.'); }
+  };
+  dlg.showModal();
+}
+
+/* ════════════ map helpers ════════════ */
+const tiles = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+const zoomForRadius = (r) => r > 12000 ? 10 : r > 6000 ? 11 : r > 2500 ? 12 : 13;
+
+// Nominatim: explicit search only (no autocomplete), max 1 request/second, cached.
+const Geo = {
+  last: 0, cache: new Map(),
+  async wait() { const gap = Date.now() - this.last; if (gap < 1100) await new Promise(r => setTimeout(r, 1100 - gap)); this.last = Date.now(); },
+  async search(q) {
+    const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
+    await this.wait();
+    const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`;
+    const res = await (await fetch(u)).json(); this.cache.set(key, res); return res;
+  },
+  async reverse(lat, lng) {
+    const key = `r:${lat.toFixed(5)},${lng.toFixed(5)}`; if (this.cache.has(key)) return this.cache.get(key);
+    await this.wait();
+    const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=he&zoom=18&lat=${lat}&lon=${lng}`;
+    const res = await (await fetch(u)).json(); this.cache.set(key, res); return res;
+  },
+  short(r) { const a = r.address || {}; const street = [a.road, a.house_number].filter(Boolean).join(' ');
+    const city = a.city || a.town || a.village || a.municipality || '';
+    return [street || r.name, city].filter(Boolean).join(', ') || r.display_name; },
+};
+
+/* ════════════ form ════════════ */
+function field(id, label, control, { required = true, hint = '', cls = '' } = {}) {
+  return `<div class="field ${cls}" data-field="${id}">
+    <label for="${id}" ${control.startsWith('<div class="seg') ? `id="${id}-lbl"` : ''}>${label}${required ? ' <span class="req" aria-hidden="true">*</span>' : ''}</label>
+    ${control}${hint ? `<p class="hint">${hint}</p>` : ''}<p class="err" id="${id}-err" aria-live="polite"></p></div>`;
+}
+const textInput = (id, v = '', a = '') => `<input class="input" id="${id}" name="${id}" value="${esc(v)}" ${a}>`;
+const numInput = (id, v, suffix = '', a = '') => `<div class="affix"><input class="input num" id="${id}" name="${id}" inputmode="decimal" dir="ltr" value="${v == null ? '' : esc(fmt.num(v))}" ${a}>${suffix ? `<span>${suffix}</span>` : ''}</div>`;
+const moneyInput = (id, v) => numInput(id, v, '₪', 'data-money');
+const dateInput = (id, v) => `<input class="input num" type="date" id="${id}" name="${id}" value="${esc(v || '')}">`;
+const seg = (name, choices, val) => `<div class="seg" role="radiogroup" aria-labelledby="${name}-lbl" id="${name}">${choices.map(([v, t]) =>
+  `<label><input type="radio" name="${name}" value="${v}" ${String(val) === String(v) ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
+const optSelect = (id, listKey, val) => `<select class="input" id="${id}" name="${id}" data-list="${listKey}">
+  <option value="">בחירה…</option>${opts(listKey).map(o => `<option value="${o.id}" ${o.id === val ? 'selected' : ''}>${esc(o.value)}</option>`).join('')}
+  <option value="__new">+ חדש</option></select>
+  <div class="add-inline" id="${id}-new" hidden><input class="input" aria-label="ערך חדש" placeholder="ערך חדש"><button type="button" class="btn">הוספה</button><button type="button" class="link">ביטול</button></div>`;
+
+function customControl(f, v) {
+  const id = 'cf_' + f.key;
+  if (f.type === 'number') return numInput(id, v);
+  if (f.type === 'date') return dateInput(id, v);
+  if (f.type === 'list') return `<select class="input" id="${id}" name="${id}"><option value="">—</option>${(f.options || []).map(o =>
+    `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  return textInput(id, v);
+}
+const customFieldHTML = (f, v) => field('cf_' + f.key, esc(f.label), customControl(f, v), { required: false });
+
+function formView(r) {
+  const { module, mode } = r, M = MODULES[module], isLead = module === 'lead';
+  const src = mode === 'new' ? null : findDeal(module, r.id);
+  if (mode !== 'new' && !src) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
+  const d = src ? structuredClone(src) : {};
+  const dealId = mode === 'edit' ? src.id : uuid();     // created once → retry-safe
+  if (mode === 'dup') { if (isLead) d.lead_date = todayISO(); d.status = 'active'; }
+  const c = d.contact || {};
+  const title = mode === 'edit' ? 'עריכת עסקה' : mode === 'dup' ? 'שכפול עסקה' : (isLead ? 'מתעניין חדש' : 'נכס חדש');
+  const back = mode === 'new' ? `#/m/${module}` : `#/m/${module}/${r.id}`;
+  const lat = d.lat ?? null, lng = d.lng ?? null;
+
+  const leadProperty = `
+    ${field('lead_date', 'תאריך פנייה', dateInput('lead_date', d.lead_date || todayISO()))}
+    ${field('need_id', 'צורך', optSelect('need_id', LISTS.need, d.need_id))}
+    ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.lead_purpose, d.purpose_id))}
+    ${field('size_value', 'גודל', `<div class="row">${numInput('size_value', d.size_value)}${seg('size_unit', [['sqm', 'מ״ר'], ['dunam', 'דונם']], d.size_unit || 'sqm')}</div>`)}
+    ${field('height_m', 'גובה נדרש', numInput('height_m', d.height_m, 'מ׳'), { hint: 'גובה תקרה מינימלי במטרים' })}`;
+  const ownerProperty = `
+    ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.owner_purpose, d.purpose_id))}
+    <div class="row">${field('built_sqm', 'שטח בנוי', numInput('built_sqm', d.built_sqm, 'מ״ר'))}${field('plot_sqm', 'שטח מגרש', numInput('plot_sqm', d.plot_sqm, 'מ״ר'))}</div>
+    ${field('description', 'תיאור הנכס', `<textarea class="input" id="description" name="description">${esc(d.description)}</textarea>`)}`;
+  const locSection = `
+    <div class="field"><label for="geo-q">חיפוש כתובת</label>
+      <div class="add-inline" style="margin:0"><input class="input" id="geo-q" type="search" placeholder="למשל: שדרות לכיש, קריית גת" enterkeyhint="search">
+      <button type="button" class="btn" id="geo-go">חיפוש</button></div>
+      <ul class="geo-results" id="geo-results"></ul></div>
+    ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקישי על המפה כדי להציב סיכה' })}
+    ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
+      <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
+      <output id="radius-out" class="num"></output></div>`
+    : field('address', 'כתובת', textInput('address', d.address, 'autocomplete="off"'), { hint: 'מתמלאת מהחיפוש, אפשר לערוך' })}`;
+  const leadMoney = `
+    ${field('budget_value', 'תקציב', `<div class="row">${moneyInput('budget_value', d.budget_value)}${seg('budget_kind', [['total', 'סה״כ'], ['per_sqm', 'למ״ר']], d.budget_kind || 'total')}</div>`)}
+    ${field('needed_by', 'נדרש עד', dateInput('needed_by', d.needed_by))}
+    ${field('notes', 'הערות', `<textarea class="input" id="notes" name="notes">${esc(d.notes)}</textarea>`, { required: false })}`;
+  const ownerMoney = `
+    ${field('deal_kind', 'סוג עסקה', seg('deal_kind', [['rent', 'השכרה'], ['sale', 'מכירה']], d.deal_kind))}
+    ${field('asking_price', 'מחיר מבוקש / שווי הנכס', moneyInput('asking_price', d.asking_price))}
+    <div id="rent-block" hidden>
+      ${field('is_rented', 'האם המבנה מושכר כרגע?', seg('is_rented', [['true', 'כן'], ['false', 'לא']], d.is_rented))}
+      <div id="rented-block" hidden>
+        ${field('monthly_rent', 'שכירות חודשית (₪)', moneyInput('monthly_rent', d.monthly_rent))}
+        <div class="calc" id="yield" aria-live="polite"></div>
+      </div>
+    </div>
+    <div id="sale-block" hidden><div class="calc" id="sale-calc" aria-live="polite"></div></div>`;
+
+  const html = `${topbar(title, back)}
+  <form class="content" id="deal-form" novalidate>
+    <section class="form-section"><h2>פרטי לקוח</h2>
+      ${field('phone', 'טלפון נייד', `<input class="input num" id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="050-0000000" value="${esc(c.phone)}">`)}
+      <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – הפרטים מולאו</p>
+      ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'))}
+      ${field('entity_type', 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה']], c.entity_type || 'private'))}
+      ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only' })}
+    </section>
+    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}</section>
+    <section class="form-section"><h2>מיקום</h2>${locSection}</section>
+    <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}</section>
+    <section class="form-section"><h2>שדות נוספים</h2>
+      <div id="custom-fields">${fieldsOf(module).map(f => customFieldHTML(f, d.custom?.[f.key])).join('')}</div>
+      <p class="hint" id="custom-empty" ${fieldsOf(module).length ? 'hidden' : ''}>אין עדיין שדות נוספים.</p>
+      <button type="button" class="link" id="add-field">+ שדה חדש</button>
+      <div id="new-field" hidden class="form-section" style="margin-top:8px">
+        ${field('nf_label', 'שם השדה', textInput('nf_label', '', 'placeholder="למשל: קומה"'))}
+        ${field('nf_type', 'סוג', `<select class="input" id="nf_type"><option value="text">טקסט</option><option value="number">מספר</option><option value="date">תאריך</option><option value="list">רשימה</option></select>`)}
+        ${field('nf_options', 'ערכים לבחירה', textInput('nf_options', '', 'placeholder="מופרדים בפסיק: א, ב, ג"'), { cls: 'nf-list-only' })}
+        <div class="row"><button type="button" class="btn primary" id="nf_save">הוספת השדה</button><button type="button" class="link" id="nf_cancel">ביטול</button></div>
+      </div>
+    </section>
+    <div class="sticky-save"><button class="btn primary block" type="submit" id="save">שמירה</button></div>
+  </form>`;
+
+  const mount = () => mountForm({ module, mode, dealId, src, lat, lng, back });
+  return { html, mount };
+}
+
+function mountForm({ module, mode, dealId, lat, lng }) {
+  const form = $('#deal-form'), isLead = module === 'lead';
+  const val = (id) => form.elements[id]?.value ?? '';
+  const radio = (name) => form.querySelector(`input[name="${name}"]:checked`)?.value ?? '';
+  const pin = { lat, lng };
+  const touched = new Set();
+
+  /* visibility */
+  const sync = () => {
+    $$('.company-only', form).forEach(el => el.hidden = radio('entity_type') !== 'company');
+    if (!isLead) {
+      const kind = radio('deal_kind');
+      $('#rent-block').hidden = kind !== 'rent';
+      $('#sale-block').hidden = kind !== 'sale';
+      $('#rented-block').hidden = !(kind === 'rent' && radio('is_rented') === 'true');
+      const price = parseNum(val('asking_price')), rent = parseNum(val('monthly_rent')), built = parseNum(val('built_sqm'));
+      $('#yield').textContent = price && rent ? `תשואה: ${fmt.pct(rent * 12 / price * 100)}` : 'תשואה: מלאי מחיר ושכירות';
+      const est = estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, built);
+      $('#sale-calc').innerHTML = `<div>מחיר למ״ר מבוקש: ${price && built ? fmt.ltr(fmt.money(price / built)) : '—'}</div>
+        <div>הערכת מחיר למ״ר: ${est ? fmt.ltr(fmt.money(est)) : '—'} <small>(הערכה)</small></div>`;
+    }
+  };
+
+  /* validation */
+  const rules = {
+    phone: () => Phone.normalize(val('phone')) ? '' : Phone.error,
+    name: () => val('name').trim() ? '' : 'יש למלא שם',
+    company_name: () => radio('entity_type') !== 'company' || val('company_name').trim() ? '' : 'יש למלא שם חברה',
+    pin: () => pin.lat != null ? '' : 'יש לבחור מיקום על המפה',
+    purpose_id: () => val('purpose_id') && val('purpose_id') !== '__new' ? '' : 'יש לבחור ייעוד',
+  };
+  const posNum = (id, msg) => rules[id] = () => (parseNum(val(id)) > 0 ? '' : msg);
+  if (isLead) {
+    rules.lead_date = () => val('lead_date') ? '' : 'יש לבחור תאריך';
+    rules.need_id = () => val('need_id') && val('need_id') !== '__new' ? '' : 'יש לבחור צורך';
+    posNum('size_value', 'יש למלא גודל');
+    posNum('height_m', 'יש למלא גובה');
+    posNum('budget_value', 'יש למלא תקציב');
+    rules.needed_by = () => val('needed_by') ? '' : 'יש לבחור תאריך';
+  } else {
+    posNum('built_sqm', 'יש למלא שטח בנוי');
+    posNum('plot_sqm', 'יש למלא שטח מגרש');
+    rules.description = () => val('description').trim() ? '' : 'יש למלא תיאור';
+    rules.address = () => val('address').trim() ? '' : 'יש למלא כתובת';
+    rules.deal_kind = () => radio('deal_kind') ? '' : 'יש לבחור השכרה או מכירה';
+    posNum('asking_price', 'יש למלא מחיר');
+    rules.is_rented = () => radio('deal_kind') !== 'rent' || radio('is_rented') ? '' : 'יש לבחור כן או לא';
+    rules.monthly_rent = () => radio('deal_kind') !== 'rent' || radio('is_rented') !== 'true' || parseNum(val('monthly_rent')) > 0 ? '' : 'יש למלא שכירות חודשית';
+  }
+  const check = (id) => {
+    const wrap = form.querySelector(`[data-field="${id}"]`); if (!wrap || !rules[id]) return true;
+    if (wrap.hidden || wrap.closest('[hidden]')) { wrap.classList.remove('invalid'); $(`#${id}-err`).textContent = ''; return true; }
+    const msg = rules[id]();
+    wrap.classList.toggle('invalid', !!msg); $(`#${id}-err`).textContent = msg;
+    form.elements[id]?.setAttribute?.('aria-invalid', msg ? 'true' : 'false');
+    return !msg;
+  };
+  const fieldIdOf = (el) => el.closest('[data-field]')?.dataset.field;
+  form.addEventListener('focusout', (e) => { const id = fieldIdOf(e.target); if (id && !id.startsWith('nf_')) { touched.add(id); check(id); } });
+  form.addEventListener('input', (e) => {
+    const id = fieldIdOf(e.target);
+    if (e.target.dataset.money !== undefined) { /* keep digits while typing */ }
+    if (id && form.querySelector(`[data-field="${id}"]`)?.classList.contains('invalid')) check(id);
+    sync();
+  });
+  form.addEventListener('change', (e) => { const id = fieldIdOf(e.target); sync(); if (id && touched.has(id)) check(id);
+    if (e.target.type === 'radio') { touched.add(id); check(id); } });
+  // format numbers on blur
+  form.addEventListener('focusout', (e) => { if (e.target.classList?.contains('num') && e.target.inputMode === 'decimal') {
+    const n = parseNum(e.target.value); e.target.value = n == null ? '' : fmt.num(n); } });
+
+  /* phone first: existing contact prefill */
+  const phoneEl = $('#phone');
+  let lastPhone = Phone.normalize(phoneEl.value);
+  phoneEl.addEventListener('blur', async () => {
+    const p = Phone.normalize(phoneEl.value);
+    if (!p) return;
+    phoneEl.value = p;
+    if (p === lastPhone) return;
+    lastPhone = p;
+    try {
+      const c = await DB.findContact(p);
+      $('#existing-note').hidden = !c;
+      if (c) {
+        form.elements.name.value = c.name;
+        form.querySelector(`input[name="entity_type"][value="${c.entity_type}"]`).checked = true;
+        form.elements.company_name.value = c.company_name || '';
+        ['name', 'company_name'].forEach(id => { if (touched.has(id) || form.querySelector(`[data-field="${id}"]`).classList.contains('invalid')) check(id); });
+        sync();
+      }
+    } catch (ex) { console.error(ex); }
+  });
+
+  /* "+ חדש" in dropdowns */
+  $$('select[data-list]', form).forEach(sel => {
+    const box = $(`#${sel.id}-new`), inp = $('input', box), [addBtn, cancelBtn] = $$('button', box);
+    let prev = sel.value === '__new' ? '' : sel.value;
+    sel.addEventListener('change', () => {
+      if (sel.value === '__new') { box.hidden = false; inp.value = ''; inp.focus(); }
+      else { prev = sel.value; box.hidden = true; }
+    });
+    const add = async () => {
+      const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+      addBtn.disabled = true;
+      try {
+        const row = await DB.addOption(sel.dataset.list, v);
+        if (!S.data.options.some(o => o.id === row.id)) S.data.options.push(row);
+        if (!sel.querySelector(`option[value="${row.id}"]`)) {
+          const o = new Option(row.value, row.id); sel.insertBefore(o, sel.querySelector('option[value="__new"]'));
+        }
+        sel.value = row.id; prev = row.id; box.hidden = true; check(sel.id); sync(); toast(`"${row.value}" נוסף לרשימה`);
+      } catch (ex) { console.error(ex); toast('ההוספה נכשלה. נסי שוב.'); }
+      addBtn.disabled = false;
+    };
+    addBtn.onclick = add;
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    cancelBtn.onclick = () => { sel.value = prev; box.hidden = true; sel.focus(); };
+  });
+
+  /* map */
+  let map, marker, circle;
+  const radiusEl = $('#radius');
+  const radiusLabel = () => { if (radiusEl) $('#radius-out').textContent = `${fmt.num(radiusEl.value / 1000)} ק״מ`; };
+  radiusLabel();
+  let addressAuto = !$('#address')?.value;
+  $('#address')?.addEventListener('input', () => { addressAuto = false; });
+  const place = async (latlng, { fromSearch, label } = {}) => {
+    pin.lat = latlng.lat; pin.lng = latlng.lng;
+    if (map) {
+      if (!marker) marker = L.marker(latlng).addTo(map); else marker.setLatLng(latlng);
+      if (radiusEl) { if (!circle) circle = L.circle(latlng, { radius: +radiusEl.value, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(map); else circle.setLatLng(latlng); }
+    }
+    check('pin');
+    if (!isLead) {
+      if (fromSearch && label) { $('#address').value = label; addressAuto = true; check('address'); }
+      else if (!fromSearch && (addressAuto || !$('#address').value)) {
+        try { const r = await Geo.reverse(pin.lat, pin.lng); if (r && !r.error) { $('#address').value = Geo.short(r); addressAuto = true; check('address'); } } catch {}
+      }
+    }
+  };
+  if (window.L) {
+    map = L.map('form-map').setView(lat != null ? [lat, lng] : MAP_CENTER, lat != null ? (isLead ? zoomForRadius(+radiusEl.value) : 15) : 12);
+    tiles().addTo(map); mapsToCleanup.push(map);
+    if (lat != null) place({ lat, lng }, { fromSearch: true });
+    map.on('click', (e) => place(e.latlng));
+  } else {
+    $('#form-map').innerHTML = '<p class="state">המפה לא נטענה. בדקי את החיבור לאינטרנט.</p>';
+  }
+  radiusEl?.addEventListener('input', () => { radiusLabel(); circle?.setRadius(+radiusEl.value); });
+  radiusEl?.addEventListener('change', () => { if (circle && map) map.fitBounds(circle.getBounds(), { padding: [10, 10] }); });
+
+  const geoSearch = async () => {
+    const q = $('#geo-q').value.trim(), ul = $('#geo-results');
+    if (q.length < 3) { ul.innerHTML = '<li class="hint" style="padding:8px">יש להקליד לפחות 3 תווים</li>'; return; }
+    ul.innerHTML = '<li class="hint" style="padding:8px"><span class="spinner"></span> מחפשת…</li>';
+    try {
+      const res = await Geo.search(q);
+      ul.innerHTML = res.length ? res.map((r, i) => `<li><button type="button" data-i="${i}">${esc(r.display_name)}</button></li>`).join('')
+        : '<li class="hint" style="padding:8px">לא נמצאה כתובת. אפשר להקיש על המפה.</li>';
+      $$('button', ul).forEach(b => b.onclick = () => {
+        const r = res[b.dataset.i], ll = { lat: +r.lat, lng: +r.lon };
+        ul.innerHTML = ''; place(ll, { fromSearch: true, label: Geo.short(r) });
+        map?.setView([ll.lat, ll.lng], isLead ? zoomForRadius(+radiusEl.value) : 16);
+      });
+    } catch (ex) { console.error(ex); ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
+  };
+  $('#geo-go').onclick = geoSearch;
+  $('#geo-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); geoSearch(); } });
+
+  /* + שדה חדש */
+  const nf = $('#new-field');
+  const nfSync = () => $$('.nf-list-only', nf).forEach(el => el.hidden = $('#nf_type').value !== 'list');
+  $('#add-field').onclick = () => { nf.hidden = false; $('#add-field').hidden = true; nfSync(); $('#nf_label').focus(); };
+  $('#nf_type').onchange = nfSync;
+  $('#nf_cancel').onclick = () => { nf.hidden = true; $('#add-field').hidden = false; };
+  $('#nf_save').onclick = async (e) => {
+    const label = $('#nf_label').value.trim(), type = $('#nf_type').value;
+    const options = type === 'list' ? $('#nf_options').value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    $('#nf_label-err').textContent = label ? '' : 'יש למלא שם שדה';
+    $('#nf_options-err').textContent = type === 'list' && !options.length ? 'יש למלא לפחות ערך אחד' : '';
+    if (!label || (type === 'list' && !options.length)) return;
+    e.currentTarget.disabled = true;
+    try {
+      const sort = (fieldsOf(module).at(-1)?.sort || 0) + 10;
+      const f = await DB.addField({ module, label, type, options, sort });
+      S.data.fields.push(f);
+      $('#custom-fields').insertAdjacentHTML('beforeend', customFieldHTML(f, ''));
+      $('#custom-empty').hidden = true;
+      nf.hidden = true; $('#add-field').hidden = false; $('#nf_label').value = ''; $('#nf_options').value = '';
+      $('#cf_' + f.key).focus(); toast(`השדה "${f.label}" נוסף`);
+    } catch (ex) { console.error(ex); toast('הוספת השדה נכשלה. נסי שוב.'); }
+    e.currentTarget.disabled = false;
+  };
+
+  sync();
+
+  /* save */
+  let saving = false;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (saving) return;
+    const ids = Object.keys(rules);
+    const bad = ids.filter(id => !check(id));
+    if (bad.length) {
+      const order = $$('[data-field]', form).map(el => el.dataset.field);
+      const first = order.find(id => bad.includes(id));
+      const wrap = form.querySelector(`[data-field="${first}"]`);
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (wrap.querySelector('input:not([type=radio]),select,textarea') || wrap.querySelector('input'))?.focus({ preventScroll: true });
+      return;
+    }
+    const custom = {};
+    for (const f of fieldsOf(module)) {
+      const v = val('cf_' + f.key);
+      if (v !== '' && v != null) custom[f.key] = f.type === 'number' ? parseNum(v) : v;
+    }
+    const contact = { phone: Phone.normalize(val('phone')), name: val('name').trim(), entity_type: radio('entity_type'),
+      company_name: radio('entity_type') === 'company' ? val('company_name').trim() : null };
+    let p;
+    if (isLead) {
+      p = { id: dealId, contact, lead_date: val('lead_date'), need_id: val('need_id'), purpose_id: val('purpose_id'),
+        size_value: parseNum(val('size_value')), size_unit: radio('size_unit'), lat: pin.lat, lng: pin.lng,
+        radius_m: +radiusEl.value, height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,
+        budget_value: parseNum(val('budget_value')), budget_kind: radio('budget_kind'), needed_by: val('needed_by'), custom };
+    } else {
+      const kind = radio('deal_kind'), rented = kind === 'rent' ? radio('is_rented') === 'true' : null;
+      p = { id: dealId, contact, purpose_id: val('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
+        lat: pin.lat, lng: pin.lng, address: val('address').trim(), description: val('description').trim(), deal_kind: kind,
+        asking_price: parseNum(val('asking_price')), is_rented: rented, monthly_rent: rented ? parseNum(val('monthly_rent')) : null,
+        ai_price_per_sqm: kind === 'sale' ? estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, parseNum(val('built_sqm'))) : null,
+        custom };
+    }
+    saving = true;
+    const btn = $('#save'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> שומרת…';
+    try {
+      await DB.saveDeal(module, p);
+      await reload();
+      toast(mode === 'edit' ? 'השינויים נשמרו' : 'העסקה נשמרה');
+      go(`#/m/${module}/${dealId}`);
+    } catch (ex) {
+      console.error(ex);
+      const msg = ex?.message?.includes('10 ספרות') ? Phone.error : 'השמירה נכשלה. בדקי את החיבור ונסי שוב – כל מה שהוקלד נשמר בטופס.';
+      toast(msg);
+      saving = false; btn.disabled = false; btn.textContent = 'שמירה';
+    }
+  };
+}
+
+/* ════════════ boot ════════════ */
+async function afterLogin() {
+  S.session = await DB.session();
+  if (!S.session) return render();
+  try { S.member = await DB.isMember(); } catch (e) { console.error(e); S.member = null; }
+  S.data = null;
+  render();
+}
+async function boot() {
+  try { S.session = await DB.session(); } catch (e) { console.error(e); }
+  if (S.session) await afterLogin(); else render();
+  DB.onAuth((s) => { if (!s && S.session) { S.session = null; S.data = null; render(); } });
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && S.session && S.data && parseRoute().name !== 'form') { await reload(); render(); }
+  });
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+boot();
+</script>
+</body>
+</html>

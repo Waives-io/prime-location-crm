@@ -1,35 +1,47 @@
 # PLAN – Prime Location CRM, phase 1
 
 ## Goal
-Working end-to-end mockup of a mobile-first, Hebrew RTL CRM for one user (Leah, owner of Prime Location, commercial real estate).
-Two modules: Leads ("מתעניינים") and Owners/Landlords ("בעלים/משכיר"). Phase 2 (not now): dashboards, integrations, automations, alerts, lead-to-property matching, more users.
+Mobile-first Hebrew RTL CRM for one user (Leah, Prime Location, commercial real estate, Kiryat Gat area).
+Two modules: leads ("מתעניינים") and owners/landlords ("בעלים/משכיר"). Working end to end on real data.
+Out of scope: dashboards, matching, real AI, automations, alerts, integrations, more users.
+Data must serve phase 2 (matching, dashboards, Make/n8n) with no migration of existing rows.
 
 ## Approach
-- Stack: single self-contained HTML file, vanilla JS, no build step. Supabase (free tier, WAIVES account) for DB + auth. Hosted on GitHub Pages, repo in the WAIVES GitHub org. PWA manifest so it installs on phone.
-- Auth now, even in phase 1: Supabase email+password for Leah only. RLS = authenticated users only. Reason: real DB from day one + public Pages URL + anon key = data exposed without RLS.
-- Map: Leaflet + OpenStreetMap tiles, Nominatim for address search. Store lat/lng (+ radius_m for leads). Owners store an exact point + address.
-- AI price-per-sqm estimate: simulated in phase 1, clearly labelled "הערכה". Real AI in phase 2 via a Supabase Edge Function (API key never in the client).
+- One `index.html`, vanilla JS, no build. CDN: supabase-js v2, Leaflet. Font: Heebo. PWA manifest + icons.
+- Supabase free tier (WAIVES account): Postgres + Auth (email/password, Leah only, sign-ups off).
+- RLS on every table: only users listed in `crm_members` (Leah's auth uid) can read/write; `anon` and any other
+  logged-in account get nothing. Every row has `created_by uuid default auth.uid()`. Only URL + anon key in the client.
+- Saves go through one transactional RPC per module (`save_lead_deal`, `save_owner_deal`): normalize phone,
+  upsert contact, insert/update the deal, all or nothing. The client creates the deal id up front, so a retry after a
+  timeout updates the same row instead of creating a duplicate.
+- GitHub Pages, repo `prime-location-crm` in the WAIVES org.
+- Map: Leaflet + OSM tiles, Nominatim search (he, countrycodes=il, debounced ≥1s, min 3 chars).
+- Price estimate: client-side heuristic by purpose × size, labelled "הערכה". Phase 2 → Edge Function.
 
-## Data model
-- `contacts` – id, phone (UNIQUE, normalized 05X-XXXXXXX), name, entity_type (company/private), company_name, created_at, created_by.
-  One phone = one contact. The same contact can have deals in both modules.
-- `lead_deals` – one row per deal. contact_id, lead_date (manual), need (option list), purpose (option list), size_value + size_unit (sqm/dunam), lat, lng, radius_m, height_m, notes (optional), budget_value + budget_kind (total / per sqm), needed_by, status (active/closed/irrelevant), closed_at, custom jsonb.
-- `owner_deals` – one row per deal. contact_id, purpose (separate option list), built_sqm, plot_sqm, lat, lng, address, description, deal_kind (rent/sale), asking_price_or_value, is_rented, monthly_rent, yield_pct (computed = monthly_rent*12 / asking_price_or_value), ai_price_per_sqm (estimate), status, closed_at, custom jsonb.
-- `option_lists` – list_key (lead_need, lead_purpose, owner_purpose), value, sort. "+ חדש" inline in every dropdown.
-- `custom_fields` – module, key, label, type (text/number/date/list), sort. New fields are optional (existing rows have no value). Values live in each deal's `custom` jsonb.
+## Data model (`supabase/schema.sql`)
+- `contacts`: phone UNIQUE NOT NULL (`05X-XXXXXXX`), name, entity_type, company_name (CHECK: required when company).
+- `lead_deals`: contact_id, lead_date, need, purpose, size_value+size_unit, size_sqm (normalized), lat, lng, radius_m, height_m, notes (optional), budget_value+budget_kind, needed_by, status, closed_at, custom jsonb.
+- `owner_deals`: contact_id, purpose, built_sqm, plot_sqm, lat, lng, address, description, deal_kind, asking_price, is_rented, monthly_rent, yield_pct, ai_price_per_sqm, status, closed_at, custom jsonb.
+- `option_lists` (id, list_key, value, sort, match_group nullable; UNIQUE pair) seeded with `lead_need`, `lead_purpose`, `owner_purpose`.
+  Deals store the option **id** (FK), not the text, so renaming a value never breaks history. `match_group`
+  (empty now) lets phase 2 map lead purposes to owner purposes without touching deal rows.
+- `crm_members` (user_id) – the allowlist used by RLS.
+- `custom_fields` (module, key slug, label, type, options, sort). Values in `custom` jsonb; always optional.
+- CHECK constraints for enums; indexes on contact_id, status, phone; `updated_at` triggers.
+- Demo data: 10 leads + 8 owner deals (2 archived each), one contact in both modules, one with two leads.
 
-## Behaviour
-- New deal: phone first. Existing phone → attach to that contact and prefill name/company.
-- Duplicate: copies a deal (all fields) into a prefilled new form.
-- Close: deal moves to archive with reason (closed / no longer relevant); can be restored.
-- Screens: login → home with 2 big module buttons → module list (search, active/archive, big "+ חדש") → deal form → deal card (edit, duplicate, archive, call, WhatsApp). Module switcher: right sidebar on desktop, bottom bar on mobile.
+## Behaviour (key points)
+Phone first → existing contact prefills (name edit updates the contact). "+ חדש" in every dropdown.
+Duplicate = prefilled unsaved form. Close with reason → archive → restore. No hard delete.
+Rent → rented? → monthly rent → live yield. Sale → asking ₪/sqm + estimate.
 
-## Files touched
-index.html, manifest.json, icons, supabase/schema.sql (tables + RLS + seed lists + demo data).
+## Files
+`index.html`, `manifest.json`, `icons/`, `assets/` (logo, photos), `supabase/schema.sql`, `qa/` (Playwright tests).
 
-## Risks to challenge
-1. Contact-per-phone + deals split into two tables vs one generic deals table – right for phase 2 matching and dashboards?
-2. Custom fields in jsonb – OK for filtering/dashboards later, or should custom fields be typed columns?
-3. Two separate purpose lists (client's choice) make automatic matching harder in phase 2 – need a mapping table?
-4. Supabase anon key in a static page + RLS – sufficient for a single-user CRM with client contact data?
-5. Phone as the business identifier: what about a contact who changes number, or one company with several phones?
+## Risks (after Codex critique)
+1. RLS: test that anon AND a second logged-in non-member read nothing.
+2. Atomic save: test deal-validation failure leaves no orphan contact; retry with same id makes no duplicate.
+3. Editing the name on a deal changes the contact for all its deals (by design; the form says so).
+4. Custom fields in jsonb: fine for phase 2 filtering at this scale; field keys never change after creation.
+5. Nominatim usage policy and OSM tile limits: debounce, cache, attribution.
+6. Phone as identity: number change = edit the contact's phone (not in phase 1 UI; documented as open).

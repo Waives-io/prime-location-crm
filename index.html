@@ -147,12 +147,16 @@ textarea.input{min-height:90px;resize:vertical}
 /* ── toast & dialog ── */
 #toast{position:fixed;inset-inline:16px;bottom:96px;margin:auto;max-width:420px;background:var(--ink);color:#fff;border-radius:12px;padding:12px 16px;text-align:center;z-index:50;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
 #toast.show{opacity:1;transform:none}
+#toast.has-action{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:8px;padding-inline-end:8px;text-align:start}
 #toast.has-action.show{pointer-events:auto}
-.toast-act{background:none;border:0;color:var(--yellow);font-weight:700;text-decoration:underline;min-height:var(--tap);padding:0 8px;cursor:pointer}
+.toast-act{flex:0 0 auto;min-height:var(--tap);padding:0 14px;border:1px solid var(--yellow);border-radius:999px;background:transparent;color:var(--yellow);font-weight:800;cursor:pointer;transition:transform .14s ease,box-shadow .14s ease,background-color .14s ease,color .14s ease}
+.toast-act:hover{background:var(--yellow);color:var(--ink);box-shadow:2px 2px 0 #fff;transform:translate(-1px,-1px)}
+.toast-act:active{box-shadow:none;transform:translate(1px,1px)}
+.toast-act:focus-visible{outline:3px solid #fff;outline-offset:2px}
 /* list row action ("סגירת עסקה" / "החזרה לפעילות") under the date */
 .deal-row{position:relative}
-.deal-row>a{padding-bottom:56px!important}
-.row-act{position:absolute;inset-inline-end:10px;bottom:8px;min-height:40px;padding:0 14px;font-size:.88rem}
+.deal-row>a>.meta:last-child{min-height:44px;padding-inline-end:142px}
+.row-act{position:absolute;inset-inline-end:10px;top:47px;min-height:44px;padding:0 12px;border-width:1.5px;background:var(--surface);font-size:.8rem;line-height:1;white-space:nowrap}
 dialog{border:0;border-radius:var(--radius);padding:20px;width:min(420px,calc(100% - 32px))}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 14px;font-size:1.2rem}

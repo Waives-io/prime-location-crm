@@ -107,8 +107,9 @@ try {
   await page.fill('#q', 'אברהם לוגיסטיקה'); assert.equal(await page.locator('#rows li a').count(), 2);
   await page.fill('#q', '');
   ok('list: tabs; search covers active + archive (archived row marked "ארכיון"); name, phone, company; empty state');
-  assert.equal(await page.isVisible('.fab'), true); assert.equal(await page.isVisible('.new-top'), false);
-  ok('phone: "+ חדש" floats at the bottom, not in the top bar');
+  assert.deepEqual(await page.locator('.bottom-nav a').allInnerTexts(), ['מתעניינים', '+ חדש', 'בעלים / משכיר']);
+  assert.equal(await page.isVisible('.new-top'), false); assert.equal(await page.locator('.fab').count(), 0);
+  ok('phone: "+ חדש" sits in the middle of the bottom bar (no floating button over the rows)');
 
   /* daily sweep: close / restore from the list */
   const firstName = await page.locator('#rows li .name').first().innerText();
@@ -131,7 +132,7 @@ try {
   ok('archive tab: "החזרה לפעילות" on a row restores it');
 
   /* ── new lead: validation ── */
-  await page.click('.fab');
+  await page.click('.bottom-nav .nav-new');
   await page.waitForSelector('#deal-form');
   assert.equal(await page.locator('.back').innerText(), 'חזרה');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.back'), '::before').content), '"→"');
@@ -282,8 +283,8 @@ try {
 
   /* ── owner: rent + rented → yield ── */
   await page.click('.bottom-nav a:has-text("בעלים")');
-  await page.waitForSelector('.fab');
-  await page.click('.fab');
+  await page.waitForSelector('#rows');
+  await page.click('.bottom-nav .nav-new');
   await page.waitForSelector('#deal-form');
   await fill('#phone', '053 999 8887');
   assert.equal(await page.inputValue('#phone'), '053-9998887');
@@ -343,7 +344,7 @@ try {
   assert.equal(await page.isVisible('.side-nav'), true);
   assert.equal(await page.isVisible('.bottom-nav'), false);
   assert.equal(await page.locator('.side-nav a[aria-current=page]').innerText(), 'בעלים / משכיר');
-  assert.equal(await page.isVisible('.topbar .new-top'), true); assert.equal(await page.isVisible('.fab'), false);
+  assert.equal(await page.isVisible('.topbar .new-top'), true); assert.equal(await page.isVisible('.bottom-nav'), false);
   ok('desktop: right side menu with active module, no bottom bar, "+ חדש" in the top bar');
   await shot('09-desktop-list');
 

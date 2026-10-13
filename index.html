@@ -40,7 +40,7 @@ a{color:inherit}
 .bottom-nav{position:fixed;inset-inline:0;bottom:0;display:flex;background:var(--bg);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:20}
 .bottom-nav a{flex:1;min-height:56px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:700;color:var(--charcoal)}
 .bottom-nav a[aria-current=page]{color:var(--ink);box-shadow:inset 0 3px 0 var(--yellow)}
-.has-bottom-nav .main{padding-bottom:72px}
+.has-bottom-nav .main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
 @media (min-width:900px){
   .side-nav{display:flex;flex-direction:column;gap:6px;width:240px;padding:20px 14px;border-inline-start:0;border-inline-end:1px solid var(--line);position:sticky;top:0;height:100dvh;background:var(--surface)}
   .side-nav a.mod{min-height:var(--tap);display:flex;align-items:center;padding-inline:14px;border-radius:999px;text-decoration:none;font-weight:700}
@@ -113,8 +113,6 @@ textarea.input{min-height:90px;resize:vertical}
 .list .r1{display:flex;justify-content:space-between;gap:8px}
 .list .name{font-weight:800}
 .list .meta{color:var(--charcoal);font-size:.92rem}
-.fab{position:fixed;bottom:88px;inset-inline-start:auto;inset-inline-end:16px;z-index:25;min-height:56px;padding:0 26px;font-size:1.1rem;box-shadow:0 2px 0 var(--ink)}
-@media (min-width:900px){.fab{bottom:24px}}
 .state{padding:32px 8px;text-align:center;color:var(--charcoal)}
 
 /* ── card ── */
@@ -176,10 +174,14 @@ input[dir=ltr],bdi[dir=ltr]{direction:ltr}
 .brand-mini{width:42px;height:42px;flex:0 0 42px}
 .back{border-radius:999px;padding-inline:10px;white-space:nowrap}.back::before{font-size:1.3rem}
 .bottom-nav{min-height:70px;padding:0 10px env(safe-area-inset-bottom);gap:6px;border-top:1px solid var(--line);box-shadow:0 -8px 28px rgba(26,26,26,.06)}
-.bottom-nav a{position:relative;min-height:60px;border-radius:12px 12px 0 0;font-size:.95rem}
+.bottom-nav a{position:relative;min-width:0;min-height:60px;border-radius:12px 12px 0 0;font-size:.95rem;white-space:nowrap}
 .bottom-nav a::before{content:"";width:7px;height:7px;margin-inline-end:8px;border:2px solid currentColor;border-radius:50%}
 .bottom-nav a[aria-current=page]{box-shadow:inset 0 4px 0 var(--yellow);background:#fffdf3}.bottom-nav a[aria-current=page]::before{background:var(--yellow)}
-.has-bottom-nav .main{padding-bottom:76px}.content{padding:24px 20px 112px;max-width:800px}
+.bottom-nav a.nav-new{flex:0 0 76px;align-self:center;min-height:48px;margin-top:-12px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow);color:var(--ink);box-shadow:4px 4px 0 var(--ink);white-space:nowrap}
+.bottom-nav a.nav-new::before{display:none}
+.bottom-nav a.nav-new:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--ink)}
+.bottom-nav a.nav-new:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
+.has-bottom-nav .main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}.content{padding:24px 20px 112px;max-width:800px}
 
 /* controls */
 .btn{min-height:48px;padding-inline:24px;box-shadow:none;transition:transform .15s,box-shadow .15s}.btn:hover{box-shadow:3px 3px 0 var(--ink);transform:translate(-1px,-1px)}.btn:active{box-shadow:none;transform:none}
@@ -197,7 +199,6 @@ body[data-screen=list] .content{max-width:820px}
 .tabs{margin:14px 0 22px}.tabs .seg{max-width:320px;margin-inline-start:auto}.list{border-top:1px solid var(--line)}
 .list li a{padding:17px 14px 17px 10px;border-inline-start:4px solid transparent;transition:.15s}.list li a:hover,.list li a:focus-visible{background:var(--surface);border-inline-start-color:var(--yellow);outline:none}
 .list .r1{align-items:baseline}.list .name{font-size:1.05rem}.list .meta{margin-top:3px}.list .r1>.meta{margin:0;white-space:nowrap;font-size:.86rem}
-.fab{bottom:92px;inset-inline-end:20px;min-height:58px;box-shadow:4px 4px 0 var(--ink)}.fab:hover{box-shadow:2px 2px 0 var(--ink)}
 .state{padding:42px 12px;border:1px dashed #cecec8;border-radius:16px;background:var(--surface)}
 
 /* forms */
@@ -224,13 +225,13 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
   .side-nav{width:272px;padding:26px 22px 22px;gap:10px;border-inline-end:1px solid var(--line);background:#f7f7f5;box-shadow:-8px 0 24px rgba(26,26,26,.04)}
   .side-nav::before{content:"ניהול עסקאות";font-size:.78rem;font-weight:700;color:#6a6a66;margin:10px 14px 2px}.brand-side{display:block;padding:4px 8px 22px;border-bottom:1px solid var(--line);margin-bottom:8px}.brand-side img{display:block;width:176px!important;margin:auto}
   .side-nav a.mod{position:relative;min-height:52px;padding-inline:18px;border:2px solid transparent}.side-nav a.mod::after{content:"←";position:absolute;inset-inline-end:16px;opacity:0}.side-nav a.mod:hover{background:#fff;border-color:var(--line)}.side-nav a.mod[aria-current=page]{background:var(--yellow);border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}.side-nav a.mod[aria-current=page]::after{opacity:1}
-  .topbar{padding-inline:32px}.topbar::after{inset-inline-start:32px}.content{padding:32px 36px 100px;max-width:900px}.fab{bottom:30px;inset-inline-end:308px}.sticky-save{inset-inline-start:0;inset-inline-end:272px}
+  .topbar{padding-inline:32px}.topbar::after{inset-inline-start:32px}.content{padding:32px 36px 100px;max-width:900px}.sticky-save{inset-inline-start:0;inset-inline-end:272px}
   .hero{padding:34px 48px}.hero-logo{width:150px}
 }
 @media (max-width:420px){.topbar{min-height:66px;padding:10px 16px}.topbar h1{font-size:1.35rem}.brand-mini{width:38px;height:38px;flex-basis:38px}.content{padding-inline:16px}.hero{padding:18px 16px}.login-box{padding:28px 22px}.row{gap:8px}.form-section{padding:20px 14px}.dl{grid-template-columns:minmax(84px,auto) 1fr}.dl dt{font-size:.88rem}}
-/* functional: + חדש in the top bar on desktop, floating on phone; archive marker; option editor */
+/* functional: + חדש in the top bar on desktop; archive marker; option editor */
 .new-top{display:none}
-@media (min-width:900px){.new-top{display:inline-flex}.fab{display:none}}
+@media (min-width:900px){.new-top{display:inline-flex}}
 .row-chip{margin-inline-start:6px;vertical-align:middle}
 .opt-edit{font-size:.88rem;padding:4px 0;min-height:var(--tap)}
 .opt-rows{list-style:none;margin:0 0 12px;padding:0;max-height:55vh;overflow:auto}
@@ -487,7 +488,7 @@ function shell(r, html) {
       <button class="link" data-act="logout">יציאה</button>
     </nav>
     <div class="main">${html}</div>
-    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('')}</nav>` : ''}
+    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('').replace('</a><a', `</a><a class="nav-new" href="#/m/${r.module}/new">+ חדש</a><a`)}</nav>` : ''}
   </div>`;
 }
 const topbar = (title, backHref, backText = 'חזרה', action = '') => `<header class="topbar">
@@ -617,7 +618,7 @@ function listView(module) {
     </div></div>
     <ul class="list" id="rows"></ul>
   </div>
-  <a class="btn primary fab" href="#/m/${module}/new">+ חדש</a>`;
+`;
   const mount = () => {
     const draw = () => {
       const q = st.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');

@@ -304,6 +304,7 @@ function supabaseDB() {
     onAuth(cb) { sb.auth.onAuthStateChange((_e, s) => cb(s)); },
     async signIn(email, password) { must(await sb.auth.signInWithPassword({ email, password })); },
     async signOut() { await sb.auth.signOut(); },
+    async changePassword(password) { must(await sb.auth.updateUser({ password })); },
     async isMember() { return !!must(await sb.from('crm_members').select('user_id').maybeSingle()); },
     async loadAll() {
       const [options, fields, lead, owner] = await Promise.all([
@@ -394,6 +395,7 @@ function shell(r, html) {
       <a href="#/" class="brand-side"><img src="assets/logo.png" alt="פריים לוקיישן – לדף הבית" style="width:150px"></a>
       ${navLinks('mod')}
       <div class="spacer"></div>
+      <button class="link" data-act="password">שינוי סיסמה</button>
       <button class="link" data-act="logout">יציאה</button>
     </nav>
     <div class="main">${html}</div>
@@ -409,7 +411,51 @@ const topbar = (title, backHref, backText = 'חזרה') => `<header class="topba
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act="logout"]');
   if (b) { await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
+  if (e.target.closest('[data-act="password"]')) passwordDialog();
 });
+
+/* ════════════ change password ════════════ */
+function passwordDialog() {
+  const dlg = $('#dlg');
+  dlg.onclick = null;
+  dlg.innerHTML = `<form id="pw-form" novalidate><h2>שינוי סיסמה</h2>
+    <div class="field" data-field="pw1"><label for="pw1">סיסמה חדשה</label>
+      <div class="pw"><input class="input" id="pw1" type="password" autocomplete="new-password" dir="ltr">
+      <button type="button" class="eye" aria-label="הצגת הסיסמה" aria-pressed="false">👁</button></div>
+      <p class="hint">לפחות 8 תווים</p><p class="err" id="pw1-err" aria-live="polite"></p></div>
+    <div class="field" data-field="pw2"><label for="pw2">שוב את הסיסמה החדשה</label>
+      <input class="input" id="pw2" type="password" autocomplete="new-password" dir="ltr">
+      <p class="err" id="pw2-err" aria-live="polite"></p></div>
+    <div class="stack"><button class="btn primary" type="submit">שמירת הסיסמה</button>
+      <button class="link" type="button" id="pw-cancel">ביטול</button></div></form>`;
+  const pw1 = $('#pw1'), pw2 = $('#pw2');
+  $('.eye', dlg).onclick = (e) => { const show = pw1.type === 'password'; pw1.type = pw2.type = show ? 'text' : 'password';
+    e.currentTarget.setAttribute('aria-pressed', show); e.currentTarget.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'); };
+  const checks = {
+    pw1: () => pw1.value.length >= 8 ? '' : 'הסיסמה צריכה להכיל לפחות 8 תווים',
+    pw2: () => pw2.value === pw1.value ? '' : 'הסיסמאות לא זהות',
+  };
+  const check = (id) => { const m = checks[id](); $(`#${id}-err`).textContent = m; dlg.querySelector(`[data-field=${id}]`).classList.toggle('invalid', !!m); return !m; };
+  [pw1, pw2].forEach(el => {
+    el.addEventListener('blur', () => { if (el.value) check(el.id); });
+    el.addEventListener('input', () => { if (dlg.querySelector(`[data-field=${el.id}]`).classList.contains('invalid')) check(el.id); });
+  });
+  $('#pw-cancel').onclick = () => dlg.close();
+  $('#pw-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const bad = ['pw1', 'pw2'].filter(id => !check(id));
+    if (bad.length) { $('#' + bad[0]).focus(); return; }
+    const btn = $('button[type=submit]', dlg); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> שומרת…';
+    try { await DB.changePassword(pw1.value); dlg.close(); toast('הסיסמה עודכנה. בפעם הבאה נכנסים עם הסיסמה החדשה.'); }
+    catch (ex) {
+      console.error(ex);
+      $('#pw1-err').textContent = /different|same/i.test(ex.message || '') ? 'הסיסמה החדשה צריכה להיות שונה מהנוכחית'
+        : /weak|short|characters/i.test(ex.message || '') ? 'הסיסמה חלשה מדי. נסי סיסמה ארוכה יותר.' : 'השמירה נכשלה. בדקי את החיבור ונסי שוב.';
+      btn.disabled = false; btn.textContent = 'שמירת הסיסמה';
+    }
+  };
+  dlg.showModal(); pw1.focus();
+}
 
 /* ════════════ login ════════════ */
 function renderLogin(app) {
@@ -453,7 +499,7 @@ function renderHome(app) {
   const photo = { lead: 'assets/photo-building.jpg', owner: 'assets/photo-warehouse.jpg' };
   app.innerHTML = `<main class="hero">
     <div class="hero-top">
-      <button class="link" data-act="logout">יציאה</button>
+      <span class="hero-user"><button class="link" data-act="password">שינוי סיסמה</button> · <button class="link" data-act="logout">יציאה</button></span>
       <img class="hero-logo" src="assets/logo.png" alt="פריים לוקיישן">
     </div>
     <div class="home-buttons">

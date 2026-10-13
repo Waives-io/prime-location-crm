@@ -48,6 +48,7 @@
     async signIn(email, password) { await delay();
       if (email !== TEST_USER.email || password !== TEST_USER.password) throw new Error('Invalid login credentials');
       session = { user: { id: 'qa' } }; try { sessionStorage.setItem('pl-qa-session', '1'); } catch {} },
+    async changePassword(pw) { await delay(); if (pw === TEST_USER.password) throw new Error('New password should be different from the old password.'); TEST_USER.password = pw; },
     async signOut() { session = null; try { sessionStorage.removeItem('pl-qa-session'); } catch {} },
     async isMember() { return true; },
     async loadAll() { await delay(); return { options: clone(db.options), fields: clone(db.fields), lead: join(db.lead), owner: join(db.owner) }; },

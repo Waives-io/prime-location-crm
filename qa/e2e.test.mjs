@@ -34,7 +34,7 @@ await ctx.route('https://nominatim.openstreetmap.org/**', (route) => {
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
-page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|network|Invalid login credentials/.test(m.text())) errors.push(m.text()); });
+page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|network|Invalid login credentials|should be different/.test(m.text())) errors.push(m.text()); });
 
 let pass = 0;
 const ok = (n) => { pass++; console.log('  ✓', n); };
@@ -64,6 +64,21 @@ try {
   await shot('02-home');
   await page.reload(); await page.waitForSelector('.home-btn');
   ok('session remembered after reload');
+
+  /* change password */
+  await page.click('[data-act=password]');
+  await page.fill('#pw1', 'short'); await page.locator('#pw1').blur();
+  assert.equal(await text('#pw1-err'), 'הסיסמה צריכה להכיל לפחות 8 תווים');
+  await page.fill('#pw1', 'qa-pass-1234'); await page.fill('#pw2', 'qa-pass-9999');
+  await page.click('#pw-form button[type=submit]');
+  assert.equal(await text('#pw2-err'), 'הסיסמאות לא זהות');
+  await page.fill('#pw2', 'qa-pass-1234'); await page.click('#pw-form button[type=submit]');
+  await page.waitForSelector('#pw1-err:has-text("שונה מהנוכחית")');
+  await page.fill('#pw1', 'new-pass-5678'); await page.fill('#pw2', 'new-pass-5678');
+  await page.click('#pw-form button[type=submit]');
+  await page.waitForSelector('#toast.show:has-text("הסיסמה עודכנה")');
+  assert.equal(await page.evaluate(() => document.querySelector('#dlg').open), false);
+  ok('change password: min length, match check, same-password error, success toast');
 
   /* ── list, archive, search ── */
   await page.click('.home-btn >> nth=0');

@@ -233,6 +233,71 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
 .opt-rows li{padding:10px 0;border-bottom:1px solid var(--line)}
 .opt-rows .add-inline{margin:0}
 .cf-list:empty{display:none}
+
+/* Round 2: Leah's business card becomes a tactile daily work tool. */
+:is(.btn,.link,.home-btn,.side-nav a.mod,.bottom-nav a,.seg label){
+  transition:transform .14s ease,box-shadow .14s ease,background-color .14s ease,border-color .14s ease,color .14s ease;
+}
+:is(.btn,.home-btn,.side-nav a.mod,.seg label):not([disabled]):hover{
+  transform:translate(-2px,-2px);box-shadow:4px 4px 0 var(--ink);
+}
+:is(.btn,.home-btn,.side-nav a.mod,.seg label):not([disabled]):active{
+  transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink);
+}
+.link:not([disabled]):hover{background:var(--yellow);box-shadow:3px 3px 0 var(--ink);text-decoration:none;transform:translate(-1px,-1px)}
+.link:not([disabled]):active{box-shadow:none;transform:translate(1px,1px)}
+:is(.btn,.link,.home-btn,.side-nav a.mod,.bottom-nav a,.seg label):focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* Home: two phone-scale yellow actions, centered over the single brand sweep. */
+.home-buttons{flex:1;flex-direction:column;justify-content:center;align-items:center;gap:22px;max-width:440px;margin:0 auto;padding:40px 0}
+.home-btn,.home-btn[style]{width:100%;min-height:142px;flex:0 0 auto;align-items:center;padding:22px;background:var(--yellow)!important;color:var(--ink);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);text-align:center}
+.home-btn::before{display:none}.home-btn::after{display:none}
+.home-btn strong{font-size:clamp(1.6rem,7vw,2rem);line-height:1.1}.home-btn small{margin-top:9px;font-size:.94rem;font-weight:500}
+.home-btn:hover{background:#ffe043!important;box-shadow:3px 3px 0 var(--ink)}
+.home-btn:active{box-shadow:1px 1px 0 var(--ink)}
+
+/* Segmented controls: compact beside inputs, balanced at full width. */
+.seg{min-height:50px;width:100%;padding:3px;gap:3px;border:2px solid var(--ink);border-radius:13px;overflow:visible;background:var(--surface)}
+.seg label{min-width:76px;min-height:40px;padding:0 10px;border:1px solid transparent;border-radius:8px;white-space:nowrap}
+.seg label span{min-height:40px;padding:0 3px}
+.seg label:has(input:checked){background:var(--yellow);border-color:var(--ink);box-shadow:2px 2px 0 var(--ink);color:var(--ink)}
+.seg label:has(input:focus-visible){outline:3px solid var(--ink);outline-offset:2px}
+.row>.seg{flex:0 0 auto;width:auto;height:50px}
+.row>.seg label{flex:0 1 auto}
+
+/* New and supporting controls. */
+.new-top{flex:0 0 auto;min-height:46px;padding-inline:18px;white-space:nowrap}
+.row-chip{margin-inline-start:8px;padding:2px 9px;border:1px solid var(--charcoal);background:#fff;color:var(--charcoal);font-size:.75rem;line-height:1.35}
+.opt-edit,.add-field{width:max-content;color:var(--charcoal);font-size:.88rem;text-decoration-thickness:1px;text-underline-offset:4px}
+.add-field{margin-top:2px;padding-inline:8px;border:1px dashed transparent}
+.add-field:hover{border-color:var(--ink)}
+#new-field{position:relative;border:2px solid var(--ink);border-top:7px solid var(--yellow);box-shadow:5px 5px 0 var(--ink);animation:field-in .18s ease-out}
+#new-field::before{content:"";position:absolute;inset-inline-start:22px;top:-14px;width:14px;height:14px;background:var(--yellow);border-inline-start:2px solid var(--ink);border-top:2px solid var(--ink);transform:rotate(45deg)}
+@keyframes field-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+.geo-box{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+.geo-box .btn{min-height:50px;padding-inline:18px;background:var(--yellow)}
+.geo-results{margin-top:8px;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);background:#fff}
+.geo-results li:last-child button{border-bottom:0}.geo-results li button:hover,.geo-results li button:focus-visible{background:#fff8cf;outline:2px solid var(--ink);outline-offset:-3px}
+
+dialog{max-height:calc(100dvh - 32px);overflow:auto}
+.opt-rows{margin:0 0 16px;padding-inline:2px;max-height:58vh}
+.opt-rows li{padding:14px 0;border-bottom:1px solid var(--line)}
+.opt-rows .add-inline{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px}
+.opt-rows .btn,.opt-rows .link{min-height:44px;padding-inline:13px}
+.opt-rows .hint{margin-inline:2px}.opt-rows .warn{padding:8px 10px;border-inline-start:4px solid var(--error);background:#fff1f1;color:var(--error);font-weight:700}
+.opt-rows .confirm{margin-top:10px;padding:12px;border:1px solid #e1b5b5;border-radius:10px;background:#fff7f7}
+.opt-rows .confirm .row{align-items:center}.opt-rows .confirm .btn{border-color:var(--error);color:var(--error)}
+
+@media (max-width:520px){
+  .row{flex-wrap:wrap}.row>.seg{flex:0 0 auto}
+  .opt-rows .add-inline{grid-template-columns:minmax(0,1fr) auto}.opt-rows .add-inline .link{grid-column:2}
+  .geo-box{grid-template-columns:minmax(0,1fr) auto}.geo-box .btn{padding-inline:14px}
+}
+@media (min-width:900px){
+  .hero{padding:34px 48px}.home-buttons{flex-direction:column;max-width:440px;margin:0 auto;padding-block:64px}.home-btn{min-height:150px}
+  .side-nav a.mod:not([aria-current=page]):hover{background:#fff;border-color:var(--ink)}
+}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>

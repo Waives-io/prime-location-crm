@@ -318,11 +318,26 @@ const CONFIG = {
   url: 'https://tbuhhxcgkxuovbdtebqv.supabase.co',
   key: 'sb_publishable_Ij-Epg5Zm1jcu9BOWckDow_OCa_QSTj',
 };
-const MAP_CENTER = [31.61, 34.77]; // קריית גת
+// Per-build settings. The live app has no window.PL_APP, so every value below is today's live behaviour.
+// The demo build (tools/build-demo.mjs) injects window.PL_APP before this script.
+const APP = (() => {
+  const c = window.PL_APP || {};
+  return Object.freeze({
+    name: c.name || 'פריים לוקיישן',
+    logo: c.logo || 'assets/logo.png',
+    mark: c.mark || 'assets/pin.png',
+    logoAlt: c.logoAlt || 'פריים לוקיישן – נדל״ן במרכז העניינים',
+    ownerTitle: c.ownerTitle || 'בעלים / משכיר',
+    demo: c.demo ? Object.freeze({ ...c.demo }) : null,   // { email, password }
+    dashboard: !!c.features?.dashboard,
+    mapCenter: c.mapCenter || [31.61, 34.77],
+  });
+})();
+const MAP_CENTER = APP.mapCenter; // קריית גת
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {
-  lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
-  owner: { title: 'בעלים / משכיר', one: 'נכס',       empty: 'אין עדיין נכסים של בעלים.' },
+  lead:  { title: 'מתעניינים',    one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
+  owner: { title: APP.ownerTitle, one: 'נכס',       empty: 'אין עדיין נכסים של בעלים.' },
 };
 
 /* ════════════ helpers ════════════ */
@@ -411,7 +426,7 @@ function supabaseDB() {
     },
   };
 }
-const DB = window.PL_TEST_DB || supabaseDB();
+const DB = window.PL_TEST_DB || window.PL_DEMO_DB || supabaseDB();
 
 /* ════════════ state ════════════ */
 const S = {
@@ -435,11 +450,14 @@ async function reload() {
 
 /* ════════════ router ════════════ */
 // #/  ·  #/m/lead  ·  #/m/lead/new  ·  #/m/lead/new/dup/<id>  ·  #/m/lead/<id>  ·  #/m/lead/<id>/edit
+// dashboard builds only: #/matches  ·  #/m/lead?g=<group>&a=<city>&u=soon|stale (list filter, survives refresh / back)
 function parseRoute() {
-  const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const p = path.split('/').filter(Boolean);
+  if (APP.dashboard && p[0] === 'matches') return { name: 'matches' };
   if (p[0] !== 'm' || !MODULES[p[1]]) return { name: 'home' };
   const module = p[1];
-  if (!p[2]) return { name: 'list', module };
+  if (!p[2]) return { name: 'list', module, filter: APP.dashboard ? listFilter(module, query) : null };
   if (p[2] === 'new') return { name: 'form', module, mode: p[3] === 'dup' ? 'dup' : 'new', id: p[4] };
   if (p[3] === 'edit') return { name: 'form', module, mode: 'edit', id: p[2] };
   return { name: 'card', module, id: p[2] };
@@ -468,8 +486,9 @@ async function render() {
   const r = parseRoute();
   document.body.dataset.screen = r.name;
   if (r.name !== 'form') Dirty.on = false;
-  if (r.name === 'home') return renderHome(app);
-  const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
+  if (r.name === 'home' && !APP.dashboard) return renderHome(app);
+  const inner = r.name === 'home' ? dashboardView() : r.name === 'matches' ? matchesView()
+    : r.name === 'list' ? listView(r.module, r.filter) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
   app.innerHTML = shell(r, inner.html);
   inner.mount?.();
   window.scrollTo(0, 0);
@@ -479,29 +498,64 @@ function shell(r, html) {
   const navLinks = (cls) => Object.entries(MODULES).map(([k, m]) =>
     `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}>${m.title}</a>`).join('');
   const bottom = r.name !== 'form';
-  return `<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
+  // dashboard builds: "לוח עבודה" is the first destination; "+ חדש" outside a module asks which kind
+  const board = (cls) => APP.dashboard ? `<a class="${cls} nav-board" href="#/" ${['home', 'matches'].includes(r.name) ? 'aria-current="page"' : ''}>לוח עבודה</a>` : '';
+  const newBtn = r.module ? `<a class="nav-new" href="#/m/${r.module}/new">+ חדש</a>` : `<button type="button" class="nav-new" data-act="new-choice">+ חדש</button>`;
+  return `${demoBanner()}<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
     <nav class="side-nav" aria-label="מודולים">
-      <a href="#/" class="brand-side"><img src="assets/logo.png" alt="פריים לוקיישן – לדף הבית" style="width:150px"></a>
-      ${navLinks('mod')}
+      <a href="#/" class="brand-side"><img src="${APP.logo}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
+      ${board('mod')}${navLinks('mod')}
+      ${APP.dashboard && !r.module ? `<button type="button" class="btn primary side-new" data-act="new-choice">+ חדש</button>` : ''}
       <div class="spacer"></div>
-      <button class="link" data-act="password">שינוי סיסמה</button>
-      <button class="link" data-act="logout">יציאה</button>
+      ${accountLinks()}
     </nav>
     <div class="main">${html}</div>
-    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('').replace('</a><a', `</a><a class="nav-new" href="#/m/${r.module}/new">+ חדש</a><a`)}</nav>` : ''}
+    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${board('')}${navLinks('').replace('</a><a', `</a>${newBtn}<a`)}</nav>` : ''}
   </div>`;
 }
+// demo: no password change (the demo login is shared), "איפוס הדמו" instead
+const accountLinks = (sep = '') => APP.demo
+  ? `<button class="link" data-act="demo-reset">איפוס הדמו</button>${sep}<button class="link" data-act="logout">יציאה</button>`
+  : `<button class="link" data-act="password">שינוי סיסמה</button>${sep}<button class="link" data-act="logout">יציאה</button>`;
+const demoBanner = () => APP.demo ? `<p class="demo-banner" role="note">סביבת הדגמה – הנתונים נשמרים רק במכשיר הזה</p>` : '';
 const topbar = (title, backHref, backText = 'חזרה', action = '') => `<header class="topbar">
   ${backHref ? `<a class="back" href="${backHref}">${backText}</a>` : ''}
   <h1>${esc(title)}</h1>${action}
-  <a class="brand-mini" href="#/" aria-label="דף הבית"><img src="assets/pin.png" alt=""></a>
+  <a class="brand-mini" href="#/" aria-label="דף הבית"><img src="${APP.mark}" alt=""></a>
 </header>`;
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act="logout"]');
   if (b) { await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
   if (e.target.closest('[data-act="password"]')) passwordDialog();
+  if (e.target.closest('[data-act="new-choice"]')) newChoiceDialog();
+  if (e.target.closest('[data-act="demo-reset"]')) demoResetDialog();
+  // demo: the numbers are fictional, so calling / WhatsApp only explains
+  const fake = APP.demo && e.target.closest('a[href^="tel:"], a[href^="https://wa.me/"]');
+  if (fake) { e.preventDefault(); toast('בדמו לא מחייגים ולא שולחים – המספרים בדויים'); }
 });
+
+function newChoiceDialog() {
+  const dlg = $('#dlg');
+  dlg.innerHTML = `<h2>מה מוסיפים?</h2><div class="stack">
+    <a class="btn primary" href="#/m/lead/new">מתעניין חדש</a>
+    <a class="btn" href="#/m/owner/new">נכס חדש</a>
+    <button class="link" type="button" data-x>ביטול</button></div>`;
+  dlg.onclick = (e) => { if (e.target === dlg || e.target.closest('[data-x], a')) dlg.close(); };
+  dlg.showModal();
+}
+function demoResetDialog() {
+  const dlg = $('#dlg');
+  dlg.innerHTML = `<h2>איפוס הדמו</h2><p>כל השינויים שעשית יימחקו, ונתוני ההדגמה יחזרו למצב ההתחלתי.</p><div class="stack">
+    <button class="btn primary" type="button" data-yes>איפוס</button>
+    <button class="link" type="button" data-x>ביטול</button></div>`;
+  dlg.onclick = async (e) => {
+    if (e.target === dlg || e.target.closest('[data-x]')) return dlg.close();
+    if (!e.target.closest('[data-yes]')) return;
+    await DB.reset(); dlg.close(); Dirty.on = false; S.data = null; location.hash = '#/'; await render(); toast('הדמו אופס');
+  };
+  dlg.showModal();
+}
 
 /* ════════════ change password ════════════ */
 function passwordDialog() {
@@ -551,15 +605,16 @@ function renderLogin(app) {
   document.body.dataset.screen = 'login';
   app.innerHTML = `<main class="hero">
     <form class="login-box" id="login" novalidate>
-      <img src="assets/logo.png" alt="פריים לוקיישן – נדל״ן במרכז העניינים">
+      <img src="${APP.logo}" alt="${APP.logoAlt}">
       <div class="field"><label for="email">אימייל</label>
-        <input class="input" id="email" type="email" inputmode="email" autocomplete="username" dir="ltr" required></div>
+        <input class="input" id="email" type="email" inputmode="email" autocomplete="username" dir="ltr" required value="${esc(APP.demo?.email || '')}"></div>
       <div class="field"><label for="password">סיסמה</label>
-        <div class="pw"><input class="input" id="password" type="password" autocomplete="current-password" dir="ltr" required>
+        <div class="pw"><input class="input" id="password" type="password" autocomplete="current-password" dir="ltr" required value="${esc(APP.demo?.password || '')}">
         <button type="button" class="eye" aria-label="הצגת הסיסמה" aria-pressed="false">👁</button></div></div>
       <p class="err" id="login-err" aria-live="polite"></p>
-      <button class="btn primary block" type="submit">כניסה</button>
-    </form></main>`;
+      <button class="btn primary block" type="submit">${APP.demo ? 'כניסה לדמו' : 'כניסה'}</button>
+      ${APP.demo ? '<p class="hint demo-hint">פרטי הכניסה לדמו כבר מולאו עבורך</p>' : ''}
+    </form>${APP.demo?.credit ? `<p class="credit">${esc(APP.demo.credit)}</p>` : ''}</main>`;
   const pw = $('#password');
   $('.eye').onclick = (e) => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password';
     e.currentTarget.setAttribute('aria-pressed', show); e.currentTarget.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'); };
@@ -569,11 +624,11 @@ function renderLogin(app) {
     if (!email || !pw.value) { err.textContent = 'יש למלא אימייל וסיסמה'; return; }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> נכנסת…'; err.textContent = '';
     try { await DB.signIn(email, pw.value); await afterLogin(); }
-    catch (ex) { console.error(ex); err.textContent = /invalid/i.test(ex.message || '') ? 'האימייל או הסיסמה שגויים' : 'הכניסה נכשלה. בדקי את החיבור ונסי שוב.'; btn.disabled = false; btn.textContent = 'כניסה'; }
+    catch (ex) { console.error(ex); err.textContent = /invalid/i.test(ex.message || '') ? 'האימייל או הסיסמה שגויים' : 'הכניסה נכשלה. בדקי את החיבור ונסי שוב.'; btn.disabled = false; btn.textContent = APP.demo ? 'כניסה לדמו' : 'כניסה'; }
   };
 }
 function renderNoAccess(app) {
-  app.innerHTML = `<main class="hero"><div class="login-box"><img src="assets/logo.png" alt="פריים לוקיישן">
+  app.innerHTML = `<main class="hero"><div class="login-box"><img src="${APP.logo}" alt="${APP.name}">
     <p>החשבון הזה לא מורשה לצפות בנתונים.</p><button class="btn block" data-act="logout">יציאה</button></div></main>`;
 }
 function renderLoadError(app) {
@@ -587,8 +642,8 @@ function renderHome(app) {
   const count = (m) => deals(m).filter(d => d.status === 'active').length;
   app.innerHTML = `<main class="hero">
     <div class="hero-top">
-      <span class="hero-user"><button class="link" data-act="password">שינוי סיסמה</button> · <button class="link" data-act="logout">יציאה</button></span>
-      <img class="hero-logo" src="assets/logo.png" alt="פריים לוקיישן">
+      <span class="hero-user">${accountLinks(' · ')}</span>
+      <img class="hero-logo" src="${APP.logo}" alt="${APP.name}">
     </div>
     <div class="home-buttons">
       ${Object.entries(MODULES).map(([k, m]) => `<a class="home-btn" href="#/m/${k}">
@@ -607,12 +662,13 @@ function rowSummary(module, d) {
 }
 const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
 
-function listView(module) {
+function listView(module, filter = null) {
   const st = S.list[module], M = MODULES[module];
   const html = `${topbar(M.title, '', '', `<a class="btn primary new-top" href="#/m/${module}/new">+ חדש</a>`)}
   <div class="content">
     <input class="input search" id="q" type="search" placeholder="חיפוש: שם, טלפון, חברה, כתובת" value="${esc(st.q)}" aria-label="חיפוש">
-    <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
+    ${filter ? `<p class="filter-chip"><span>מסונן: ${esc(filter.label)}</span><a href="#/m/${module}" aria-label="ביטול הסינון">✕</a></p>` : ''}
+    <div class="tabs" ${filter ? 'hidden' : ''}><div class="seg" role="radiogroup" aria-label="סינון">
       <label><input type="radio" name="tab" value="active" ${st.tab === 'active' ? 'checked' : ''}><span>פעילות</span></label>
       <label><input type="radio" name="tab" value="archive" ${st.tab === 'archive' ? 'checked' : ''}><span>ארכיון</span></label>
     </div></div>
@@ -624,12 +680,12 @@ function listView(module) {
       const q = st.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
       // a search looks in all records (active + archive); without a search the tab filters
       const rows = deals(module)
-        .filter(d => q || (st.tab === 'active') === (d.status === 'active'))
+        .filter(d => filter ? filter.test(d) : q || (st.tab === 'active') === (d.status === 'active'))
         .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
         .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
       const ul = $('#rows'); if (!ul) return; // list no longer on screen (e.g. undo from elsewhere)
       if (!rows.length) {
-        ul.innerHTML = `<li class="state">${q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
+        ul.innerHTML = `<li class="state">${filter && !q ? 'אין רשומות פעילות בסינון הזה.' : q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
         return;
       }
       ul.innerHTML = rows.map(d => `<li class="deal-row" data-id="${d.id}"><a href="#/m/${module}/${d.id}">
@@ -691,6 +747,7 @@ function cardView(module, id) {
     add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : 'מכירה');
     add('מחיר מבוקש / שווי', fmt.ltr(fmt.money(d.asking_price)));
     if (d.deal_kind === 'rent') {
+      if (d.asking_rent) add('שכירות מבוקשת לחודש', fmt.ltr(fmt.money(d.asking_rent)));
       add('מושכר כרגע', d.is_rented ? 'כן' : 'לא');
       if (d.is_rented) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', fmt.ltr(fmt.pct(d.yield_pct))); }
     } else {
@@ -716,6 +773,7 @@ function cardView(module, id) {
     </div>
     <dl class="dl">${rows.join('')}</dl>
     <div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>
+    ${APP.dashboard ? matchSection(module, d) : ''}
     <div class="actions">
       <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
       <a class="btn" href="#/m/${module}/new/dup/${d.id}">שכפול</a>
@@ -779,6 +837,7 @@ function optionsDialog(listKey, onDone) {
         <div class="add-inline"><input class="input" value="${esc(o.value)}" aria-label="שם הערך">
           <button type="button" class="btn" data-a="save" hidden>שמירה</button>
           <button type="button" class="link" data-a="remove">הסרה</button></div>
+        ${groupSelect(listKey, o)}
         <p class="hint">${n ? `בשימוש ב-${n} רשומות` : 'לא בשימוש'}</p>
         <p class="hint warn" hidden>${n ? `השינוי ישפיע על כל ${n} הרשומות שמשתמשות בערך הזה.` : ''}</p>
         <div class="confirm" hidden><p class="hint">${n ? `הערך בשימוש ב-${n} רשומות. הן ישמרו אותו, אבל הוא לא יופיע יותר לבחירה.` : `להסיר את "${esc(o.value)}" מהרשימה?`}</p>
@@ -787,8 +846,15 @@ function optionsDialog(listKey, onDone) {
       <div class="stack"><button type="button" class="btn primary" data-a="close">סיום</button></div>`;
   };
   const replace = (row) => { const i = S.data.options.findIndex(o => o.id === row.id); if (i >= 0) S.data.options[i] = row; };
+  dlg.onchange = async (e) => {
+    const sel = e.target.closest('select[data-a=group]'); if (!sel) return;
+    const li = sel.closest('li[data-id]'); sel.disabled = true;
+    try { replace(await DB.updateOption(li.dataset.id, { match_group: sel.value || null })); toast('קבוצת ההתאמה עודכנה'); }
+    catch (ex) { console.error(ex); $('.err', li).textContent = 'הפעולה נכשלה. נסי שוב.'; }
+    sel.disabled = false;
+  };
   dlg.oninput = (e) => {
-    const li = e.target.closest('li[data-id]'); if (!li) return;
+    const li = e.target.closest('li[data-id]'); if (!li || e.target.tagName === 'SELECT') return;
     const o = S.data.options.find(x => x.id === li.dataset.id), changed = e.target.value.trim() !== o.value;
     $('[data-a=save]', li).hidden = !changed;
     $('.warn', li).hidden = !(changed && +li.dataset.used);
@@ -816,7 +882,7 @@ function optionsDialog(listKey, onDone) {
       b.disabled = false;
     }
   };
-  dlg.onclose = () => { dlg.onclose = null; dlg.oninput = null; onDone?.(); };
+  dlg.onclose = () => { dlg.onclose = null; dlg.oninput = null; dlg.onchange = null; onDone?.(); };
   draw(); dlg.showModal();
 }
 
@@ -939,6 +1005,7 @@ function formView(r) {
     ${field('deal_kind', 'סוג עסקה', seg('deal_kind', [['rent', 'השכרה'], ['sale', 'מכירה']], d.deal_kind))}
     ${field('asking_price', 'מחיר מבוקש / שווי הנכס', moneyInput('asking_price', d.asking_price))}
     <div id="rent-block" hidden>
+      ${APP.dashboard ? field('asking_rent', 'שכירות מבוקשת לחודש', moneyInput('asking_rent', d.asking_rent), { required: false, hint: 'כדי לבדוק התאמה לתקציב של מי שמחפש לשכור' }) : ''}
       ${field('is_rented', 'האם המבנה מושכר כרגע?', seg('is_rented', [['true', 'כן'], ['false', 'לא']], d.is_rented))}
       <div id="rented-block" hidden>
         ${field('monthly_rent', 'שכירות חודשית (₪)', moneyInput('monthly_rent', d.monthly_rent))}
@@ -1225,6 +1292,8 @@ function mountForm({ module, mode, dealId, lat, lng }) {
         asking_price: parseNum(val('asking_price')), is_rented: rented, monthly_rent: rented ? parseNum(val('monthly_rent')) : null,
         ai_price_per_sqm: kind === 'sale' ? estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, parseNum(val('built_sqm'))) : null,
         custom };
+      // sent only by dashboard builds: the live database gets this column with supabase/003_dashboard.sql
+      if (APP.dashboard) p.asking_rent = kind === 'rent' ? parseNum(val('asking_rent')) : null;
     }
     saving = true;
     const btn = $('#save'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> שומרת…';
@@ -1241,6 +1310,210 @@ function mountForm({ module, mode, dealId, lat, lng }) {
       saving = false; btn.disabled = false; btn.textContent = 'שמירה';
     }
   };
+}
+
+/* ════════════ dashboard (APP.dashboard builds only) ════════════ */
+// Purpose groups and transaction codes live in option_lists.match_group, so renaming a value never breaks matching.
+const MATCH_GROUPS = { storage: 'אחסנה ולוגיסטיקה', industry: 'תעשייה', commerce: 'מסחר וחנויות', offices: 'משרדים', land: 'קרקע / פרטי' };
+const NEED_GROUPS = { rent: 'מחפש לשכור', buy: 'מחפש לקנות', invest: 'משקיע' };
+const NEED_TO_KIND = { rent: 'rent', buy: 'sale', invest: 'sale' };
+const USD_RATE = 3.7; // fixed demo rate, always stated on the chip
+function groupSelect(listKey, o) {
+  if (!APP.dashboard) return '';
+  const groups = listKey === 'lead_need' ? NEED_GROUPS : MATCH_GROUPS;
+  const label = listKey === 'lead_need' ? 'סוג עסקה להתאמה' : 'קבוצת התאמה';
+  return `<label class="group-pick"><span>${label}:</span><select class="input" data-a="group" aria-label="${label}">
+    <option value="">ללא – לא נכלל בהתאמות</option>${Object.entries(groups).map(([k, v]) =>
+    `<option value="${k}" ${o.match_group === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>`;
+}
+const optGroup = (id) => (S.data?.options || []).find(o => o.id === id)?.match_group || null;
+
+// Nearest city from a fixed list: display and supply/demand only (matching uses real distance).
+const CITIES = [
+  ['קריית גת', 31.610, 34.770], ['אשקלון', 31.668, 34.574], ['אשדוד', 31.800, 34.650], ['באר שבע', 31.252, 34.791],
+  ['שדרות', 31.525, 34.596], ['נתיבות', 31.420, 34.588], ['אופקים', 31.314, 34.620], ['קריית מלאכי', 31.730, 34.745],
+  ['רחובות', 31.894, 34.811], ['יבנה', 31.877, 34.739], ['גדרה', 31.813, 34.778], ['ראשון לציון', 31.964, 34.804],
+  ['חולון', 32.016, 34.780], ['בת ים', 32.017, 34.750], ['תל אביב', 32.080, 34.781], ['פתח תקווה', 32.087, 34.887],
+  ['ראש העין', 32.096, 34.957], ['מודיעין', 31.898, 35.010], ['רמלה', 31.928, 34.866], ['לוד', 31.951, 34.888],
+  ['בית שמש', 31.747, 34.988], ['ירושלים', 31.778, 35.215], ['נתניה', 32.321, 34.853], ['חדרה', 32.434, 34.919],
+  ['חיפה', 32.794, 34.990], ['דימונה', 31.069, 35.033], ['ערד', 31.259, 35.212], ['אילת', 29.558, 34.952],
+];
+function distKm(a, b) {
+  const R = 6371, rad = Math.PI / 180, dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function cityOf(d) {
+  let best = null, bd = Infinity;
+  for (const [name, lat, lng] of CITIES) { const k = distKm([d.lat, d.lng], [lat, lng]); if (k < bd) { bd = k; best = name; } }
+  return bd <= 12 ? best : 'אחר';
+}
+
+/* Match one lead with one property. Returns null when it does not match at all.
+   Gates: both active, transaction (lead_need group ↔ deal_kind), same purpose group.
+   Location 40 / size 30 / budget 30. Each dimension: full, "near" (half) or out (no match).
+   More than one "near" → no match; exactly one → "כמעט מתאים". Missing asking rent → budget 0 and at most "טובה". */
+function matchPair(lead, owner) {
+  if (lead.status !== 'active' || owner.status !== 'active') return null;
+  const need = optGroup(lead.need_id);
+  if (!NEED_TO_KIND[need] || owner.deal_kind !== NEED_TO_KIND[need]) return null;
+  const g = optGroup(lead.purpose_id);
+  if (!g || g !== optGroup(owner.purpose_id)) return null;
+  const chips = []; let near = 0, score = 0;
+  // location
+  const km = distKm([lead.lat, lead.lng], [owner.lat, owner.lng]), r = lead.radius_m / 1000;
+  const kmText = fmt.num(Math.round(km * 10) / 10);
+  if (km <= r) { score += 40; chips.push({ t: km < 0.5 ? 'בתוך האזור' : `${kmText} ק״מ מהמרכז`, k: 'ok' }); }
+  else if (km <= r * 1.5) { score += 20; near++; chips.push({ t: `${kmText} ק״מ – מחוץ לרדיוס`, k: 'near' }); }
+  else return null;
+  // size (land / private → plot area, everything else → built area)
+  const want = lead.size_value * (lead.size_unit === 'dunam' ? 1000 : 1);
+  const have = g === 'land' ? owner.plot_sqm : owner.built_sqm;
+  const diff = Math.round((have / want - 1) * 1000) / 1000, pct = Math.round(Math.abs(diff) * 100); // rounded: 1300/1000 is exactly +30%
+  const sizeText = pct < 3 ? 'שטח מדויק' : diff > 0 ? `גדול ב-${pct}%` : `קטן ב-${pct}%`;
+  if (diff >= -0.10 && diff <= 0.30) { score += 30; chips.push({ t: sizeText, k: 'ok' }); }
+  else if (diff >= -0.25 && diff <= 0.60) { score += 15; near++; chips.push({ t: sizeText, k: 'near' }); }
+  else return null;
+  // budget, in ₪ (USD at a fixed rate)
+  const budget = lead.budget_value * (lead.budget_currency === 'USD' ? USD_RATE : 1);
+  const total = owner.deal_kind === 'rent' ? owner.asking_rent : owner.asking_price;
+  const price = total ? (lead.budget_kind === 'per_sqm' ? total / owner.built_sqm : total) : null;
+  const usd = lead.budget_currency === 'USD' ? ` (לפי $1 = ₪${USD_RATE})` : '';
+  let missing = false;
+  if (price == null) { missing = true; chips.push({ t: 'חסרה שכירות מבוקשת', k: 'warn' }); }
+  else if (price <= budget * 1.0001) { score += 30; chips.push({ t: 'בתקציב' + usd, k: 'ok' }); }
+  else if (price <= budget * 1.15) { score += 15; near++; chips.push({ t: `מעל התקציב ב-${Math.round((price / budget - 1) * 100)}%${usd}`, k: 'near' }); }
+  else return null;
+  if (near > 1) return null;
+  let level = score >= 80 ? 'high' : score >= 60 ? 'good' : 'possible';
+  if (missing && level === 'high') level = 'good';
+  return { lead, owner, score, level, near: near === 1, chips };
+}
+const LEVELS = { high: 'התאמה גבוהה', good: 'התאמה טובה', possible: 'התאמה אפשרית' };
+function allMatches() {
+  const out = [];
+  for (const l of deals('lead')) for (const o of deals('owner')) { const m = matchPair(l, o); if (m) out.push(m); }
+  return out.sort((a, b) => a.near - b.near || b.score - a.score);
+}
+const matchesFor = (module, d) => (module === 'lead'
+  ? deals('owner').map(o => matchPair(d, o)) : deals('lead').map(l => matchPair(l, d))).filter(Boolean)
+  .sort((a, b) => b.score - a.score);
+
+const chipsHTML = (m) => `<span class="chips">${m.chips.map(c => `<span class="mchip ${c.k}">${esc(c.t)}</span>`).join('')}</span>`;
+function matchItem(m, side) {
+  const other = side === 'owner' ? m.owner : m.lead;
+  const title = side === 'owner'
+    ? `${optText(other.purpose_id)} · ${fmt.size(other.built_sqm, 'sqm')} · ${other.address || cityOf(other)}`
+    : `${other.contact?.name || ''} · ${optText(other.purpose_id)} · ${fmt.size(other.size_value, other.size_unit)}`;
+  return `<li class="match ${m.near ? 'is-near' : 'lvl-' + m.level}"><a href="#/m/${side}/${other.id}">
+    <span class="match-lvl">${m.near ? 'כמעט מתאים' : LEVELS[m.level]}</span>
+    <span class="match-title">${esc(title)}</span>${chipsHTML(m)}</a></li>`;
+}
+function matchSection(module, d) {
+  if (d.status !== 'active') return '';
+  const side = module === 'lead' ? 'owner' : 'lead';
+  const ms = matchesFor(module, d), good = ms.filter(m => !m.near), near = ms.filter(m => m.near);
+  const head = module === 'lead' ? 'נכסים מתאימים' : 'מתעניינים מתאימים';
+  return `<section class="card-matches"><h3>${head} <bdi class="num">(${good.length})</bdi></h3>
+    ${good.length ? `<ul class="match-list">${good.map(m => matchItem(m, side)).join('')}</ul>` : '<p class="hint">אין כרגע התאמות.</p>'}
+    ${near.length ? `<details class="near"><summary>כמעט מתאים <bdi class="num">(${near.length})</bdi></summary>
+      <ul class="match-list">${near.map(m => matchItem(m, side)).join('')}</ul></details>` : ''}</section>`;
+}
+
+/* list filters from the dashboard: ?g=<group>&a=<city>  ·  ?u=soon (needed soon)  ·  ?u=stale (not updated 30+ days) */
+const DAY = 86400000;
+const daysFrom = (iso) => Math.round((new Date(String(iso).slice(0, 10) + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / DAY);
+const lastTouch = (d) => d.updated_at || d.created_at;
+const isSoon = (d) => d.status === 'active' && !!d.needed_by && daysFrom(d.needed_by) <= 7;
+const isStale = (d) => d.status === 'active' && daysFrom(lastTouch(d)) <= -30;
+function listFilter(module, query) {
+  const q = new URLSearchParams(query), g = q.get('g'), a = q.get('a'), u = q.get('u');
+  if (u === 'soon' && module === 'lead') return { label: 'נדרש בשבוע הקרוב', test: isSoon };
+  if (u === 'stale') return { label: 'לא עודכן 30+ יום', test: isStale };
+  if (g && MATCH_GROUPS[g]) return { label: MATCH_GROUPS[g] + (a ? ' · ' + a : ''),
+    test: (d) => d.status === 'active' && optGroup(d.purpose_id) === g && (!a || cityOf(d) === a) };
+  return null;
+}
+
+function dashboardView() {
+  const leads = deals('lead'), owners = deals('owner'), all = [...leads.map(d => ['lead', d]), ...owners.map(d => ['owner', d])];
+  const name = (d) => esc(d.contact?.name || '');
+  const more = (n, cap, href, label = 'הכול') => n > cap ? `<a class="more" href="${href}">${label} (${fmt.bi(n)})</a>` : '';
+  // 1. לטיפול היום
+  const soon = leads.filter(isSoon).sort((a, b) => a.needed_by.localeCompare(b.needed_by));
+  const stale = all.filter(([, d]) => isStale(d)).sort((a, b) => String(lastTouch(a[1])).localeCompare(String(lastTouch(b[1]))));
+  const soonRow = (d) => { const n = daysFrom(d.needed_by);
+    return `<li class="urgent ${n <= 2 ? 'red' : 'yellow'}"><a href="#/m/lead/${d.id}"><span class="u-name">${name(d)}</span>
+      <span class="u-why">${esc(optText(d.purpose_id))} · ${n < 0 ? `עבר המועד לפני ${fmt.bi(-n)} ימים` : n === 0 ? 'נדרש היום' : n === 1 ? 'נדרש מחר' : `נדרש בעוד ${fmt.bi(n)} ימים`}</span></a></li>`; };
+  const staleRow = ([m, d]) => `<li class="urgent stale"><a href="#/m/${m}/${d.id}"><span class="u-name">${name(d)}</span>
+      <span class="u-why">${m === 'lead' ? 'מתעניין' : 'נכס'} · לא עודכן ${fmt.bi(-daysFrom(lastTouch(d)))} יום</span></a></li>`;
+  const staleLeads = stale.filter(([m]) => m === 'lead').length, staleOwners = stale.length - staleLeads;
+  const urgent = `<section class="dash-sec" id="dash-urgent"><h2>לטיפול היום</h2>
+    <h3>נדרש בקרוב</h3>${soon.length ? `<ul class="u-list">${soon.slice(0, 5).map(soonRow).join('')}</ul>${more(soon.length, 5, '#/m/lead?u=soon')}`
+      : '<p class="hint">אין מתעניינים שנדרשים בשבוע הקרוב.</p>'}
+    <h3>לא עודכן 30+ יום</h3>${stale.length ? `<ul class="u-list">${stale.slice(0, 5).map(staleRow).join('')}</ul>
+      ${stale.length > 5 ? `<p class="more-row">${more(staleLeads, 0, '#/m/lead?u=stale', 'מתעניינים')}${more(staleOwners, 0, '#/m/owner?u=stale', 'נכסים')}</p>` : ''}`
+      : '<p class="hint">כל הרשומות הפעילות עודכנו בחודש האחרון.</p>'}
+  </section>`;
+  // 2. התאמות חמות
+  const ms = allMatches().filter(m => !m.near);
+  const hot = `<section class="dash-sec" id="dash-matches"><h2>התאמות חמות</h2>
+    ${ms.length ? `<ul class="match-list">${ms.slice(0, 5).map(m => `<li class="match lvl-${m.level}"><a href="#/m/lead/${m.lead.id}">
+      <span class="match-lvl">${LEVELS[m.level]}</span>
+      <span class="match-title">${name(m.lead)} ← ${esc(optText(m.owner.purpose_id))} · ${esc(m.owner.address || cityOf(m.owner))}</span>${chipsHTML(m)}</a></li>`).join('')}</ul>
+      <a class="more" href="#/matches">כל ההתאמות (${fmt.bi(ms.length)})</a>`
+      : '<p class="hint">אין כרגע התאמות. כדי שייעוד ייכלל בהתאמות, בחרי לו קבוצה ב"עריכת הרשימה" בטופס.</p>'}
+  </section>`;
+  // 3. היצע מול ביקוש: active leads vs active properties, by purpose group × city
+  const cell = new Map();
+  for (const [m, d] of all) {
+    if (d.status !== 'active') continue;
+    const g = optGroup(d.purpose_id); if (!g) continue;
+    const a = cityOf(d), key = g + '|' + a, c = cell.get(key) || { g, a, lead: 0, owner: 0 };
+    c[m]++; cell.set(key, c);
+  }
+  const cells = [...cell.values()].sort((x, y) => Math.abs(y.lead - y.owner) - Math.abs(x.lead - x.owner) || (y.lead + y.owner) - (x.lead + x.owner));
+  const link = (m, c) => `#/m/${m}?g=${c.g}&a=${encodeURIComponent(c.a)}`;
+  const sd = `<section class="dash-sec" id="dash-supply"><h2>היצע מול ביקוש</h2>
+    ${cells.length ? `<ul class="sd-list">${cells.slice(0, 6).map(c => `<li class="sd ${c.lead > c.owner ? 'short' : c.owner > c.lead ? 'surplus' : 'even'}">
+      <span class="sd-what">${MATCH_GROUPS[c.g]} · ${esc(c.a)}</span>
+      <a href="${link('lead', c)}" class="sd-n">מחפשים: <bdi class="num">${c.lead}</bdi></a>
+      <a href="${link('owner', c)}" class="sd-n">נכסים: <bdi class="num">${c.owner}</bdi></a>
+      <span class="sd-tag">${c.lead > c.owner ? 'חסר היצע' : c.owner > c.lead ? 'עודף היצע' : 'מאוזן'}</span></li>`).join('')}</ul>`
+      : '<p class="hint">אין עדיין רשומות פעילות.</p>'}
+  </section>`;
+  // 4. קצב וסגירות: this calendar month; average days to close over the last 6 months
+  const month = todayISO().slice(0, 7);
+  const created = (m, d) => m === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
+  const inMonth = (iso) => String(iso || '').slice(0, 7) === month;
+  const newThis = all.filter(([m, d]) => inMonth(created(m, d))).length;
+  const closedThis = all.filter(([, d]) => d.status === 'closed' && inMonth(d.closed_at)).length;
+  const irrThis = all.filter(([, d]) => d.status === 'irrelevant' && inMonth(d.closed_at)).length;
+  const durations = all.filter(([, d]) => d.status === 'closed' && d.closed_at && daysFrom(d.closed_at) >= -183)
+    .map(([m, d]) => daysFrom(d.closed_at) - daysFrom(created(m, d)));
+  const avg = durations.length ? Math.round(durations.reduce((s, x) => s + x, 0) / durations.length) : null;
+  const pace = `<section class="dash-sec" id="dash-pace"><h2>קצב וסגירות</h2><div class="kpis">
+    <div class="kpi"><strong class="num">${newThis}</strong><span>חדשים החודש</span></div>
+    <div class="kpi"><strong class="num">${closedThis}</strong><span>נסגרו החודש</span></div>
+    <div class="kpi"><strong class="num">${irrThis}</strong><span>לא רלוונטיים החודש</span></div>
+    <div class="kpi"><strong class="num">${avg == null ? '—' : avg}</strong><span>ימים בממוצע עד סגירה</span></div>
+  </div></section>`;
+  return { html: `${topbar('לוח עבודה', '')}<div class="content dash">${urgent}${hot}${sd}${pace}</div>` };
+}
+
+function matchesView() {
+  const ms = allMatches(), good = ms.filter(m => !m.near), near = ms.filter(m => m.near);
+  const byLead = (list) => {
+    const groups = new Map();
+    for (const m of list) { if (!groups.has(m.lead.id)) groups.set(m.lead.id, []); groups.get(m.lead.id).push(m); }
+    return [...groups.values()].map(g => { const l = g[0].lead; return `<li class="ml-group"><a class="ml-lead" href="#/m/lead/${l.id}">${esc(l.contact?.name)}
+      <small>${esc(optText(l.need_id))} · ${esc(optText(l.purpose_id))} · ${fmt.size(l.size_value, l.size_unit)}</small></a>
+      <ul class="match-list">${g.map(m => matchItem(m, 'owner')).join('')}</ul></li>`; }).join('');
+  };
+  return { html: `${topbar('כל ההתאמות', '#/', 'חזרה ללוח')}<div class="content">
+    ${good.length ? `<ul class="ml">${byLead(good)}</ul>` : '<p class="state">אין כרגע התאמות.</p>'}
+    ${near.length ? `<details class="near"><summary>כמעט מתאים <bdi class="num">(${near.length})</bdi></summary><ul class="ml">${byLead(near)}</ul></details>` : ''}
+  </div>` };
 }
 
 /* ════════════ boot ════════════ */

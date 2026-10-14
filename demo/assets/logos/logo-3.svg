@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title>נדל״ן בע״מ — מפתח מסחרי</title>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@500;800&amp;display=swap');</style>
+  <g transform="translate(312 12)">
+    <rect width="96" height="96" fill="#FFD400"/>
+    <path fill="#1A1A1A" fill-rule="evenodd" d="M13 17h43v43H43v9h12v10h12V69h10v10H56v-9H43v9H28V60H13Zm12 12v19h19V29Z"/>
+    <path d="M31 35h7v7h-7z" fill="#FFD400"/>
+  </g>
+  <g font-family="Assistant, Arial, sans-serif" text-anchor="start" direction="rtl">
+    <text x="292" y="61" font-size="40" font-weight="800" fill="#1A1A1A">נדל״ן בע״מ</text>
+    <text x="292" y="89" font-size="16" font-weight="500" fill="#3C3C3B">המפתח לעסקה מדויקת</text>
+  </g>
+</svg>

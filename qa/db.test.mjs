@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'Leah@Example.com');
 const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'leah2@example.com');
+const migration3 = readFileSync(new URL('../supabase/003_dashboard.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -172,6 +173,28 @@ await as('authenticated', LEAH, async () => {
   ok('002: rename option, hide/unhide, duplicate rename rejected');
   await fails(() => q(`insert into custom_fields (module,label,type,section) values ('lead','x','text','nowhere')`), /check constraint/);
   ok('002: custom field section validated');
+
+  // migration 003 (dashboard): run on a DB that already has data, while an old client keeps saving
+  await db.exec('reset role;'); await db.exec(migration3); await db.exec(migration3);
+  await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${LEAH}', false); set role authenticated;`);
+  const groups = await q(`select list_key, value, match_group from option_lists where value in ('לשכור','להשכיר','מרלוג','פרטי','חנות') order by list_key, value`);
+  assert.deepEqual(groups.map(g => [g.value, g.match_group]), [['להשכיר', null], ['לשכור', 'rent'], ['מרלוג', 'storage'], ['פרטי', 'land'], ['חנות', 'commerce']]);
+  ok('003: default match groups; להשכיר stays out of matching');
+  const rent = { ...own, id: null, deal_kind: 'rent', is_rented: false, monthly_rent: null };
+  const oldRow = (await q('select save_owner_deal($1::jsonb) r', [rent]))[0].r;
+  assert.equal((await q('select asking_rent from owner_deals where id=$1', [oldRow.id]))[0].asking_rent, null);
+  const newRow = (await q('select save_owner_deal($1::jsonb) r', [{ ...rent, id: oldRow.id, asking_rent: 42000 }]))[0].r;
+  assert.equal(+(await q('select asking_rent from owner_deals where id=$1', [newRow.id]))[0].asking_rent, 42000);
+  await q('select save_owner_deal($1::jsonb) r', [{ ...rent, id: oldRow.id, description: 'עדכון מלקוח ישן' }]);
+  assert.equal(+(await q('select asking_rent from owner_deals where id=$1', [oldRow.id]))[0].asking_rent, 42000);
+  await q('select save_owner_deal($1::jsonb) r', [{ ...rent, id: oldRow.id, deal_kind: 'sale', is_rented: null }]);
+  assert.equal((await q('select asking_rent from owner_deals where id=$1', [oldRow.id]))[0].asking_rent, null);
+  const saleWithRent = (await q('select save_owner_deal($1::jsonb) r', [{ ...own, id: null, deal_kind: 'sale', asking_rent: 5000 }]))[0].r;
+  assert.equal((await q('select asking_rent from owner_deals where id=$1', [saleWithRent.id]))[0].asking_rent, null);
+  ok('003: old payload (no asking_rent) still saves and never wipes it; new payload sets it; sale clears it');
+  const sig = await q(`select count(*)::int n from pg_proc where proname = 'save_owner_deal'`);
+  assert.equal(sig[0].n, 1);
+  ok('003: one save_owner_deal(jsonb) – no overload');
 
   const cf = (await q(`insert into custom_fields (module,label,type) values ('lead','קומה','number') returning key`))[0];
   assert.match(cf.key, /^f_[0-9a-f]{10}$/);

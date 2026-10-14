@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title>נדל״ן בע״מ — גרשיים בנויים</title>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@500;800&amp;display=swap');</style>
+  <g transform="translate(312 12)">
+    <rect width="96" height="96" rx="8" fill="#1A1A1A"/>
+    <path d="M24 22h19L35 53H16zm37 0h19L72 53H53z" fill="#FFD400"/>
+    <path d="M16 66h64v10H16z" fill="#fff"/>
+  </g>
+  <g font-family="Rubik, Arial, sans-serif" text-anchor="start" direction="rtl">
+    <text x="292" y="60" font-size="36" font-weight="800" fill="#1A1A1A">נדל״ן בע״מ</text>
+    <path d="M64 75h228" stroke="#FFD400" stroke-width="6"/>
+    <text x="292" y="99" font-size="14" font-weight="500" fill="#3C3C3B">מסחר • משרדים • לוגיסטיקה</text>
+  </g>
+</svg>

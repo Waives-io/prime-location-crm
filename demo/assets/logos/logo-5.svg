@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title>נדל״ן בע״מ — נון על המגרש</title>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Secular+One&amp;family=Heebo:wght@500&amp;display=swap');</style>
+  <g transform="translate(312 12)">
+    <rect width="96" height="96" fill="#FFD400"/>
+    <path d="M14 14h68v68H14Z" fill="none" stroke="#1A1A1A" stroke-width="6"/>
+    <path d="M37 14v68M59 14v68M14 37h68M14 59h68" stroke="#3C3C3B" stroke-width="2"/>
+    <path d="M28 25h39v46H54V38H41v33H28Z" fill="#1A1A1A"/>
+    <path d="M41 38h13v21H41Z" fill="#FFD400"/>
+  </g>
+  <g text-anchor="start" direction="rtl">
+    <text x="292" y="61" font-family="'Secular One', Heebo, sans-serif" font-size="36" fill="#1A1A1A">נדל״ן בע״מ</text>
+    <text x="292" y="89" font-family="Heebo, Arial, sans-serif" font-size="15" font-weight="500" fill="#3C3C3B">קוראים נכון את השטח</text>
+  </g>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title>רציף תעשייתי</title>
+  <rect width="96" height="96" fill="#FFD400"/>
+  <path d="M12 38 30 25v9l18-13v13l18-13v13l18-13v56H12Z" fill="#1A1A1A"/>
+  <path d="M22 53h14v24H22zm29-8h14v32H51zm22 8h7v24h-7z" fill="#FFD400"/>
+  <path d="M22 47h14M51 39h14" stroke="#fff" stroke-width="4"/>
+</svg>

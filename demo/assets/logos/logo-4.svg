@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title>נדל״ן בע״מ — שער העסק</title>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@700;900&amp;family=Heebo:wght@500&amp;display=swap');</style>
+  <g transform="translate(312 12)">
+    <rect width="96" height="96" fill="#1A1A1A"/>
+    <path d="M14 14h68v68H68V28H28v54H14Z" fill="#FFD400"/>
+    <path d="M37 39h22v43H37Z" fill="#fff"/>
+    <path d="M51 58h8v8h-8Z" fill="#FFD400"/>
+  </g>
+  <g text-anchor="start" direction="rtl">
+    <text x="292" y="61" font-family="'Frank Ruhl Libre', serif" font-size="40" font-weight="900" fill="#1A1A1A">נדל״ן בע״מ</text>
+    <text x="292" y="89" font-family="Heebo, Arial, sans-serif" font-size="15" font-weight="500" fill="#3C3C3B">פותחים מקום לעסקים</text>
+  </g>
+</svg>

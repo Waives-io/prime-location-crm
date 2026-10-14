@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "demo", "runtimeExecutable": "py", "runtimeArgs": ["-m", "http.server", "8765", "-d", "demo-site"], "port": 8765 }
+  ]
+}

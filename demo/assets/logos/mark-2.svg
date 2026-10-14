@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title>גרשיים בנויים</title>
+  <rect width="96" height="96" rx="8" fill="#1A1A1A"/>
+  <path d="M24 22h19L35 53H16zm37 0h19L72 53H53z" fill="#FFD400"/>
+  <path d="M16 66h64v10H16z" fill="#fff"/>
+</svg>

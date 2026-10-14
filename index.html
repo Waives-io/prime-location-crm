@@ -542,6 +542,7 @@ const APP = (() => {
     mark: c.mark || 'assets/pin.png',
     logoAlt: c.logoAlt || 'פריים לוקיישן – נדל״ן במרכז העניינים',
     ownerTitle: c.ownerTitle || 'בעלים / משכיר',
+    loginLabel: c.loginLabel || (c.demo ? 'כניסה לדמו' : 'כניסה'),
     demo: c.demo ? Object.freeze({ ...c.demo }) : null,   // { email, password }
     dashboard: !!c.features?.dashboard,
     mapCenter: c.mapCenter || [31.61, 34.77],
@@ -776,7 +777,9 @@ let formDiscard = null; // set by an open form; called when it is left without s
 async function render() {
   mapsToCleanup.forEach(m => m.remove()); mapsToCleanup = [];
   const app = $('#app');
-  if (!S.session) return renderLogin(app);
+  // a build may supply its own screens (the demo does, in demo/screens.js); Leah's app has none
+  const V = window.PL_VIEWS || {};
+  if (!S.session) return (V.login || renderLogin)(app);
   if (S.member === false) return renderNoAccess(app);
   if (!S.data && !S.loadError) { app.innerHTML = `<div class="state"><span class="spinner"></span> טוען…</div>`; await reload(); }
   if (S.loadError) return renderLoadError(app);
@@ -785,9 +788,9 @@ async function render() {
   if (r.name !== 'form' && formDiscard) { formDiscard(); formDiscard = null; }
   if (r.name !== 'form') Dirty.on = false;
   if (r.name === 'home' && !APP.dashboard) return renderHome(app);
-  const inner = r.name === 'home' ? dashboardView() : r.name === 'matches' ? matchesView(r.query) : r.name === 'kpi' ? kpiView(r.key)
-    : r.name === 'list' ? listView(r.module, r.filter) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
-  app.innerHTML = shell(r, inner.html);
+  const inner = V[r.name]?.(r) || (r.name === 'home' ? dashboardView() : r.name === 'matches' ? matchesView(r.query) : r.name === 'kpi' ? kpiView(r.key)
+    : r.name === 'list' ? listView(r.module, r.filter) : r.name === 'card' ? cardView(r.module, r.id) : formView(r));
+  app.innerHTML = (V.shell || shell)(r, inner.html);
   inner.mount?.();
   window.scrollTo(0, 0);
 }
@@ -912,7 +915,7 @@ function renderLogin(app) {
         <div class="pw"><input class="input" id="password" type="password" autocomplete="current-password" dir="ltr" required value="${esc(APP.demo?.password || '')}">
         <button type="button" class="eye" aria-label="הצגת הסיסמה" aria-pressed="false">👁</button></div></div>
       <p class="err" id="login-err" aria-live="polite"></p>
-      <button class="btn primary block" type="submit">${APP.demo ? 'כניסה לדמו' : 'כניסה'}</button>
+      <button class="btn primary block" type="submit">${APP.loginLabel}</button>
       ${APP.demo ? '<p class="hint demo-hint">פרטי הכניסה לדמו כבר מולאו עבורך</p>' : ''}
     </form>${APP.demo?.credit ? `<p class="credit">${esc(APP.demo.credit)}</p>` : ''}</main>`;
   const pw = $('#password');
@@ -924,7 +927,7 @@ function renderLogin(app) {
     if (!email || !pw.value) { err.textContent = 'יש למלא אימייל וסיסמה'; return; }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> נכנסת…'; err.textContent = '';
     try { await DB.signIn(email, pw.value); await afterLogin(); }
-    catch (ex) { console.error(ex); err.textContent = /invalid/i.test(ex.message || '') ? 'האימייל או הסיסמה שגויים' : 'הכניסה נכשלה. בדקי את החיבור ונסי שוב.'; btn.disabled = false; btn.textContent = APP.demo ? 'כניסה לדמו' : 'כניסה'; }
+    catch (ex) { console.error(ex); err.textContent = /invalid/i.test(ex.message || '') ? 'האימייל או הסיסמה שגויים' : 'הכניסה נכשלה. בדקי את החיבור ונסי שוב.'; btn.disabled = false; btn.textContent = APP.loginLabel; }
   };
 }
 function renderNoAccess(app) {

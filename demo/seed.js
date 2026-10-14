@@ -117,5 +117,42 @@ window.PL_DEMO_SEED = (todayISO) => {
     asking_rent: kind === 'rent' ? askRent : null, ai_price_per_sqm: null, status, closed_at: cl == null ? null : ts(cl), custom: {},
     created_at: ts(cr), updated_at: ts(up),
   }));
-  return { options, fields: [], contacts, lead, owner };
+  // ── demo-only fields (as the app's own custom fields, so the form edits them with no extra code) ──
+  const fields = [
+    { id: uid('f0000000'), module: 'lead', key: 'f_stage', label: 'סטטוס', type: 'list', options: ['חם', 'בתהליך', 'חדש', 'לא פעיל'], sort: 10, section: 'contact', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'lead', key: 'f_source', label: 'מקור הגעה', type: 'list', options: ['אתר החברה', 'הפניה', 'גוגל', 'לידים נכנסים', 'קמפיין פייסבוק', 'יד 2'], sort: 20, section: 'contact', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'lead', key: 'f_email', label: 'אימייל', type: 'text', options: [], sort: 30, section: 'contact', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'owner', key: 'f_pstatus', label: 'סטטוס נכס', type: 'list', options: ['פעיל', 'פנוי', 'מושכר', 'בתהליך שיווק'], sort: 10, section: 'property', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'owner', key: 'f_occ', label: 'תפוסה %', type: 'number', options: [], sort: 20, section: 'property', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'owner', key: 'f_email', label: 'אימייל איש קשר', type: 'text', options: [], sort: 30, section: 'contact', created_at: ts(-200) },
+  ];
+  const SOURCES = fields[1].options;
+  const latin = ['yossi', 'merav', 'david', 'ronit', 'avi', 'noa', 'moshe', 'lior', 'amit', 'shiran', 'oren', 'chen', 'galit', 'refael', 'yael', 'itay', 'sigal', 'barak', 'tal', 'alon', 'maya', 'shimon', 'rotem', 'dana', 'nir', 'efrat', 'chaim', 'orit', 'kobi', 'hadas'];
+  const at2 = (off, h, m = 0) => { const d = day(off); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const ageDays = (iso) => Math.round((today - new Date(iso)) / 864e5);
+  lead.forEach((d, i) => {
+    const stage = d.status !== 'active' || ageDays(d.updated_at) >= 30 ? 'לא פעיל' : ageDays(d.created_at) <= 7 ? 'חדש' : ['חם', 'בתהליך', 'בתהליך', 'חם', 'בתהליך'][i % 5];
+    d.custom = { f_stage: stage, f_source: SOURCES[i % SOURCES.length], f_email: `${latin[i]}@${i % 3 ? 'gmail.com' : 'company.co.il'}` };
+    d.response_h = [1.5, 2, 3, 0.5, 4, 2.5, 1, 6, 2][i % 9];           // hours until the first reply (demo data)
+    d.log = i % 3 ? [] : [{ id: uid('e0000000'), text: 'שיחת היכרות – מעוניין לראות אפשרויות השבוע', at: at2(-2 - (i % 5), 11, 20) }];
+    d.tasks = d.status !== 'active' ? [] : [
+      { id: uid('e0000000'), kind: 'task', text: i % 2 ? 'לחזור עם הצעת מחיר' : 'לשלוח רשימת נכסים מתאימים', due: at2(i % 4, 14), done: false },
+      ...(i % 3 === 0 ? [{ id: uid('e0000000'), kind: 'meeting', text: 'סיור בנכס', due: at2(2 + (i % 3), 10, 30), done: false }] : []),
+    ];
+  });
+  const COVERS = { storage: ['p-logistics', 'p-industry'], industry: ['p-industry', 'p-logistics'], offices: ['p-office-tower', 'p-office-2', 'p-office-3', 'p-office-big'], commerce: ['p-retail'], land: ['p-industry'] };
+  const groupOfOpt = (id) => options.find(o => o.id === id)?.match_group;
+  owner.forEach((d, i) => {
+    const list = COVERS[groupOfOpt(d.purpose_id)] || ['p-office-2'];
+    d.cover = `assets/photos/${list[i % list.length]}.jpg`;          // demo picture when the deal has no photo of its own
+    const pstatus = d.status !== 'active' || (d.deal_kind === 'rent' && d.is_rented) ? 'מושכר' : ['פנוי', 'פעיל', 'בתהליך שיווק', 'פנוי', 'פעיל'][i % 5];
+    const occ = pstatus === 'מושכר' ? 100 : pstatus === 'פנוי' ? 0 : [95, 75, 40, 88, 60][i % 5];
+    d.custom = { f_pstatus: pstatus, f_occ: occ, f_email: `${['info', 'office', 'nadlan', 'invest'][i % 4]}@${['dahan', 'gross', 'shemesh', 'yifrach', 'karmi'][i % 5]}.co.il` };
+    d.log = [];
+    d.tasks = d.status !== 'active' ? [] : [
+      { id: uid('e0000000'), kind: 'task', text: 'שיחת מעקב עם הבעלים', due: at2(-1 + (i % 3), 12), done: false },
+      ...(i % 2 ? [{ id: uid('e0000000'), kind: 'meeting', text: 'ביקור בנכס עם מתעניין', due: at2(1 + (i % 4), 9, 30), done: false }] : []),
+    ];
+  });
+  return { options, fields, contacts, lead, owner };
 };

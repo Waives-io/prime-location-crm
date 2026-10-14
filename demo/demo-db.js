@@ -23,7 +23,7 @@
   };
 
   // bump when demo/seed.js changes: visitors who did not change anything get the new data on their next visit
-  const SEED_VERSION = 2;
+  const SEED_VERSION = 3;
   const fresh = () => ({ anchor: today(), dirty: false, seed: SEED_VERSION, ...window.PL_DEMO_SEED(today()) });
   // A new month: an untouched demo is re-seeded; a demo the visitor changed moves all its dates forward,
   // so "this month" and "needed soon" stay meaningful.
@@ -37,7 +37,11 @@
     // past events never move into the future (a visitor's edit from last week stays in the past); deadlines may
     const PAST = ['lead_date', 'created_at', 'updated_at', 'closed_at'], nowISO = new Date().toISOString(), day = today();
     const cap = (f, v) => !v || !PAST.includes(f) ? v : v.length === 10 ? (v > day ? day : v) : (v > nowISO ? nowISO : v);
-    for (const m of ['lead', 'owner']) for (const r of db[m]) for (const f of DATE_FIELDS[m]) r[f] = cap(f, move(r[f]));
+    for (const m of ['lead', 'owner']) for (const r of db[m]) {
+      for (const f of DATE_FIELDS[m]) r[f] = cap(f, move(r[f]));
+      (r.tasks || []).forEach(t => { t.due = move(t.due); });                 // tasks and meetings keep their distance from today
+      (r.log || []).forEach(n => { n.at = cap('created_at', move(n.at)); });
+    }
     db.anchor = today();
     return db;
   }
@@ -154,6 +158,27 @@
       row.photos = photos.map(x => ({ path: x.path, thumb: x.thumb, w: Math.max(0, Math.min(20000, x.w | 0)), h: Math.max(0, Math.min(20000, x.h | 0)) }));
       row.updated_at = now(); save();
       return { id: did, previous };
+    },
+    // demo-only activity on a deal: tasks / meetings (text + date/time + done) and a notes log (d.log – d.notes is the form's own text field)
+    async addTask(module, did, t) {
+      await delay();
+      const row = db[module].find(r => r.id === did); if (!row) throw new Error('העסקה לא נמצאה');
+      if (!String(t.text || '').trim() || !t.due) throw new Error('חסר טקסט או מועד');
+      const task = { id: id(), kind: t.kind === 'meeting' ? 'meeting' : 'task', text: String(t.text).trim(), due: t.due, done: false };
+      (row.tasks ||= []).push(task); row.updated_at = now(); save();
+      return clone(task);
+    },
+    async setTaskDone(module, did, tid, done) {
+      const row = db[module].find(r => r.id === did), t = row?.tasks?.find(x => x.id === tid); if (!t) throw new Error('המשימה לא נמצאה');
+      t.done = !!done; row.updated_at = now(); save();
+    },
+    async addNote(module, did, text) {
+      await delay();
+      const row = db[module].find(r => r.id === did); if (!row) throw new Error('העסקה לא נמצאה');
+      if (!String(text || '').trim()) throw new Error('הערה ריקה');
+      const note = { id: id(), text: String(text).trim(), at: now() };
+      (row.log ||= []).push(note); row.updated_at = now(); save();
+      return clone(note);
     },
     async reset() { db = fresh(); save(false); [...files.keys(), ...urls.keys()].forEach(forget); await run('readwrite', st => st.clear()); },
   };

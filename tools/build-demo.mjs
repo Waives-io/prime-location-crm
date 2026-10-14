@@ -29,7 +29,7 @@ swap('<title>פריים לוקיישן · CRM</title>', '<title>נדל״ן בע�
 swap('<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">', '<meta name="apple-mobile-web-app-title" content="נדל״ן בע״מ">');
 // the chosen dashboard look (GPT "גיבור מאוחד", look 2) loads after the app's own CSS
 swap('</style>\n', '</style>\n<link rel="stylesheet" href="dashboard-look.css">\n');
-swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script src="tune.js"></script>\n<script>\n`);
+swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script src="tune.js"></script>\n<script src="screens.js"></script>\n<script>\n`);
 
 for (const d of ['', 'assets', 'icons']) await mkdir(join(OUT, d), { recursive: true });
 // files are overwritten in place, so the git repo inside demo-site/ survives a rebuild
@@ -38,6 +38,9 @@ await copyFile(join(ROOT, 'demo', 'seed.js'), join(OUT, 'seed.js'));
 await copyFile(join(ROOT, 'demo', 'demo-db.js'), join(OUT, 'demo-db.js'));
 await copyFile(join(ROOT, 'demo', 'dashboard-look.css'), join(OUT, 'dashboard-look.css'));
 await copyFile(join(ROOT, 'demo', 'tune.js'), join(OUT, 'tune.js'));
+await copyFile(join(ROOT, 'demo', 'screens.js'), join(OUT, 'screens.js'));
+await mkdir(join(OUT, 'assets', 'photos'), { recursive: true });
+for (const f of await (await import('node:fs/promises')).readdir(join(ROOT, 'demo', 'assets', 'photos'))) await copyFile(join(ROOT, 'demo', 'assets', 'photos', f), join(OUT, 'assets', 'photos', f));
 await writeFile(join(OUT, '.nojekyll'), '');
 
 // ── manifest + service worker (own id, scope and cache prefix) ──

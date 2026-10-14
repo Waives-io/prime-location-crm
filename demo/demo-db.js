@@ -59,6 +59,27 @@
   };
   const delay = () => new Promise(r => setTimeout(r, 40));
 
+  // Photos: blobs in this browser's IndexedDB ("nadlan-demo-photos"; localStorage is too small). Memory if IndexedDB fails.
+  const files = new Map(), urls = new Map();
+  let idbP;
+  const idb = () => idbP ||= new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('no indexedDB'));
+    const r = indexedDB.open('nadlan-demo-photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const run = async (mode, fn) => {
+    try {
+      const d = await idb();
+      return await new Promise((res, rej) => {
+        const t = d.transaction('files', mode), req = fn(t.objectStore('files'));
+        t.oncomplete = () => res(req?.result); t.onerror = () => rej(t.error);
+      });
+    } catch (e) { console.warn('demo photos: memory only', e); return undefined; }
+  };
+  const forget = (path) => { const u = urls.get(path); if (u) URL.revokeObjectURL(u); urls.delete(path); files.delete(path); };
+  const PHOTO_RE = (did, thumb) => new RegExp(`^${did}/[0-9a-f-]+${thumb ? '_t' : ''}\\.(jpg|webp)$`);
+
   window.PL_DEMO_DB = {
     async session() { return store.get(SESSION) ? { user: { id: 'demo' } } : null; },
     onAuth() {},
@@ -103,6 +124,37 @@
       const r = db[module].find(x => x.id === did);
       r.status = status; r.closed_at = status === 'active' ? null : now(); r.updated_at = now(); save();
     },
-    async reset() { db = fresh(); save(false); },
+    async uploadPhoto(path, blob) { await delay(); files.set(path, blob); await run('readwrite', st => st.put(blob, path)); },
+    async photoUrls(paths) {
+      const out = {};
+      for (const p of paths) {
+        if (!urls.has(p)) {
+          const blob = files.get(p) || await run('readonly', st => st.get(p));
+          if (blob) { files.set(p, blob); urls.set(p, URL.createObjectURL(blob)); }
+        }
+        if (urls.has(p)) out[p] = urls.get(p);
+      }
+      return out;
+    },
+    // like the live delete policy: a file still used by a deal is kept
+    async deletePhotos(paths) {
+      const used = new Set(['lead', 'owner'].flatMap(m => db[m].flatMap(r => (r.photos || []).flatMap(x => [x.path, x.thumb]))));
+      const gone = paths.filter(p => !used.has(p));
+      gone.forEach(forget);
+      if (gone.length) await run('readwrite', st => { let r; gone.forEach(p => { r = st.delete(p); }); return r; });
+    },
+    // same checks as set_deal_photos in supabase/004_photos.sql
+    async setPhotos(module, did, photos) {
+      await delay();
+      if (!Array.isArray(photos)) throw new Error('רשימת תמונות לא תקינה');
+      if (photos.length > 5) throw new Error('אפשר לשמור עד 5 תמונות');
+      if (photos.some(x => !PHOTO_RE(did, false).test(x?.path || '') || !PHOTO_RE(did, true).test(x?.thumb || ''))) throw new Error('נתיב תמונה לא תקין');
+      const row = db[module].find(r => r.id === did); if (!row) throw new Error('העסקה לא נמצאה');
+      const previous = row.photos || [];
+      row.photos = photos.map(x => ({ path: x.path, thumb: x.thumb, w: Math.max(0, Math.min(20000, x.w | 0)), h: Math.max(0, Math.min(20000, x.h | 0)) }));
+      row.updated_at = now(); save();
+      return { id: did, previous };
+    },
+    async reset() { db = fresh(); save(false); [...files.keys(), ...urls.keys()].forEach(forget); await run('readwrite', st => st.clear()); },
   };
 })();

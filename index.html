@@ -303,6 +303,25 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
   .hero{padding:34px 48px}.home-buttons{max-width:300px;padding-block:64px}
   .side-nav a.mod:not([aria-current=page]):hover{background:#fff;border-color:var(--ink)}
 }
+/* functional: deal photos */
+.photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.photo-grid:empty{display:none}
+.ph{position:relative;margin:0;width:96px;height:96px;border-radius:10px;overflow:hidden;background:var(--surface)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph-x{position:absolute;top:2px;inset-inline-end:2px;width:32px;height:32px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:1.1rem;cursor:pointer}
+.ph-first{position:absolute;bottom:2px;inset-inline:2px;font-size:.72rem;border:0;border-radius:6px;background:rgba(255,255,255,.9);cursor:pointer;min-height:24px}
+.ph-badge{position:absolute;bottom:2px;inset-inline-start:2px;font-size:.72rem;background:var(--yellow);border-radius:6px;padding:0 6px}
+.ph.pending{display:grid;place-items:center}
+.photo-drop{outline:2px dashed var(--ink);outline-offset:4px}
+.card-photos{display:flex;gap:8px;overflow-x:auto;max-width:100%;padding-bottom:4px}
+.card-photos button{padding:0;border:0;background:none;cursor:pointer;border-radius:10px;overflow:hidden;flex:0 0 auto}
+.card-photos img{display:block;height:110px;width:auto;max-width:none;object-fit:cover}
+.card-photos button:first-child img{height:150px}
+.dl dd:has(.card-photos){min-width:0}
+.row-thumb{float:inline-start;width:52px;height:52px;object-fit:cover;border-radius:8px;margin-inline-end:10px}
+.lightbox{margin:0}
+.lightbox img{display:block;width:100%;max-height:70vh;object-fit:contain;background:#111;border-radius:10px}
+.lb-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 
 /* ── dashboard + demo (GPT) ── */
@@ -615,6 +634,17 @@ function supabaseDB() {
     async addOption(listKey, value) { return must(await sb.rpc('add_option', { p_list_key: listKey, p_value: value })); },
     async addField(f) { return must(await sb.from('custom_fields').insert(f).select().single()); },
     async updateOption(id, patch) { return must(await sb.from('option_lists').update(patch).eq('id', id).select().single()); },
+    // photos: private bucket "deal-photos"; the deal row keeps storage paths only (supabase/004_photos.sql)
+    async setPhotos(module, id, photos) { return must(await sb.rpc('set_deal_photos', { p_module: module, p_id: id, p_photos: photos })); },
+    async uploadPhoto(path, blob) {
+      const r = await sb.storage.from('deal-photos').upload(path, blob, { contentType: blob.type, upsert: false });
+      if (r.error && !/exists|duplicate/i.test(r.error.message || '')) throw r.error; // a retry of the same file is fine
+    },
+    async photoUrls(paths) {
+      const r = must(await sb.storage.from('deal-photos').createSignedUrls(paths, 3600));
+      return Object.fromEntries(r.filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
+    },
+    async deletePhotos(paths) { if (paths.length) must(await sb.storage.from('deal-photos').remove(paths)); },
     async setStatus(module, id, status) {
       must(await sb.from(module === 'lead' ? 'lead_deals' : 'owner_deals')
         .update({ status, closed_at: status === 'active' ? null : new Date().toISOString() }).eq('id', id));
@@ -641,6 +671,76 @@ async function reload() {
   S.loadError = null;
   try { S.data = await DB.loadAll(); }
   catch (e) { console.error(e); S.loadError = e; }
+}
+
+/* ════════════ photos ════════════ */
+const MAX_PHOTOS = 5;
+const Photos = {
+  cache: new Map(), // path → { url, exp }
+  async urls(paths) {
+    const now = Date.now(), need = [...new Set(paths)].filter(p => p && !(this.cache.get(p)?.exp > now));
+    if (need.length) {
+      try { const m = await DB.photoUrls(need); for (const [k, u] of Object.entries(m)) this.cache.set(k, { url: u, exp: now + 50 * 60e3 }); }
+      catch (e) { console.error(e); }
+    }
+    return Object.fromEntries(paths.map(p => [p, this.cache.get(p)?.url]));
+  },
+  // <img data-photo="path"> → src from a (cached) signed URL
+  async hydrate(root = document) {
+    const imgs = $$('img[data-photo]', root); if (!imgs.length) return;
+    const m = await this.urls(imgs.map(i => i.dataset.photo));
+    imgs.forEach(i => { const u = m[i.dataset.photo]; if (u && i.isConnected) i.src = u; });
+  },
+  referenced() { return new Set(['lead', 'owner'].flatMap(m => deals(m).flatMap(d => (d.photos || []).flatMap(x => [x.path, x.thumb])))); },
+  clear() { this.cache.clear(); },
+};
+// phone photos → JPEG versions: decoded ONCE, then a full (1600px) and a thumbnail (400px) are drawn from it
+const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
+async function photoVersions(file) {
+  if (file.size > MAX_PHOTO_BYTES) throw new Error('too-big');
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch {
+    src = await new Promise((res, rej) => {
+      const u = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { URL.revokeObjectURL(u); res(im); };
+      im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('decode')); };
+      im.src = u;
+    });
+  }
+  if (src.width * src.height > 100e6) { src.close?.(); throw new Error('too-big'); } // > 100 MP
+  const draw = async (img, max, quality) => {
+    const k = Math.min(1, max / Math.max(img.width, img.height)), w = Math.round(img.width * k), h = Math.round(img.height * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+    if (!blob) throw new Error('encode');
+    return { blob, w, h, canvas: c };
+  };
+  try {
+    const full = await draw(src, 1600, 0.82);
+    const thumb = await draw(full.canvas, 400, 0.75);
+    full.canvas.width = full.canvas.height = thumb.canvas.width = thumb.canvas.height = 0; // free canvas memory
+    return { full, thumb };
+  } finally { src.close?.(); }
+}
+function lightbox(photos, start = 0) {
+  const dlg = $('#dlg'); let i = start;
+  const draw = () => {
+    dlg.innerHTML = `<figure class="lightbox"><img data-photo="${esc(photos[i].path)}" alt="תמונה ${i + 1} מתוך ${photos.length}"></figure>
+      ${photos.length > 1 ? `<div class="lb-nav"><button type="button" class="btn" data-a="prev">→ הקודמת</button>
+        <span class="num">${i + 1} / ${photos.length}</span><button type="button" class="btn" data-a="next">הבאה ←</button></div>` : ''}
+      <div class="stack"><button type="button" class="link" data-a="close">סגירה</button></div>`;
+    Photos.hydrate(dlg);
+  };
+  dlg.oninput = null;
+  dlg.onclick = (e) => {
+    if (e.target === dlg) return dlg.close();
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'close') dlg.close();
+    else if (a === 'next') { i = (i + 1) % photos.length; draw(); }
+    else if (a === 'prev') { i = (i - 1 + photos.length) % photos.length; draw(); }
+  };
+  draw(); dlg.showModal();
 }
 
 /* ════════════ router ════════════ */
@@ -672,6 +772,7 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('beforeunload', (e) => { if (Dirty.on) { e.preventDefault(); e.returnValue = ''; } });
 
 let mapsToCleanup = [];
+let formDiscard = null; // set by an open form; called when it is left without saving
 async function render() {
   mapsToCleanup.forEach(m => m.remove()); mapsToCleanup = [];
   const app = $('#app');
@@ -681,6 +782,7 @@ async function render() {
   if (S.loadError) return renderLoadError(app);
   const r = parseRoute();
   document.body.dataset.screen = r.name;
+  if (r.name !== 'form' && formDiscard) { formDiscard(); formDiscard = null; }
   if (r.name !== 'form') Dirty.on = false;
   if (r.name === 'home' && !APP.dashboard) return renderHome(app);
   const inner = r.name === 'home' ? dashboardView() : r.name === 'matches' ? matchesView(r.query) : r.name === 'kpi' ? kpiView(r.key)
@@ -734,7 +836,7 @@ const topbar = (title, backHref, backText = 'חזרה', action = '') => `<header
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act="logout"]');
-  if (b) { await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
+  if (b) { Photos.clear(); await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
   if (e.target.closest('[data-act="password"]')) passwordDialog();
   if (e.target.closest('[data-act="demo-reset"]')) demoResetDialog();
   // demo: the numbers are fictional, so calling / WhatsApp only explains
@@ -887,11 +989,13 @@ function listView(module, filter = null) {
         return;
       }
       ul.innerHTML = rows.map(d => `<li class="deal-row" data-id="${d.id}"><a href="#/m/${module}/${d.id}">
+        ${d.photos?.length ? `<img class="row-thumb" data-photo="${esc(d.photos[0].thumb)}" alt="">` : ''}
         <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
         <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a>
         ${d.status === 'active' ? '<button type="button" class="btn row-act" data-a="close">סגירת עסקה</button>'
           : '<button type="button" class="btn row-act" data-a="restore">החזרה לפעילות</button>'}</li>`).join('');
+      Photos.hydrate(ul);
     };
     // quick daily sweep: close / restore straight from the list, without leaving it or jumping to the top
     $('#rows').onclick = async (e) => {
@@ -910,6 +1014,10 @@ function listView(module, filter = null) {
 }
 
 /* ════════════ card ════════════ */
+// photos keep their own proportions (width follows the stored w/h at a fixed height)
+const photoStrip = (d) => d.photos?.length ? `<div class="card-photos" id="card-photos">${d.photos.map((x, i) =>
+  `<button type="button" data-i="${i}" aria-label="פתיחת תמונה ${i + 1}"><img data-photo="${esc(x.thumb)}" alt=""
+     style="aspect-ratio:${+x.w > 0 && +x.h > 0 ? `${+x.w} / ${+x.h}` : '4 / 3'}"></button>`).join('')}</div>` : '';
 function cardView(module, id) {
   const d = findDeal(module, id), M = MODULES[module];
   if (!d) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
@@ -927,6 +1035,7 @@ function cardView(module, id) {
     add('ייעוד', esc(optText(d.purpose_id)));
     add('גודל', fmt.bi(fmt.size(d.size_value, d.size_unit)));
     add('גובה נדרש', fmt.bi(fmt.num(d.height_m) + ' מ׳'));
+    add('תמונות', photoStrip(d));
     sec = 'location';
     add('כתובת / אזור', esc(d.address));
     add('רדיוס חיפוש', fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ'));
@@ -939,6 +1048,7 @@ function cardView(module, id) {
     add('שטח בנוי', fmt.bi(fmt.size(d.built_sqm, 'sqm')));
     add('שטח מגרש', fmt.bi(fmt.size(d.plot_sqm, 'sqm')));
     add('תיאור', esc(d.description));
+    add('תמונות', photoStrip(d));
     sec = 'location';
     add('כתובת', esc(d.address));
     sec = 'money';
@@ -987,6 +1097,8 @@ function cardView(module, id) {
       mapsToCleanup.push(m);
     }
     $('#close-deal')?.addEventListener('click', () => closeDialog(module, d));
+    const strip = $('#card-photos');
+    if (strip) { Photos.hydrate(strip); strip.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) lightbox(d.photos, +b.dataset.i); }; }
     $('#restore-deal')?.addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       try { await DB.setStatus(module, d.id, 'active'); await reload(); toast('העסקה הוחזרה לפעילות'); render(); }
@@ -1194,6 +1306,12 @@ function formView(r) {
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
       <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
       <output id="radius-out" class="num"></output></div>` : ''}`;
+  const photoField = `
+    <div class="field" data-field="photos"><span class="lbl">תמונות <small>(לא חובה, עד ${MAX_PHOTOS})</small></span>
+      <div class="photo-grid" id="photo-grid"></div>
+      <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="image/*" multiple hidden>+ הוספת תמונה</label>
+      <p class="hint">הראשונה מוצגת בכרטיס וברשימה. במחשב אפשר גם לגרור לכאן או להדביק.</p>
+      <p class="err" id="photos-err" aria-live="polite"></p></div>`;
   const leadMoney = `
     ${field('budget_value', 'תקציב', `<div class="row">${moneyInput('budget_value', d.budget_value, d.budget_currency || 'ILS')}${seg('budget_currency', [['ILS', 'ש״ח'], ['USD', '$']], d.budget_currency || 'ILS')}</div>
       <div class="row" style="margin-top:8px">${seg('budget_kind', [['total', 'סה״כ'], ['per_sqm', 'למ״ר']], d.budget_kind || 'total')}</div>`)}
@@ -1222,7 +1340,7 @@ function formView(r) {
       ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only' })}
       ${cfBlock('contact')}
     </section>
-    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${cfBlock('property')}</section>
+    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${photoField}${cfBlock('property')}</section>
     <section class="form-section"><h2>מיקום</h2>${locSection}${cfBlock('location')}</section>
     <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}${cfBlock('money')}</section>
       <div id="new-field" hidden class="form-section" style="margin-top:8px">
@@ -1234,11 +1352,11 @@ function formView(r) {
     <div class="sticky-save"><button class="btn primary block" type="submit" id="save">שמירה</button></div>
   </form>`;
 
-  const mount = () => mountForm({ module, mode, dealId, src, lat, lng, back });
+  const mount = () => mountForm({ module, mode, dealId, src, lat, lng, back });  // duplicate starts without photos
   return { html, mount };
 }
 
-function mountForm({ module, mode, dealId, lat, lng }) {
+function mountForm({ module, mode, dealId, src, lat, lng }) {
   const form = $('#deal-form'), isLead = module === 'lead';
   Dirty.on = false; Dirty.hash = location.hash;
   form.addEventListener('input', () => { Dirty.on = true; });
@@ -1452,6 +1570,76 @@ function mountForm({ module, mode, dealId, lat, lng }) {
     e.currentTarget.disabled = false;
   };
 
+  /* photos: upload on pick (compressed), keep paths in the form, save them with the deal */
+  const savedPhotos = mode === 'edit' ? (src?.photos || []) : [];
+  const photos = savedPhotos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h }));
+  const sessionUploads = [], removedSaved = [];
+  const previews = new Map(); // thumb path → local blob URL (only in this form, never saved)
+  const dropPreview = (thumb) => { const u = previews.get(thumb); if (u) { URL.revokeObjectURL(u); previews.delete(thumb); } };
+  let uploading = 0;
+  const grid = $('#photo-grid'), addLbl = $('#photo-add'), photoErr = $('#photos-err');
+  const drawPhotos = () => {
+    grid.innerHTML = photos.map((x, i) => `<figure class="ph${i === 0 ? ' first' : ''}" data-i="${i}">
+        <img data-photo="${esc(x.thumb)}" alt="תמונה ${i + 1}">
+        ${i === 0 ? '<span class="ph-badge">ראשית</span>' : '<button type="button" class="ph-first" data-a="first">קביעה כראשית</button>'}
+        <button type="button" class="ph-x" data-a="remove" aria-label="הסרת תמונה ${i + 1}">×</button></figure>`).join('')
+      + Array.from({ length: uploading }, () => '<figure class="ph pending"><span class="spinner"></span></figure>').join('');
+    addLbl.hidden = photos.length + uploading >= MAX_PHOTOS;
+    $$('img[data-photo]', grid).forEach(img => { const u = previews.get(img.dataset.photo); if (u) { img.src = u; img.removeAttribute('data-photo'); } });
+    Photos.hydrate(grid);
+  };
+  const addFiles = async (files) => {
+    photoErr.textContent = '';
+    const imgs = [...files].filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+    const room = MAX_PHOTOS - photos.length - uploading;
+    if (imgs.length > room) photoErr.textContent = `אפשר לשמור עד ${MAX_PHOTOS} תמונות לעסקה`;
+    for (const f of imgs.slice(0, Math.max(0, room))) {
+      uploading++; drawPhotos();
+      const u = uuid(), path = `${dealId}/${u}.jpg`, thumb = `${dealId}/${u}_t.jpg`;
+      try {
+        const { full, thumb: th } = await photoVersions(f);
+        await DB.uploadPhoto(path, full.blob); sessionUploads.push(path);   // tracked at once, so a failure below can clean it
+        await DB.uploadPhoto(thumb, th.blob); sessionUploads.push(thumb);
+        previews.set(thumb, URL.createObjectURL(th.blob));
+        photos.push({ path, thumb, w: full.w, h: full.h });
+        Dirty.on = true;
+      } catch (ex) {
+        console.error(ex);
+        if (sessionUploads.includes(path) && !sessionUploads.includes(thumb)) DB.deletePhotos([path]).catch(console.error);
+        photoErr.textContent = ex?.message === 'too-big' ? 'התמונה גדולה מדי. נסי תמונה קטנה יותר.'
+          : /decode|encode/.test(ex?.message || '') ? 'לא הצלחנו לקרוא את התמונה. נסי תמונה בפורמט JPG או PNG.'
+          : 'העלאת התמונה נכשלה. בדקי את החיבור ונסי שוב.';
+      } finally { uploading--; drawPhotos(); }
+    }
+  };
+  $('#photo-input').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
+  grid.onclick = (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    const i = +b.closest('[data-i]').dataset.i;
+    if (b.dataset.a === 'first') photos.unshift(...photos.splice(i, 1));
+    if (b.dataset.a === 'remove') {
+      const [x] = photos.splice(i, 1);
+      dropPreview(x.thumb);
+      if (sessionUploads.includes(x.path)) DB.deletePhotos([x.path, x.thumb]).catch(console.error); // never saved anywhere
+      else removedSaved.push(x.path, x.thumb);                                                      // delete after a successful save
+    }
+    Dirty.on = true; drawPhotos();
+  };
+  const dropZone = form.querySelector('[data-field="photos"]');
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('photo-drop'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('photo-drop'));
+  dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('photo-drop'); addFiles(e.dataTransfer.files); });
+  const onPaste = (e) => { const files = [...(e.clipboardData?.files || [])]; if (files.some(f => f.type.startsWith('image/'))) { e.preventDefault(); addFiles(files); } };
+  document.addEventListener('paste', onPaste);
+  mapsToCleanup.push({ remove: () => document.removeEventListener('paste', onPaste) });
+  formDiscard = () => {
+    [...previews.keys()].forEach(dropPreview);
+    const keep = Photos.referenced();
+    const orphans = sessionUploads.filter(x => !keep.has(x));
+    if (orphans.length) DB.deletePhotos(orphans).catch(console.error);
+  };
+  drawPhotos();
+
   sync();
 
   /* save */
@@ -1493,11 +1681,25 @@ function mountForm({ module, mode, dealId, lat, lng }) {
       // sent only by dashboard builds: the live database gets this column with supabase/003_dashboard.sql
       if (APP.dashboard) p.asking_rent = kind === 'rent' ? parseNum(val('asking_rent')) : null;
     }
+    if (uploading) { toast('רגע, התמונות עדיין עולות'); return; }
     saving = true;
     const btn = $('#save'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> שומרת…';
     try {
       await DB.saveDeal(module, p);
+      const clean = photos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h }));
+      if (JSON.stringify(clean) !== JSON.stringify(savedPhotos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h })))) {
+        try { await DB.setPhotos(module, dealId, clean); }
+        catch (ex) {
+          console.error(ex); await reload();
+          toast('העסקה נשמרה, אבל התמונות לא נשמרו. לחצי שוב על "שמירה".');
+          saving = false; btn.disabled = false; btn.textContent = 'שמירה'; return;
+        }
+      }
       await reload();
+      formDiscard = null; [...previews.keys()].forEach(dropPreview);
+      // remove files that are no longer used by ANY deal (another device may still point at them)
+      const keep = Photos.referenced(), gone = [...removedSaved, ...sessionUploads].filter(x => !keep.has(x));
+      if (gone.length) DB.deletePhotos(gone).catch(console.error);
       Dirty.on = false;
       toast(mode === 'edit' ? 'השינויים נשמרו' : 'העסקה נשמרה');
       go(`#/m/${module}/${dealId}`);

@@ -203,6 +203,14 @@ try {
   await page.waitForSelector('.dl');
   assert.match(await page.locator('.dl').innerText(), /10,800/);
   ok('changes survive a reload (stored in this browser)');
+  /* photos: IndexedDB, survive a reload, cleared by איפוס */
+  const shuId = await page.evaluate(() => S.data.owner.find(o => o.contact.name === 'ורד שושן').id);
+  await page.goto(BASE + '#/m/owner/' + shuId + '/edit'); await page.waitForSelector('#photo-input', { state: 'attached' });
+  await page.setInputFiles('#photo-input', [fileURLToPath(new URL('../assets/photo-building.jpg', import.meta.url))]);
+  await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph:not(.pending)').length === 1);
+  await page.click('#save'); await page.waitForSelector('#card-photos img');
+  await page.reload(); await page.waitForFunction(() => document.querySelector('#card-photos img')?.src.startsWith('blob:'));
+  ok('demo photos: added in the form, kept in IndexedDB, shown after a reload');
   assert.ok(!(await page.locator('[data-act=password]').count()), 'no password change in the demo');
   await page.goto(BASE + '#/'); await page.waitForSelector('#dash-urgent');
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -212,6 +220,10 @@ try {
   assert.equal(shu.asking_rent, null);
   await page.setViewportSize({ width: 390, height: 844 });
   ok('"איפוס הדמו" (menu, confirm) → seed data back; no "שינוי סיסמה" in the demo');
+  const leftPhotos = await page.evaluate(() => new Promise(res => { const r = indexedDB.open('nadlan-demo-photos', 1);
+    r.onsuccess = () => { const q = r.result.transaction('files').objectStore('files').count(); q.onsuccess = () => res(q.result); }; }));
+  assert.equal(leftPhotos, 0);
+  ok('"איפוס הדמו" also deletes the demo photos');
   const ks = await keys();
   assert.deepEqual(ks.filter(k => !k.startsWith('nadlan-demo:v1:')), ['sb-tbuhhxcgkxuovbdtebqv-auth-token']);
   assert.equal(await page.evaluate(() => localStorage.getItem('sb-tbuhhxcgkxuovbdtebqv-auth-token')), 'LIVE');

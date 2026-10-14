@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'Leah@Example.com');
 const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'leah2@example.com');
 const migration3 = readFileSync(new URL('../supabase/003_dashboard.sql', import.meta.url), 'utf8');
+const photosSql = readFileSync(new URL('../supabase/004_photos.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -20,6 +21,12 @@ await db.exec(`
   grant usage on schema public to anon, authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on functions to anon, authenticated;
+  create schema storage;
+  create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+  create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to anon, authenticated;
+  grant all on storage.objects to anon, authenticated;
   insert into auth.users values ('${LEAH}', 'leah@example.com');
   insert into auth.users values ('44444444-4444-4444-8444-444444444444', 'stale-test@example.com'); -- existed before the run
 `);
@@ -27,6 +34,8 @@ await db.exec(schema);
 await db.exec(schema); // idempotent re-run
 await db.exec(migration);
 await db.exec(migration); // idempotent re-run
+await db.exec(photosSql);
+await db.exec(photosSql); // idempotent re-run
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -199,6 +208,43 @@ await as('authenticated', LEAH, async () => {
   const cf = (await q(`insert into custom_fields (module,label,type) values ('lead','קומה','number') returning key`))[0];
   assert.match(cf.key, /^f_[0-9a-f]{10}$/);
   ok('custom field gets a generated key');
+
+  // 004 photos
+  const did = id, ph = (n) => ({ path: `${did}/0000000${n}-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`, thumb: `${did}/0000000${n}-aaaa-4aaa-8aaa-aaaaaaaaaaaa_t.jpg`, w: 1600, h: 1200 });
+  const r1 = (await q('select set_deal_photos($1,$2,$3::jsonb) r', ['lead', did, JSON.stringify([ph(1), ph(2)])]))[0].r;
+  assert.deepEqual(r1.previous, []);
+  assert.equal((await q('select jsonb_array_length(photos) n from lead_deals where id=$1', [did]))[0].n, 2);
+  await q('select save_lead_deal($1::jsonb)', [{ ...base, id: did, height_m: 10 }]);
+  assert.equal((await q('select jsonb_array_length(photos) n from lead_deals where id=$1', [did]))[0].n, 2);
+  ok('004: photos saved by their own RPC; a normal deal save (old app) keeps them');
+  await fails(() => q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([1,2,3,4,5,6].map(ph))]), /עד 5/);
+  await fails(() => q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([{ path: 'other/x.jpg', thumb: 'other/x_t.jpg' }])]), /נתיב/);
+  await fails(() => q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([{ path: `${did}/../x.jpg`, thumb: `${did}/x_t.jpg` }])]), /נתיב/);
+  await fails(() => q('select set_deal_photos($1,$2,$3::jsonb)', ['owner', did, '[]']), /לא נמצאה/);
+  ok('004: max 5 photos, paths must sit under this deal id, wrong module rejected');
+  await q(`insert into storage.objects (bucket_id, name) values ('deal-photos', $1)`, [ph(1).path]);
+  assert.equal((await q(`select count(*)::int n from storage.objects where bucket_id='deal-photos'`))[0].n, 1);
+  ok('004: member can upload and see photos in the private bucket');
+  await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([{ ...ph(1), local: '"><img src=x onerror=alert(1)>', w: '1600' }])]);
+  assert.deepEqual((await q('select photos from lead_deals where id=$1', [did]))[0].photos, [{ path: ph(1).path, thumb: ph(1).thumb, w: 1600, h: 1200 }]);
+  ok('004: only path/thumb/w/h are stored (extra fields like an HTML payload are dropped)');
+  assert.equal((await q('delete from storage.objects where name=$1 returning id', [ph(1).path])).length, 0);
+  await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, '[]']);
+  assert.equal((await q('delete from storage.objects where name=$1 returning id', [ph(1).path])).length, 1);
+  ok('004: a file still used by a deal cannot be deleted; once unused it can');
 });
+
+await as('authenticated', OTHER, async () => {
+  assert.equal((await q(`select * from storage.objects`)).length, 0);
+  await fails(() => q(`insert into storage.objects (bucket_id, name) values ('deal-photos', 'x/y.jpg')`), /row-level security/);
+  await fails(() => q(`select set_deal_photos('lead', '33333333-3333-4333-8333-333333333333', '[]'::jsonb)`), /אין הרשאה/);
+  assert.equal((await q(`delete from storage.objects returning id`)).length, 0);
+});
+await as('anon', null, async () => {
+  assert.equal((await q(`select * from storage.objects`)).length, 0);
+  await fails(() => q(`insert into storage.objects (bucket_id, name) values ('deal-photos', 'x/y.jpg')`), /row-level security/);
+  await fails(() => q(`select set_deal_photos('lead', '33333333-3333-4333-8333-333333333333', '[]'::jsonb)`), /permission denied/);
+});
+ok('004: anon and logged-in non-members cannot see, upload, delete photos or call set_deal_photos');
 
 console.log(`\nDB tests passed: ${pass}`);

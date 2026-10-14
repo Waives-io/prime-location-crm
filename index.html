@@ -693,31 +693,31 @@ function shell(r, html) {
   const navLinks = (cls) => Object.entries(MODULES).map(([k, m]) =>
     `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}>${m.title}</a>`).join('');
   const bottom = r.name !== 'form';
-  // dashboard builds: "דשבורד" is the first destination; "+ חדש" outside a module asks which kind
+  // dashboard builds: "דשבורד" is the first destination
   const board = (cls) => APP.dashboard ? `<a class="${cls} nav-board" href="#/" ${['home', 'matches', 'kpi'].includes(r.name) ? 'aria-current="page"' : ''}>דשבורד</a>` : '';
-  const newBtn = r.module ? `<a class="nav-new" href="#/m/${r.module}/new">+ חדש</a>` : `<button type="button" class="nav-new" data-act="new-choice">+ חדש</button>`;
-  // dashboard builds on a phone: the pages are tabs at the top, "+ חדש" alone at the bottom within thumb reach
-  if (APP.dashboard) return `${demoBanner()}<div class="shell top-nav-shell ${bottom ? 'has-bottom-new' : ''}">
+  const newBtn = `<a class="nav-new" href="#/m/${r.module}/new">+ חדש</a>`;
+  // dashboard builds on a phone: the pages are tabs at the top, "+ חדש" alone at the bottom within thumb reach –
+  // only inside a module (מתעניינים / נכסים); the dashboard itself has no "+ חדש"
+  const addBottom = bottom && !!r.module;
+  if (APP.dashboard) return `${demoBanner()}<div class="shell top-nav-shell ${addBottom ? 'has-bottom-new' : ''}">
     <nav class="side-nav" aria-label="עמודים">
       <a href="#/" class="brand-side"><img src="${APP.logo}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
       ${board('mod')}${navLinks('mod')}
-      ${!r.module ? `<button type="button" class="btn primary side-new" data-act="new-choice">+ חדש</button>` : ''}
       <div class="spacer"></div>
       ${accountLinks()}
     </nav>
     <div class="main">${bottom ? `<nav class="top-nav" aria-label="עמודים">${board('')}${navLinks('')}</nav>` : ''}${html}</div>
-    ${bottom ? `<div class="bottom-new">${newBtn}</div>` : ''}
+    ${addBottom ? `<div class="bottom-new">${newBtn}</div>` : ''}
   </div>`;
   return `${demoBanner()}<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
     <nav class="side-nav" aria-label="מודולים">
       <a href="#/" class="brand-side"><img src="${APP.logo}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
       ${board('mod')}${navLinks('mod')}
-      ${APP.dashboard && !r.module ? `<button type="button" class="btn primary side-new" data-act="new-choice">+ חדש</button>` : ''}
       <div class="spacer"></div>
       ${accountLinks()}
     </nav>
     <div class="main">${html}</div>
-    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${board('')}${navLinks('').replace('</a><a', `</a>${newBtn}<a`)}</nav>` : ''}
+    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('').replace('</a><a', `</a>${newBtn}<a`)}</nav>` : ''}
   </div>`;
 }
 // demo: no password change (the demo login is shared), "איפוס הדמו" instead
@@ -735,22 +735,12 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act="logout"]');
   if (b) { await DB.signOut(); S.session = null; S.data = null; S.member = null; location.hash = '#/'; render(); }
   if (e.target.closest('[data-act="password"]')) passwordDialog();
-  if (e.target.closest('[data-act="new-choice"]')) newChoiceDialog();
   if (e.target.closest('[data-act="demo-reset"]')) demoResetDialog();
   // demo: the numbers are fictional, so calling / WhatsApp only explains
   const fake = APP.demo && e.target.closest('a[href^="tel:"], a[href^="https://wa.me/"]');
   if (fake) { e.preventDefault(); toast('בדמו לא מחייגים ולא שולחים – המספרים בדויים'); }
 });
 
-function newChoiceDialog() {
-  const dlg = $('#dlg');
-  dlg.innerHTML = `<h2>מה מוסיפים?</h2><div class="stack">
-    <a class="btn primary" href="#/m/lead/new">מתעניין חדש</a>
-    <a class="btn" href="#/m/owner/new">נכס חדש</a>
-    <button class="link" type="button" data-x>ביטול</button></div>`;
-  dlg.onclick = (e) => { if (e.target === dlg || e.target.closest('[data-x], a')) dlg.close(); };
-  dlg.showModal();
-}
 function demoResetDialog() {
   const dlg = $('#dlg');
   dlg.innerHTML = `<h2>איפוס הדמו</h2><p>כל השינויים שעשית יימחקו, ונתוני ההדגמה יחזרו למצב ההתחלתי.</p><div class="stack">

@@ -62,9 +62,9 @@ try {
   assert.match(await text('.demo-banner'), /סביבת הדגמה/);
   const navs = await page.$$eval('.top-nav > *', a => a.map(x => x.textContent.trim()));
   assert.deepEqual(navs, ['דשבורד', 'מתעניינים', 'נכסים']);
-  assert.equal(await page.locator('.bottom-new .nav-new').count(), 1);
+  assert.equal(await page.locator('.bottom-new, [data-act=new-choice]').count(), 0);
   assert.equal(await page.locator('.bottom-nav').count(), 0);
-  ok('dashboard: metrics first, then alerts, matches, supply; pages as tabs at the top, "+ חדש" alone at the bottom');
+  ok('dashboard: metrics first, then alerts, matches, supply; pages as tabs at the top; no "+ חדש" on the dashboard');
   const tiles = await page.$$eval('.kpi-tile', t => t.map(x => [x.querySelector('.kpi-label').textContent, x.querySelector('.kpi-value').textContent]));
   assert.equal(tiles.length, 6);
   assert.ok(await page.locator('.kpi-tile .progress').count() === 1 && await page.locator('.kpi-tile .split').count() === 1);
@@ -177,13 +177,13 @@ try {
   await page.click('#dlg [data-a=close]');
   ok('עריכת הרשימה: every value has a "קבוצת התאמה" picker that saves on change');
 
-  /* ── "+ חדש" on the dashboard asks which kind ── */
-  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-urgent');
-  await page.click('.bottom-new [data-act=new-choice]');
-  await page.click('#dlg a:has-text("נכס חדש")');
-  await page.waitForSelector('#deal-form');
+  /* ── "+ חדש" lives in the modules only: alone at the bottom, opens that module's form ── */
+  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows .deal-row');
+  await page.click('.bottom-new .nav-new'); await page.waitForSelector('#deal-form');
   assert.ok(page.url().endsWith('#/m/owner/new'));
-  ok('"+ חדש" on the dashboard → choice → new property form');
+  await page.goto(BASE + '#/matches'); await page.waitForSelector('.match-filters');
+  assert.equal(await page.locator('.bottom-new').count(), 0);
+  ok('"+ חדש": at the bottom of מתעניינים / נכסים only (not on the dashboard or matches) → the module form');
 
   /* ── persistence, reset, storage isolation ── */
   await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('#dash-urgent');

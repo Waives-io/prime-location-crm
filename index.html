@@ -483,8 +483,10 @@ const Photos = {
   referenced() { return new Set(['lead', 'owner'].flatMap(m => deals(m).flatMap(d => (d.photos || []).flatMap(x => [x.path, x.thumb])))); },
   clear() { this.cache.clear(); },
 };
-// phone photos → JPEG, longest side `max` px (EXIF rotation applied)
-async function compressImage(file, max, quality = 0.82) {
+// phone photos → JPEG versions: decoded ONCE, then a full (1600px) and a thumbnail (400px) are drawn from it
+const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
+async function photoVersions(file) {
+  if (file.size > MAX_PHOTO_BYTES) throw new Error('too-big');
   let src;
   try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
   catch {
@@ -495,12 +497,20 @@ async function compressImage(file, max, quality = 0.82) {
       im.src = u;
     });
   }
-  const k = Math.min(1, max / Math.max(src.width, src.height)), w = Math.round(src.width * k), h = Math.round(src.height * k);
-  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(src, 0, 0, w, h);
-  src.close?.();
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
-  if (!blob) throw new Error('encode');
-  return { blob, w, h };
+  if (src.width * src.height > 100e6) { src.close?.(); throw new Error('too-big'); } // > 100 MP
+  const draw = async (img, max, quality) => {
+    const k = Math.min(1, max / Math.max(img.width, img.height)), w = Math.round(img.width * k), h = Math.round(img.height * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+    if (!blob) throw new Error('encode');
+    return { blob, w, h, canvas: c };
+  };
+  try {
+    const full = await draw(src, 1600, 0.82);
+    const thumb = await draw(full.canvas, 400, 0.75);
+    full.canvas.width = full.canvas.height = thumb.canvas.width = thumb.canvas.height = 0; // free canvas memory
+    return { full, thumb };
+  } finally { src.close?.(); }
 }
 function lightbox(photos, start = 0) {
   const dlg = $('#dlg'); let i = start;
@@ -1291,17 +1301,20 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
 
   /* photos: upload on pick (compressed), keep paths in the form, save them with the deal */
   const savedPhotos = mode === 'edit' ? (src?.photos || []) : [];
-  const photos = savedPhotos.map(x => ({ ...x }));
+  const photos = savedPhotos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h }));
   const sessionUploads = [], removedSaved = [];
+  const previews = new Map(); // thumb path → local blob URL (only in this form, never saved)
+  const dropPreview = (thumb) => { const u = previews.get(thumb); if (u) { URL.revokeObjectURL(u); previews.delete(thumb); } };
   let uploading = 0;
   const grid = $('#photo-grid'), addLbl = $('#photo-add'), photoErr = $('#photos-err');
   const drawPhotos = () => {
     grid.innerHTML = photos.map((x, i) => `<figure class="ph${i === 0 ? ' first' : ''}" data-i="${i}">
-        <img ${x.local ? `src="${x.local}"` : `data-photo="${esc(x.thumb)}"`} alt="תמונה ${i + 1}">
+        <img data-photo="${esc(x.thumb)}" alt="תמונה ${i + 1}">
         ${i === 0 ? '<span class="ph-badge">ראשית</span>' : '<button type="button" class="ph-first" data-a="first">קביעה כראשית</button>'}
         <button type="button" class="ph-x" data-a="remove" aria-label="הסרת תמונה ${i + 1}">×</button></figure>`).join('')
       + Array.from({ length: uploading }, () => '<figure class="ph pending"><span class="spinner"></span></figure>').join('');
     addLbl.hidden = photos.length + uploading >= MAX_PHOTOS;
+    $$('img[data-photo]', grid).forEach(img => { const u = previews.get(img.dataset.photo); if (u) { img.src = u; img.removeAttribute('data-photo'); } });
     Photos.hydrate(grid);
   };
   const addFiles = async (files) => {
@@ -1311,16 +1324,19 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     if (imgs.length > room) photoErr.textContent = `אפשר לשמור עד ${MAX_PHOTOS} תמונות לעסקה`;
     for (const f of imgs.slice(0, Math.max(0, room))) {
       uploading++; drawPhotos();
+      const u = uuid(), path = `${dealId}/${u}.jpg`, thumb = `${dealId}/${u}_t.jpg`;
       try {
-        const full = await compressImage(f, 1600), th = await compressImage(f, 400, 0.75), u = uuid();
-        const path = `${dealId}/${u}.jpg`, thumb = `${dealId}/${u}_t.jpg`;
-        await DB.uploadPhoto(path, full.blob); await DB.uploadPhoto(thumb, th.blob);
-        sessionUploads.push(path, thumb);
-        photos.push({ path, thumb, w: full.w, h: full.h, local: URL.createObjectURL(th.blob) });
+        const { full, thumb: th } = await photoVersions(f);
+        await DB.uploadPhoto(path, full.blob); sessionUploads.push(path);   // tracked at once, so a failure below can clean it
+        await DB.uploadPhoto(thumb, th.blob); sessionUploads.push(thumb);
+        previews.set(thumb, URL.createObjectURL(th.blob));
+        photos.push({ path, thumb, w: full.w, h: full.h });
         Dirty.on = true;
       } catch (ex) {
         console.error(ex);
-        photoErr.textContent = /decode|encode/.test(ex?.message || '') ? 'לא הצלחנו לקרוא את התמונה. נסי תמונה בפורמט JPG או PNG.'
+        if (sessionUploads.includes(path) && !sessionUploads.includes(thumb)) DB.deletePhotos([path]).catch(console.error);
+        photoErr.textContent = ex?.message === 'too-big' ? 'התמונה גדולה מדי. נסי תמונה קטנה יותר.'
+          : /decode|encode/.test(ex?.message || '') ? 'לא הצלחנו לקרוא את התמונה. נסי תמונה בפורמט JPG או PNG.'
           : 'העלאת התמונה נכשלה. בדקי את החיבור ונסי שוב.';
       } finally { uploading--; drawPhotos(); }
     }
@@ -1332,6 +1348,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     if (b.dataset.a === 'first') photos.unshift(...photos.splice(i, 1));
     if (b.dataset.a === 'remove') {
       const [x] = photos.splice(i, 1);
+      dropPreview(x.thumb);
       if (sessionUploads.includes(x.path)) DB.deletePhotos([x.path, x.thumb]).catch(console.error); // never saved anywhere
       else removedSaved.push(x.path, x.thumb);                                                      // delete after a successful save
     }
@@ -1345,6 +1362,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   document.addEventListener('paste', onPaste);
   mapsToCleanup.push({ remove: () => document.removeEventListener('paste', onPaste) });
   formDiscard = () => {
+    [...previews.keys()].forEach(dropPreview);
     const keep = Photos.referenced();
     const orphans = sessionUploads.filter(x => !keep.has(x));
     if (orphans.length) DB.deletePhotos(orphans).catch(console.error);
@@ -1405,7 +1423,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
         }
       }
       await reload();
-      formDiscard = null;
+      formDiscard = null; [...previews.keys()].forEach(dropPreview);
       // remove files that are no longer used by ANY deal (another device may still point at them)
       const keep = Photos.referenced(), gone = [...removedSaved, ...sessionUploads].filter(x => !keep.has(x));
       if (gone.length) DB.deletePhotos(gone).catch(console.error);

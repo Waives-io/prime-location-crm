@@ -16,7 +16,7 @@ alter table public.owner_deals add constraint owner_deals_photos_check
 -- p_photos: [{ "path": "<deal id>/<uuid>.jpg", "thumb": "<deal id>/<uuid>_t.jpg", "w": 1600, "h": 1200 }, …]
 create or replace function public.set_deal_photos(p_module text, p_id uuid, p_photos jsonb) returns jsonb
 language plpgsql set search_path = public as $$
-declare e jsonb; v_prefix text := p_id::text || '/'; v_old jsonb;
+declare e jsonb; v_old jsonb; v_clean jsonb := '[]'::jsonb;
 begin
   if not is_member() then raise exception 'אין הרשאה' using errcode = '42501'; end if;
   if p_module not in ('lead', 'owner') then raise exception 'מודול לא תקין' using errcode = '22023'; end if;
@@ -28,21 +28,35 @@ begin
        or coalesce(e->>'thumb', '') !~ ('^' || p_id::text || '/[0-9a-f-]+_t\.(jpg|webp)$') then
       raise exception 'נתיב תמונה לא תקין' using errcode = '22023';
     end if;
+    -- store only these four fields, nothing else the client sent
+    v_clean := v_clean || jsonb_build_array(jsonb_build_object(
+      'path', e->>'path', 'thumb', e->>'thumb',
+      'w', least(greatest(coalesce((e->>'w')::int, 0), 0), 20000),
+      'h', least(greatest(coalesce((e->>'h')::int, 0), 0), 20000)));
   end loop;
   if p_module = 'lead' then
     select photos into v_old from lead_deals where id = p_id;
     if not found then raise exception 'העסקה לא נמצאה' using errcode = 'P0002'; end if;
-    update lead_deals set photos = p_photos where id = p_id;
+    update lead_deals set photos = v_clean where id = p_id;
   else
     select photos into v_old from owner_deals where id = p_id;
     if not found then raise exception 'העסקה לא נמצאה' using errcode = 'P0002'; end if;
-    update owner_deals set photos = p_photos where id = p_id;
+    update owner_deals set photos = v_clean where id = p_id;
   end if;
   return jsonb_build_object('id', p_id, 'previous', v_old);
 end $$;
 
 revoke execute on function public.set_deal_photos(text, uuid, jsonb) from public, anon;
 grant execute on function public.set_deal_photos(text, uuid, jsonb) to authenticated;
+
+-- Is this storage object still used by any deal? (checked by the delete policy, at delete time)
+create or replace function public.photo_in_use(p_name text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from lead_deals d, jsonb_array_elements(d.photos) x where x->>'path' = p_name or x->>'thumb' = p_name)
+      or exists (select 1 from owner_deals d, jsonb_array_elements(d.photos) x where x->>'path' = p_name or x->>'thumb' = p_name);
+$$;
+revoke execute on function public.photo_in_use(text) from public, anon;
+grant execute on function public.photo_in_use(text) to authenticated;
 
 -- ───────────── private storage bucket ─────────────
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -51,6 +65,7 @@ on conflict (id) do update set public = false, file_size_limit = excluded.file_s
   allowed_mime_types = excluded.allowed_mime_types;
 
 -- Only CRM members can see, upload or delete photos; anon and other logged-in accounts get nothing.
+-- A file can be deleted only when no deal uses it any more (so one device can't break another's photos).
 drop policy if exists deal_photos_select on storage.objects;
 drop policy if exists deal_photos_insert on storage.objects;
 drop policy if exists deal_photos_delete on storage.objects;
@@ -59,4 +74,4 @@ create policy deal_photos_select on storage.objects for select to authenticated
 create policy deal_photos_insert on storage.objects for insert to authenticated
   with check (bucket_id = 'deal-photos' and public.is_member());
 create policy deal_photos_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'deal-photos' and public.is_member());
+  using (bucket_id = 'deal-photos' and public.is_member() and not public.photo_in_use(name));

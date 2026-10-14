@@ -202,6 +202,13 @@ await as('authenticated', LEAH, async () => {
   await q(`insert into storage.objects (bucket_id, name) values ('deal-photos', $1)`, [ph(1).path]);
   assert.equal((await q(`select count(*)::int n from storage.objects where bucket_id='deal-photos'`))[0].n, 1);
   ok('004: member can upload and see photos in the private bucket');
+  await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([{ ...ph(1), local: '"><img src=x onerror=alert(1)>', w: '1600' }])]);
+  assert.deepEqual((await q('select photos from lead_deals where id=$1', [did]))[0].photos, [{ path: ph(1).path, thumb: ph(1).thumb, w: 1600, h: 1200 }]);
+  ok('004: only path/thumb/w/h are stored (extra fields like an HTML payload are dropped)');
+  assert.equal((await q('delete from storage.objects where name=$1 returning id', [ph(1).path])).length, 0);
+  await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, '[]']);
+  assert.equal((await q('delete from storage.objects where name=$1 returning id', [ph(1).path])).length, 1);
+  ok('004: a file still used by a deal cannot be deleted; once unused it can');
 });
 
 await as('authenticated', OTHER, async () => {

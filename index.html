@@ -1579,7 +1579,7 @@ function matchPair(lead, owner) {
   let missing = false;
   if (price == null) { missing = true; chips.push({ t: 'חסרה שכירות מבוקשת', k: 'warn' }); }
   else if (price <= budget * 1.0001) { score += 30; chips.push({ t: 'בתקציב' + usd, k: 'ok' }); }
-  else if (price <= budget * 1.15) { score += 15; near++; chips.push({ t: `מעל התקציב ב-${Math.round((price / budget - 1) * 100)}%${usd}`, k: 'near' }); }
+  else if (price <= budget * 1.15) { score += 15; near++; chips.push({ t: `מעל התקציב ב-${Math.max(1, Math.ceil((price / budget - 1) * 100))}%${usd}`, k: 'near' }); }
   else return null;
   if (near > 1) return null;
   let level = score >= 80 ? 'high' : score >= 60 ? 'good' : 'possible';

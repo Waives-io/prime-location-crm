@@ -5,10 +5,11 @@
   const NS = 'nadlan-demo:v1:', KEY = NS + 'data', SESSION = NS + 'session';
   const LOGIN = window.PL_APP?.demo || {};
   const store = {
+    // a failed write (private mode, full storage) keeps the value in memory, and memory wins from then on
     mem: {},
-    get(k) { try { return localStorage.getItem(k); } catch { return this.mem[k] ?? null; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch { this.mem[k] = v; } },
-    del(k) { try { localStorage.removeItem(k); } catch { delete this.mem[k]; } },
+    get(k) { if (k in this.mem) return this.mem[k]; try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); delete this.mem[k]; } catch { this.mem[k] = v; } },
+    del(k) { delete this.mem[k]; try { localStorage.removeItem(k); } catch {} },
   };
   const now = () => new Date().toISOString();
   const id = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
@@ -31,7 +32,10 @@
     const shift = Math.round((new Date(today()) - new Date(db.anchor)) / 86400000);
     const move = (v) => { if (!v) return v; const d = new Date(v.length === 10 ? v + 'T00:00:00Z' : v); d.setUTCDate(d.getUTCDate() + shift);
       return v.length === 10 ? d.toISOString().slice(0, 10) : d.toISOString(); };
-    for (const m of ['lead', 'owner']) for (const r of db[m]) for (const f of DATE_FIELDS[m]) r[f] = move(r[f]);
+    // past events never move into the future (a visitor's edit from last week stays in the past); deadlines may
+    const PAST = ['lead_date', 'created_at', 'updated_at', 'closed_at'], nowISO = new Date().toISOString(), day = today();
+    const cap = (f, v) => !v || !PAST.includes(f) ? v : v.length === 10 ? (v > day ? day : v) : (v > nowISO ? nowISO : v);
+    for (const m of ['lead', 'owner']) for (const r of db[m]) for (const f of DATE_FIELDS[m]) r[f] = cap(f, move(r[f]));
     db.anchor = today();
     return db;
   }

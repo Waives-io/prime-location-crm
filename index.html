@@ -917,7 +917,7 @@ function cardView(module, id) {
     add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : 'מכירה');
     add('מחיר מבוקש / שווי', fmt.ltr(fmt.money(d.asking_price)));
     if (d.deal_kind === 'rent') {
-      if (d.asking_rent) add('שכירות מבוקשת לחודש', fmt.ltr(fmt.money(d.asking_rent)));
+      if (APP.dashboard && d.asking_rent) add('שכירות מבוקשת לחודש', fmt.ltr(fmt.money(d.asking_rent)));
       add('מושכר כרגע', d.is_rented ? 'כן' : 'לא');
       if (d.is_rented) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', fmt.ltr(fmt.pct(d.yield_pct))); }
     } else {
@@ -1592,7 +1592,9 @@ function matchSection(module, d) {
 
 /* list filters from the dashboard: ?g=<group>&a=<city>  ·  ?u=soon (needed soon)  ·  ?u=stale (not updated 30+ days) */
 const DAY = 86400000;
-const daysFrom = (iso) => Math.round((new Date(String(iso).slice(0, 10) + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / DAY);
+// calendar day in Israel: dates stay as they are, timestamps are converted (a 23:30 save is still "today")
+const localDay = (v) => { const s = String(v || ''); return s.length <= 10 ? s : new Date(s).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }); };
+const daysFrom = (iso) => Math.round((new Date(localDay(iso) + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / DAY);
 const lastTouch = (d) => d.updated_at || d.created_at;
 const isSoon = (d) => d.status === 'active' && !!d.needed_by && daysFrom(d.needed_by) <= 7;
 const isStale = (d) => d.status === 'active' && daysFrom(lastTouch(d)) <= -30;
@@ -1654,13 +1656,14 @@ function dashboardView() {
   </section>`;
   // 4. קצב וסגירות: this calendar month; average days to close over the last 6 months
   const month = todayISO().slice(0, 7);
-  const created = (m, d) => m === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
-  const inMonth = (iso) => String(iso || '').slice(0, 7) === month;
+  const created = (m, d) => m === 'lead' ? d.lead_date : localDay(d.created_at);
+  const inMonth = (iso) => !!iso && localDay(iso).slice(0, 7) === month;
   const newThis = all.filter(([m, d]) => inMonth(created(m, d))).length;
   const closedThis = all.filter(([, d]) => d.status === 'closed' && inMonth(d.closed_at)).length;
   const irrThis = all.filter(([, d]) => d.status === 'irrelevant' && inMonth(d.closed_at)).length;
-  const durations = all.filter(([, d]) => d.status === 'closed' && d.closed_at && daysFrom(d.closed_at) >= -183)
-    .map(([m, d]) => daysFrom(d.closed_at) - daysFrom(created(m, d)));
+  // leads only: from the lead date to the closing day
+  const durations = leads.filter(d => d.status === 'closed' && d.closed_at && daysFrom(d.closed_at) >= -183)
+    .map(d => daysFrom(d.closed_at) - daysFrom(d.lead_date));
   const avg = durations.length ? Math.round(durations.reduce((s, x) => s + x, 0) / durations.length) : null;
   const pace = `<section class="dash-sec" id="dash-pace"><h2>קצב וסגירות</h2><div class="kpis">
     <div class="kpi"><strong class="num">${newThis}</strong><span>חדשים החודש</span></div>

@@ -313,10 +313,11 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
 .ph-badge{position:absolute;bottom:2px;inset-inline-start:2px;font-size:.72rem;background:var(--yellow);border-radius:6px;padding:0 6px}
 .ph.pending{display:grid;place-items:center}
 .photo-drop{outline:2px dashed var(--ink);outline-offset:4px}
-.card-photos{display:flex;gap:8px;margin:12px 0;overflow-x:auto}
+.card-photos{display:flex;gap:8px;overflow-x:auto;max-width:100%;padding-bottom:4px}
 .card-photos button{padding:0;border:0;background:none;cursor:pointer;border-radius:10px;overflow:hidden;flex:0 0 auto}
-.card-photos img{display:block;width:84px;height:84px;object-fit:cover}
-.card-photos button:first-child img{width:180px;height:120px}
+.card-photos img{display:block;height:110px;width:auto;max-width:none;object-fit:cover}
+.card-photos button:first-child img{height:150px}
+.dl dd:has(.card-photos){min-width:0}
 .row-thumb{float:inline-start;width:52px;height:52px;object-fit:cover;border-radius:8px;margin-inline-end:10px}
 .lightbox{margin:0}
 .lightbox img{display:block;width:100%;max-height:70vh;object-fit:contain;background:#111;border-radius:10px}
@@ -759,6 +760,10 @@ function listView(module) {
 }
 
 /* ════════════ card ════════════ */
+// photos keep their own proportions (width follows the stored w/h at a fixed height)
+const photoStrip = (d) => d.photos?.length ? `<div class="card-photos" id="card-photos">${d.photos.map((x, i) =>
+  `<button type="button" data-i="${i}" aria-label="פתיחת תמונה ${i + 1}"><img data-photo="${esc(x.thumb)}" alt=""
+     style="aspect-ratio:${+x.w > 0 && +x.h > 0 ? `${+x.w} / ${+x.h}` : '4 / 3'}"></button>`).join('')}</div>` : '';
 function cardView(module, id) {
   const d = findDeal(module, id), M = MODULES[module];
   if (!d) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
@@ -776,6 +781,7 @@ function cardView(module, id) {
     add('ייעוד', esc(optText(d.purpose_id)));
     add('גודל', fmt.bi(fmt.size(d.size_value, d.size_unit)));
     add('גובה נדרש', fmt.bi(fmt.num(d.height_m) + ' מ׳'));
+    add('תמונות', photoStrip(d));
     sec = 'location';
     add('כתובת / אזור', esc(d.address));
     add('רדיוס חיפוש', fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ'));
@@ -788,6 +794,7 @@ function cardView(module, id) {
     add('שטח בנוי', fmt.bi(fmt.size(d.built_sqm, 'sqm')));
     add('שטח מגרש', fmt.bi(fmt.size(d.plot_sqm, 'sqm')));
     add('תיאור', esc(d.description));
+    add('תמונות', photoStrip(d));
     sec = 'location';
     add('כתובת', esc(d.address));
     sec = 'money';
@@ -813,8 +820,6 @@ function cardView(module, id) {
       <span class="chip ${active ? 'active' : 'archived'}">${statusText}</span>
       <h2>${esc(c.name)}</h2>${c.company_name ? `<p>${esc(c.company_name)}</p>` : ''}
     </div>
-    ${d.photos?.length ? `<div class="card-photos" id="card-photos">${d.photos.map((x, i) =>
-      `<button type="button" data-i="${i}" aria-label="פתיחת תמונה ${i + 1}"><img data-photo="${esc(x.thumb)}" alt=""></button>`).join('')}</div>` : ''}
     <div class="actions">
       <a class="btn primary" href="${Phone.tel(c.phone)}">חיוג</a>
       <a class="btn" href="${Phone.wa(c.phone)}" target="_blank" rel="noopener">WhatsApp</a>
@@ -1036,7 +1041,8 @@ function formView(r) {
     ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה וממלאת את הכתובת' })}
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
       <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
-      <output id="radius-out" class="num"></output></div>` : ''}
+      <output id="radius-out" class="num"></output></div>` : ''}`;
+  const photoField = `
     <div class="field" data-field="photos"><span class="lbl">תמונות <small>(לא חובה, עד ${MAX_PHOTOS})</small></span>
       <div class="photo-grid" id="photo-grid"></div>
       <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="image/*" multiple hidden>+ הוספת תמונה</label>
@@ -1069,7 +1075,7 @@ function formView(r) {
       ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only' })}
       ${cfBlock('contact')}
     </section>
-    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${cfBlock('property')}</section>
+    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${photoField}${cfBlock('property')}</section>
     <section class="form-section"><h2>מיקום</h2>${locSection}${cfBlock('location')}</section>
     <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}${cfBlock('money')}</section>
       <div id="new-field" hidden class="form-section" style="margin-top:8px">

@@ -301,6 +301,7 @@ try {
   ok('owner map tap → pin + address filled from reverse search (editable)');
   /* photos */
   const IMG = [fileURLToPath(new URL('../assets/photo-building.jpg', import.meta.url)), fileURLToPath(new URL('../assets/photo-warehouse.jpg', import.meta.url))];
+  assert.equal(await page.evaluate(() => document.querySelector('[data-field=photos]').closest('section').querySelector('h2').textContent), 'הנכס');
   await page.setInputFiles('#photo-input', IMG);
   await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph:not(.pending)').length === 2);
   assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4);
@@ -335,7 +336,11 @@ try {
   await page.click('#dlg [data-a=next]'); assert.match(await text('#dlg .lb-nav'), /1 \/ 2/);
   await page.click('#dlg [data-a=close]');
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 2);
-  ok('card: photo strip, tap opens the large view with next / previous');
+  assert.equal(await page.evaluate(() => document.querySelector('#card-photos').closest('dd').previousElementSibling.textContent), 'תמונות');
+  const ratios = await page.evaluate(() => [...document.querySelectorAll('#card-photos img')].map(i => { const r = i.getBoundingClientRect(); return [r.width / r.height, i.naturalWidth / i.naturalHeight]; }));
+  ratios.forEach(([shown, real]) => assert.ok(Math.abs(shown - real) < 0.03, 'photo stretched: ' + shown + ' vs ' + real));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'card wider than the screen');
+  ok('card: photos inside the property details at their own proportions (not stretched), no overflow; tap opens, tap opens the large view with next / previous');
   await page.click('.back'); await page.waitForSelector('#rows');
   await page.waitForFunction(() => document.querySelector('#rows .row-thumb')?.src.startsWith('blob:'));
   ok('list row shows the first photo as a thumbnail');

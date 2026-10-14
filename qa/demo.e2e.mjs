@@ -56,23 +56,38 @@ try {
   ok('login → dashboard is the home screen');
 
   /* ── dashboard ── */
-  const order = await page.$$eval('.dash-sec h2', hs => hs.map(h => h.textContent));
-  assert.deepEqual(order, ['לטיפול היום', 'התאמות חמות', 'היצע מול ביקוש', 'קצב וסגירות']);
+  const order = await page.$$eval('.dash-sec', ss => ss.map(x => x.id));
+  assert.deepEqual(order, ['dash-kpis', 'dash-urgent', 'dash-matches', 'dash-supply']);
+  assert.equal(await text('.topbar h1'), 'דשבורד');
   assert.match(await text('.demo-banner'), /סביבת הדגמה/);
-  const navs = await page.$$eval('.bottom-nav > *', a => a.map(x => x.textContent.trim()));
-  assert.deepEqual(navs, ['לוח עבודה', 'מתעניינים', '+ חדש', 'נכסים']);
-  ok('dashboard: 4 sections in order, demo banner, bottom bar לוח · מתעניינים · + חדש · נכסים');
-  const soon = await page.$$eval('#dash-urgent .urgent.red, #dash-urgent .urgent.yellow', l => l.length);
-  assert.ok(soon >= 3, 'needed-soon rows'); assert.ok(await page.locator('#dash-urgent .urgent.red').count() >= 1);
-  assert.ok(await page.locator('#dash-urgent .urgent.stale').count() >= 3);
-  ok('לטיפול היום: needed soon (red ≤ 2 days, yellow ≤ 7) and "לא עודכן 30+ יום"');
+  const navs = await page.$$eval('.top-nav > *', a => a.map(x => x.textContent.trim()));
+  assert.deepEqual(navs, ['דשבורד', 'מתעניינים', 'נכסים']);
+  assert.equal(await page.locator('.bottom-new .nav-new').count(), 1);
+  assert.equal(await page.locator('.bottom-nav').count(), 0);
+  ok('dashboard: metrics first, then alerts, matches, supply; pages as tabs at the top, "+ חדש" alone at the bottom');
+  const tiles = await page.$$eval('.kpi-tile', t => t.map(x => [x.querySelector('.kpi-label').textContent, x.querySelector('.kpi-value').textContent]));
+  assert.equal(tiles.length, 6);
+  assert.ok(await page.locator('.kpi-tile .progress').count() === 1 && await page.locator('.kpi-tile .split').count() === 1);
+  ok('metrics: ' + tiles.map(t => t.join(' ')).join(' · '));
+  const alerts = await page.$$eval('.alert-tile', a => a.map(x => x.className));
+  assert.equal(alerts.length, 3); assert.ok(alerts[0].includes('red') && alerts[1].includes('yellow'));
+  // a lead needed tomorrow: red, with its date
+  const tomorrow = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'); });
+  const ronit = page.locator('#dash-urgent .rec', { hasText: 'רונית שרעבי' });
+  assert.match(await ronit.locator('.date-badge').getAttribute('class'), /(^| )red( |$)/);
+  assert.match(await ronit.locator('.date-badge').innerText(), new RegExp(tomorrow));
+  ok(`alerts: באיחור (red) · נדרש השבוע (yellow) · לא עודכנו; "מחר" is a red badge with the date ${tomorrow}`);
   const hot = await page.locator('#dash-matches .match').count();
   assert.ok(hot >= 3 && hot <= 5);
   assert.ok(await page.locator('#dash-matches .mchip').count() >= hot * 3);
-  ok('התאמות חמות: 3–5 cards, each explained with chips');
-  const kpis = await page.$$eval('.kpi strong', k => k.map(x => x.textContent));
-  assert.equal(kpis.length, 4); assert.ok(+kpis[0] > 0 && +kpis[1] > 0);
-  ok(`קצב וסגירות: ${kpis.join(' / ')} (new / closed / not relevant / avg days)`);
+  const chip = page.locator('#dash-matches .fchip[data-hg="commerce"]');
+  const want = +(await chip.locator('bdi').innerText());
+  await chip.click();
+  assert.equal(await page.locator('#dash-matches .match').count(), Math.min(5, want));
+  assert.equal(await chip.getAttribute('aria-pressed'), 'true');
+  assert.match(await page.locator('#hot-more').getAttribute('href'), /g=commerce/);
+  await page.click('#dash-matches .fchip[data-hg=""]');
+  ok('התאמות חמות: cards with chips, filtered in place by ייעוד');
   await shot('02-dashboard'); await shot('02-dashboard-full', true);
 
   /* ── supply / demand → filtered list, survives refresh, chip clears ── */
@@ -91,15 +106,42 @@ try {
   await page.goBack(); await page.waitForSelector('.filter-chip');
   ok('back returns to the filtered list');
 
-  /* ── matches screen + card matches in both directions ── */
+  /* ── a metric opens its detail ── */
+  await page.goto(BASE + '#/'); await page.waitForSelector('.kpi-tile');
+  const newVal = +(await page.locator('.kpi-new .kpi-value').innerText());
+  await page.click('.kpi-new'); await page.waitForSelector('.kpi-detail');
+  assert.ok(page.url().endsWith('#/kpi/new'));
+  assert.equal(await page.locator('.kpi-detail .rec').count(), newVal);
+  assert.match(await text('.topbar .back'), /חזרה לדשבורד/);
+  await shot('04-kpi-detail');
+  for (const k of ['active', 'closed', 'rate', 'days', 'overdue', 'week', 'stale']) {
+    await page.goto(BASE + '#/kpi/' + k); await page.waitForSelector('.kpi-detail');
+  }
+  await page.goto(BASE + '#/'); await page.waitForSelector('.kpi-tile');
+  await page.click('.kpi-matches'); await page.waitForSelector('.match-filters');
+  assert.match(page.url(), /#\/matches\?lvl=high$/);
+  ok('every metric tile opens a detail screen (records + how it is counted); התאמות גבוהות → filtered matches');
+
+  /* ── matches screen: filters in the route ── */
   await page.goto(BASE + '#/matches'); await page.waitForSelector('.ml-group');
-  assert.match(await text('.topbar .back'), /חזרה ללוח/);
-  await shot('04-matches');
+  const total = +(await page.locator('.mf-count bdi').innerText());
+  await page.click('.match-filters a.fchip[href*="t=rent"]'); await page.waitForSelector('.mf-clear');
+  const rentN = +(await page.locator('.mf-count bdi').innerText());
+  assert.ok(rentN > 0 && rentN < total);
+  const city = await page.locator('#mf-city option').nth(1).getAttribute('value');
+  await page.selectOption('#mf-city', city); await page.waitForURL(/a=/);
+  await page.reload(); await page.waitForSelector('.match-filters');
+  assert.equal(await page.inputValue('#mf-city'), city);
+  assert.ok(+(await page.locator('.mf-count bdi').innerText()) <= rentN);
+  await shot('05-matches-filtered');
+  await page.click('.mf-clear'); await page.waitForFunction(() => location.hash === '#/matches');
+  assert.equal(+(await page.locator('.mf-count bdi').innerText()), total);
+  ok('התאמות: filters by level, transaction, ייעוד and city (with counts), kept in the URL, "ניקוי הסינון"');
   await page.goto(BASE + '#/'); await page.waitForSelector('#dash-matches .match a');
   await page.locator('#dash-matches .match a').first().click();
   await page.waitForSelector('.card-matches');
   assert.match(await text('.card-matches h3'), /נכסים מתאימים/);
-  await shot('05-lead-card', true);
+  await shot('06-lead-card', true);
   await page.locator('.card-matches .match a').first().click();
   await page.waitForSelector('.card-matches h3:has-text("מתעניינים מתאימים")');
   assert.ok(await page.locator('.card-matches .match').count() >= 1);
@@ -130,14 +172,14 @@ try {
   assert.equal(groupCount, await page.locator('#dlg li[data-id]').count());
   await page.locator('#dlg select[data-a=group]').first().selectOption('industry');
   await page.waitForSelector('#toast.show:has-text("קבוצת ההתאמה עודכנה")');
-  await shot('06-groups');
+  await shot('07-groups');
   await page.locator('#dlg select[data-a=group]').first().selectOption('storage');
   await page.click('#dlg [data-a=close]');
   ok('עריכת הרשימה: every value has a "קבוצת התאמה" picker that saves on change');
 
   /* ── "+ חדש" on the dashboard asks which kind ── */
   await page.goto(BASE + '#/'); await page.waitForSelector('#dash-urgent');
-  await page.click('.bottom-nav [data-act=new-choice]');
+  await page.click('.bottom-new [data-act=new-choice]');
   await page.click('#dlg a:has-text("נכס חדש")');
   await page.waitForSelector('#deal-form');
   assert.ok(page.url().endsWith('#/m/owner/new'));
@@ -192,8 +234,8 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.click('#login button[type=submit]'); await page.waitForSelector('#dash-urgent');
   assert.equal(await page.locator('.side-nav .nav-board[aria-current=page]').count(), 1);
-  if (shots) { await page.waitForTimeout(400); await page.screenshot({ path: SHOTS + 'demo-07-desktop.png' }); }
-  ok('desktop: side menu with "לוח עבודה" active');
+  if (shots) { await page.waitForTimeout(400); await page.screenshot({ path: SHOTS + 'demo-08-desktop.png' }); }
+  ok('desktop: side menu with "דשבורד" active');
 
   assert.deepEqual(errors, []);
   ok('no JS errors in the console');

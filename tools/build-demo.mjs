@@ -26,6 +26,8 @@ const swap = (from, to) => { assert.ok(html.includes(from), 'build-demo: not fou
 swap(/\n?<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase[^>]*><\/script>/.exec(html)?.[0] ?? '<supabase script>', '');
 swap('<title>פריים לוקיישן · CRM</title>', '<title>נדל״ן בע״מ · דמו CRM</title>');
 swap('<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">', '<meta name="apple-mobile-web-app-title" content="נדל״ן בע״מ">');
+// the chosen dashboard look (GPT "גיבור מאוחד", look 2) loads after the app's own CSS
+swap('</style>\n', '</style>\n<link rel="stylesheet" href="dashboard-look.css">\n');
 swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script>\n`);
 
 for (const d of ['', 'assets', 'icons']) await mkdir(join(OUT, d), { recursive: true });
@@ -33,6 +35,7 @@ for (const d of ['', 'assets', 'icons']) await mkdir(join(OUT, d), { recursive: 
 await writeFile(join(OUT, 'index.html'), html);
 await copyFile(join(ROOT, 'demo', 'seed.js'), join(OUT, 'seed.js'));
 await copyFile(join(ROOT, 'demo', 'demo-db.js'), join(OUT, 'demo-db.js'));
+await copyFile(join(ROOT, 'demo', 'dashboard-look.css'), join(OUT, 'dashboard-look.css'));
 await writeFile(join(OUT, '.nojekyll'), '');
 
 // ── manifest + service worker (own id, scope and cache prefix) ──
@@ -46,8 +49,8 @@ await writeFile(join(OUT, 'manifest.json'), JSON.stringify({
   ],
 }, null, 2));
 let sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
-sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v1', PREFIX = 'nadlan-demo-shell-';")
-  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './assets/logo.png', './assets/mark.png', './icons/icon-192.png'];")
+sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v2', PREFIX = 'nadlan-demo-shell-';")
+  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './dashboard-look.css', './assets/logo.png', './assets/mark.png', './icons/icon-192.png'];")
   .replace("ks.filter(k => k.startsWith('pl-shell-') && k !== CACHE)", 'ks.filter(k => k.startsWith(PREFIX) && k !== CACHE)');
 assert.ok(sw.includes("k.startsWith(PREFIX) && k !== CACHE"), 'build-demo: sw cleanup must be limited to the demo prefix');
 await writeFile(join(OUT, 'sw.js'), sw);

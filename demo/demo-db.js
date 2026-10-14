@@ -22,7 +22,9 @@
     return d.slice(0, 3) + '-' + d.slice(3);
   };
 
-  const fresh = () => ({ anchor: today(), dirty: false, ...window.PL_DEMO_SEED(today()) });
+  // bump when demo/seed.js changes: visitors who did not change anything get the new data on their next visit
+  const SEED_VERSION = 2;
+  const fresh = () => ({ anchor: today(), dirty: false, seed: SEED_VERSION, ...window.PL_DEMO_SEED(today()) });
   // A new month: an untouched demo is re-seeded; a demo the visitor changed moves all its dates forward,
   // so "this month" and "needed soon" stay meaningful.
   const DATE_FIELDS = { lead: ['lead_date', 'needed_by', 'created_at', 'updated_at', 'closed_at'], owner: ['created_at', 'updated_at', 'closed_at'] };
@@ -41,7 +43,7 @@
   }
   let db;
   try { db = JSON.parse(store.get(KEY)); } catch { db = null; }
-  db = db && db.lead && db.anchor ? rebase(db) : fresh();
+  db = db && db.lead && db.anchor && (db.dirty || db.seed === SEED_VERSION) ? rebase(db) : fresh();
   const save = (changed = true) => { if (changed) db.dirty = true; store.set(KEY, JSON.stringify(db)); };
   save(false);
 

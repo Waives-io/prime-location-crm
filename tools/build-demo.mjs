@@ -24,7 +24,7 @@ const APP = {
 let html = (await readFile(join(ROOT, 'index.html'), 'utf8')).replace(/\r\n/g, '\n'); // checkouts may use CRLF
 const swap = (from, to) => { assert.ok(html.includes(from), 'build-demo: not found in index.html: ' + from); html = html.replace(from, to); };
 swap(/\n?<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase[^>]*><\/script>/.exec(html)?.[0] ?? '<supabase script>', '');
-swap('<meta name="theme-color" content="#FFD400">', '<meta name="theme-color" content="#0A3D56">'); // the navy of the dashboard look
+swap('<meta name="theme-color" content="#FFD400">', '<meta name="theme-color" content="#3B1E3F">'); // the navy of the dashboard look
 swap('<title>פריים לוקיישן · CRM</title>', '<title>נדל״ן בע״מ · דמו CRM</title>');
 swap('<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">', '<meta name="apple-mobile-web-app-title" content="נדל״ן בע״מ">');
 // the chosen dashboard look (GPT "גיבור מאוחד", look 2) loads after the app's own CSS
@@ -43,7 +43,7 @@ await writeFile(join(OUT, '.nojekyll'), '');
 // ── manifest + service worker (own id, scope and cache prefix) ──
 await writeFile(join(OUT, 'manifest.json'), JSON.stringify({
   id: '/nadlan-demo/', name: 'נדל״ן בע״מ – דמו CRM', short_name: 'נדל״ן בע״מ', lang: 'he', dir: 'rtl',
-  start_url: './#/', scope: './', display: 'standalone', background_color: '#FFFFFF', theme_color: '#0A3D56',
+  start_url: './#/', scope: './', display: 'standalone', background_color: '#F6EEE9', theme_color: '#3B1E3F',
   icons: [
     { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

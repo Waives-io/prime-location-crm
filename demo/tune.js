@@ -4,10 +4,10 @@
 (() => {
   const KEY = 'nadlan-demo:v1:tune';
   const ITEMS = [
-    { k: 'kpis', label: 'פאנל המדדים', sel: '#dash-kpis', def: '#17719b', text: '#dash-kpis :is(.kpi-label,.kpi-value,.kpi-foot:not(.trend))' },
-    { k: 'overdue', label: 'באיחור', sel: '.alert-tile.red', def: '#ec6969' },
-    { k: 'week', label: 'נדרש השבוע', sel: '.alert-tile.yellow', def: '#ffca00' },
-    { k: 'stale', label: 'לא עודכנו', sel: ':is(.alert-tile.grey,.alert-tile.zero)', def: '#64aa9c' },
+    { k: 'kpis', label: 'פאנל המדדים', sel: '#dash-kpis', def: '#3b1e3f', text: '#dash-kpis :is(.kpi-label,.kpi-value,.kpi-foot:not(.trend))' },
+    { k: 'overdue', label: 'באיחור', sel: '.alert-tile.red', def: '#b85e5a' },
+    { k: 'week', label: 'נדרש השבוע', sel: '.alert-tile.yellow', def: '#d4a24c' },
+    { k: 'stale', label: 'לא עודכנו', sel: ':is(.alert-tile.grey,.alert-tile.zero)', def: '#66757a' },
   ];
   const INK = '#071c26', WHITE = '#ffffff';
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };

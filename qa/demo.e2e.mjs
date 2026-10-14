@@ -159,6 +159,7 @@ try {
   await coolRow.locator('a').click(); await page.waitForSelector('.card-head');
   assert.ok(!(await page.locator('.dl').innerText()).includes('שכירות מבוקשת'));
   await page.click('a:has-text("עריכה")'); await page.waitForSelector('#asking_rent');
+  if (shots) { await page.locator('[data-field=built_sqm]').evaluate(e => e.scrollIntoView({ block: 'center' })); await page.waitForTimeout(300); await page.locator('[data-field=built_sqm]').locator('xpath=..').screenshot({ path: SHOTS + 'demo-09-sqm.png' }); }
   await page.fill('#asking_rent', '10800'); await page.click('#save');
   await page.waitForSelector('.card-head');
   assert.match(await page.locator('.dl').innerText(), /שכירות מבוקשת לחודש[\s\S]*10,800/);
@@ -193,7 +194,7 @@ try {
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(242, 242, 242)');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis .kpi-value')).color), 'rgb(7, 28, 38)');
   await page.click('#tune-panel [data-t=reset]');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(23, 113, 155)');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(59, 30, 63)');
   await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
   ok('colour tool: only with ?tune; a light panel colour switches the text to dark; "ברירת מחדל" restores');
 

@@ -43,7 +43,7 @@ await writeFile(join(OUT, '.nojekyll'), '');
 // ── manifest + service worker (own id, scope and cache prefix) ──
 await writeFile(join(OUT, 'manifest.json'), JSON.stringify({
   id: '/nadlan-demo/', name: 'נדל״ן בע״מ – דמו CRM', short_name: 'נדל״ן בע״מ', lang: 'he', dir: 'rtl',
-  start_url: './#/', scope: './', display: 'standalone', background_color: '#EEF7F5', theme_color: '#0A3D56',
+  start_url: './#/', scope: './', display: 'standalone', background_color: '#FFFFFF', theme_color: '#0A3D56',
   icons: [
     { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

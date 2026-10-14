@@ -519,6 +519,7 @@ const APP = (() => {
   return Object.freeze({
     name: c.name || 'פריים לוקיישן',
     logo: c.logo || 'assets/logo.png',
+    logoOnDark: c.logoOnDark || c.logo || 'assets/logo.png', // side menu (dark in the demo look)
     mark: c.mark || 'assets/pin.png',
     logoAlt: c.logoAlt || 'פריים לוקיישן – נדל״ן במרכז העניינים',
     ownerTitle: c.ownerTitle || 'בעלים / משכיר',
@@ -701,7 +702,7 @@ function shell(r, html) {
   const addBottom = bottom && !!r.module;
   if (APP.dashboard) return `${demoBanner()}<div class="shell top-nav-shell ${addBottom ? 'has-bottom-new' : ''}">
     <nav class="side-nav" aria-label="עמודים">
-      <a href="#/" class="brand-side"><img src="${APP.logo}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
+      <a href="#/" class="brand-side"><img src="${APP.logoOnDark}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
       ${board('mod')}${navLinks('mod')}
       <div class="spacer"></div>
       ${accountLinks()}
@@ -711,7 +712,7 @@ function shell(r, html) {
   </div>`;
   return `${demoBanner()}<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
     <nav class="side-nav" aria-label="מודולים">
-      <a href="#/" class="brand-side"><img src="${APP.logo}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
+      <a href="#/" class="brand-side"><img src="${APP.logoOnDark}" alt="${APP.name} – לדף הבית" style="width:150px"></a>
       ${board('mod')}${navLinks('mod')}
       <div class="spacer"></div>
       ${accountLinks()}

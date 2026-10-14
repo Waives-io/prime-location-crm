@@ -185,6 +185,18 @@ try {
   assert.equal(await page.locator('.bottom-new').count(), 0);
   ok('"+ חדש": at the bottom of מתעניינים / נכסים only (not on the dashboard or matches) → the module form');
 
+  /* ── owner colour tool: hidden for visitors, ?tune opens it, text colour follows the background ── */
+  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
+  assert.equal(await page.locator('#tune-panel').count(), 0);
+  await page.goto(BASE + '?tune#/'); await page.waitForSelector('#tune-panel');
+  await page.locator('#tune-panel input[data-k=kpis]').evaluate((el) => { el.value = '#f2f2f2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(242, 242, 242)');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis .kpi-value')).color), 'rgb(7, 28, 38)');
+  await page.click('#tune-panel [data-t=reset]');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(9, 43, 59)');
+  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
+  ok('colour tool: only with ?tune; a light panel colour switches the text to dark; "ברירת מחדל" restores');
+
   /* ── persistence, reset, storage isolation ── */
   await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('#dash-urgent');
   await page.goto(BASE + '#/m/owner/' + (await page.evaluate(() => S.data.owner.find(o => o.contact.name === 'ורד שושן').id)));

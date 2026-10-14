@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
 
 const APP = {
   name: 'נדל״ן בע״מ',
-  logo: 'assets/logo.png', mark: 'assets/mark.png', logoAlt: 'נדל״ן בע״מ – נכסים מסחריים ותעשייה',
+  logo: 'assets/logo.png', logoOnDark: 'assets/logo-dark.png', mark: 'assets/mark.png', logoAlt: 'נדל״ן בע״מ – נכסים מסחריים ותעשייה',
   ownerTitle: 'נכסים',
   features: { dashboard: true },
   demo: { email: 'broker@nadlan-demo.co.il', password: 'Demo2026!', credit: 'נבנה ע״י WAIVES' },
@@ -29,7 +29,7 @@ swap('<title>פריים לוקיישן · CRM</title>', '<title>נדל״ן בע�
 swap('<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">', '<meta name="apple-mobile-web-app-title" content="נדל״ן בע״מ">');
 // the chosen dashboard look (GPT "גיבור מאוחד", look 2) loads after the app's own CSS
 swap('</style>\n', '</style>\n<link rel="stylesheet" href="dashboard-look.css">\n');
-swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script>\n`);
+swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script src="tune.js"></script>\n<script>\n`);
 
 for (const d of ['', 'assets', 'icons']) await mkdir(join(OUT, d), { recursive: true });
 // files are overwritten in place, so the git repo inside demo-site/ survives a rebuild
@@ -37,6 +37,7 @@ await writeFile(join(OUT, 'index.html'), html);
 await copyFile(join(ROOT, 'demo', 'seed.js'), join(OUT, 'seed.js'));
 await copyFile(join(ROOT, 'demo', 'demo-db.js'), join(OUT, 'demo-db.js'));
 await copyFile(join(ROOT, 'demo', 'dashboard-look.css'), join(OUT, 'dashboard-look.css'));
+await copyFile(join(ROOT, 'demo', 'tune.js'), join(OUT, 'tune.js'));
 await writeFile(join(OUT, '.nojekyll'), '');
 
 // ── manifest + service worker (own id, scope and cache prefix) ──
@@ -50,8 +51,8 @@ await writeFile(join(OUT, 'manifest.json'), JSON.stringify({
   ],
 }, null, 2));
 let sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
-sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v2', PREFIX = 'nadlan-demo-shell-';")
-  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './dashboard-look.css', './assets/logo.png', './assets/mark.png', './icons/icon-192.png'];")
+sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v3', PREFIX = 'nadlan-demo-shell-';")
+  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './dashboard-look.css', './tune.js', './assets/logo.png', './assets/logo-dark.png', './assets/mark.png', './icons/icon-192.png'];")
   .replace("ks.filter(k => k.startsWith('pl-shell-') && k !== CACHE)", 'ks.filter(k => k.startsWith(PREFIX) && k !== CACHE)');
 assert.ok(sw.includes("k.startsWith(PREFIX) && k !== CACHE"), 'build-demo: sw cleanup must be limited to the demo prefix');
 await writeFile(join(OUT, 'sw.js'), sw);
@@ -70,6 +71,7 @@ const render = async (svgText, w, h, file, pad = 0, bg = 'transparent') => {
   await page.screenshot({ path: file, omitBackground: bg === 'transparent' });
 };
 await render(await svg(`logo-${LOGO}.svg`), 840, 240, join(OUT, 'assets', 'logo.png'));
+await render(await svg(`logo-${LOGO}-dark.svg`), 840, 240, join(OUT, 'assets', 'logo-dark.png')); // for the navy side menu
 const mark = await svg(`mark-${LOGO}.svg`);
 await render(mark, 192, 192, join(OUT, 'assets', 'mark.png'));
 await render(mark, 192, 192, join(OUT, 'icons', 'icon-192.png'));

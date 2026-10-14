@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title>נדל״ן בע״מ — נכסים מסחריים ותעשייה</title>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Secular+One&amp;family=Heebo:wght@500&amp;display=swap');</style>
+  <g transform="translate(312 12)">
+    <rect width="96" height="96" fill="#FFD400"/>
+    <path d="M12 38 30 25v9l18-13v13l18-13v13l18-13v56H12Z" fill="#1A1A1A"/>
+    <path d="M22 53h14v24H22zm29-8h14v32H51zm22 8h7v24h-7z" fill="#FFD400"/>
+    <path d="M22 47h14M51 39h14" stroke="#fff" stroke-width="4"/>
+  </g>
+  <g text-anchor="start" direction="rtl">
+    <text x="292" y="60" font-family="'Secular One', Heebo, sans-serif" font-size="36" fill="#F7FAF9">נדל״ן בע״מ</text>
+    <text x="292" y="88" font-family="Heebo, Arial, sans-serif" font-size="15" font-weight="500" fill="#AFC9C5">נכסים מסחריים ותעשייה</text>
+  </g>
+</svg>

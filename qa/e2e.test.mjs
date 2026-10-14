@@ -346,6 +346,16 @@ try {
   assert.equal(await page.locator('.side-nav a[aria-current=page]').innerText(), 'בעלים / משכיר');
   assert.equal(await page.isVisible('.topbar .new-top'), true); assert.equal(await page.isVisible('.bottom-nav'), false);
   ok('desktop: right side menu with active module, no bottom bar, "+ חדש" in the top bar');
+  await page.click('.topbar .new-top'); await page.waitForSelector('#deal-form');
+  const sv = await page.locator('#save').boundingBox(), fm = await page.locator('#deal-form section.form-section').first().boundingBox(), sn = await page.locator('.side-nav').boundingBox();
+  assert.ok(Math.abs((sv.x + sv.width / 2) - (fm.x + fm.width / 2)) < 4, `save centre ${sv.x + sv.width / 2} vs form centre ${fm.x + fm.width / 2}`);
+  assert.ok(sv.x + sv.width <= sn.x, 'save bar must not run under the side menu');
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })); await page.waitForTimeout(300);
+  const lastSec = await page.locator('#deal-form section.form-section').last().boundingBox(), bar = await page.locator('.sticky-save').boundingBox();
+  const scr = await page.evaluate(() => [scrollY, innerHeight, document.documentElement.scrollHeight]);
+  assert.ok(lastSec.y + lastSec.height <= bar.y + 1, `last form section hidden behind the save bar: section bottom ${lastSec.y + lastSec.height}, bar top ${bar.y}, scroll ${scr}`);
+  await shot('10-desktop-form');
+  ok('desktop form: "שמירה" centred under the form, not under the side menu, last section not hidden');
   await shot('09-desktop-list');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));

@@ -299,6 +299,23 @@ try {
   await page.locator('#form-map').click({ position: { x: 180, y: 120 } });
   await page.waitForFunction(() => document.querySelector('#address').value === 'הגפן 5, קריית גת');
   ok('owner map tap → pin + address filled from reverse search (editable)');
+  /* photos */
+  const IMG = [fileURLToPath(new URL('../assets/photo-building.jpg', import.meta.url)), fileURLToPath(new URL('../assets/photo-warehouse.jpg', import.meta.url))];
+  await page.setInputFiles('#photo-input', IMG);
+  await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph:not(.pending)').length === 2);
+  assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4);
+  const firstSrc = await page.locator('#photo-grid .ph').first().locator('img').getAttribute('src');
+  await page.locator('#photo-grid .ph').nth(1).locator('[data-a=first]').click();
+  assert.notEqual(await page.locator('#photo-grid .ph').first().locator('img').getAttribute('src'), firstSrc);
+  await page.setInputFiles('#photo-input', [IMG[0], IMG[0], IMG[0], IMG[0]]);
+  await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph:not(.pending)').length === 5);
+  assert.match(await text('#photos-err'), /עד 5 תמונות/);
+  assert.equal(await page.isHidden('#photo-add'), true);
+  await page.locator('#photo-grid .ph').nth(4).locator('[data-a=remove]').click();
+  await page.locator('#photo-grid .ph').nth(3).locator('[data-a=remove]').click();
+  await page.locator('#photo-grid .ph').nth(2).locator('[data-a=remove]').click();
+  assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4);
+  ok('photos: pick 2 (compressed + thumb uploaded), make first, max 5 with a Hebrew note, removing unsaved ones deletes their files');
   await radio('deal_kind', 'rent');
   await fill('#asking_price', '2000000');
   await radio('is_rented', 'true');
@@ -311,12 +328,27 @@ try {
   assert.match(await text('.dl'), /תשואה\s*6\.0%/);
   assert.doesNotMatch(await text('.dl'), /תיאור/);
   ok('owner rent deal saved without a description (optional), yield on card');
+  await page.waitForFunction(() => document.querySelectorAll('#card-photos img').length === 2 && [...document.querySelectorAll('#card-photos img')].every(i => i.src.startsWith('blob:')));
+  await page.locator('#card-photos button').nth(1).click();
+  await page.waitForFunction(() => document.querySelector('#dlg[open] .lightbox img')?.src.startsWith('blob:'));
+  assert.match(await text('#dlg .lb-nav'), /2 \/ 2/);
+  await page.click('#dlg [data-a=next]'); assert.match(await text('#dlg .lb-nav'), /1 \/ 2/);
+  await page.click('#dlg [data-a=close]');
+  assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 2);
+  ok('card: photo strip, tap opens the large view with next / previous');
+  await page.click('.back'); await page.waitForSelector('#rows');
+  await page.waitForFunction(() => document.querySelector('#rows .row-thumb')?.src.startsWith('blob:'));
+  ok('list row shows the first photo as a thumbnail');
+  await page.locator('#rows li a').filter({ hasText: 'בעלים חדש' }).click(); await page.waitForSelector('.card-head');
   await shot('08-card-owner', true);
 
   /* owner sale → estimate */
   await page.click('a:has-text("עריכה")');
   await page.waitForSelector('#deal-form');
   assert.equal(await page.inputValue('#company_name'), 'חברת בדיקה');
+  await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph').length === 2);
+  await page.locator('#photo-grid .ph').nth(1).locator('[data-a=remove]').click();
+  assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4); // a saved photo is deleted only after a successful save
   await radio('deal_kind', 'sale');
   assert.equal(await page.isHidden('#rent-block'), true);
   const sale = await text('#sale-calc');
@@ -327,6 +359,17 @@ try {
   await page.waitForSelector('.card-head');
   const saved = await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת'));
   assert.equal(saved.is_rented, null); assert.equal(saved.monthly_rent, null); assert.equal(saved.ai_price_per_sqm, 16100);
+  assert.equal(saved.photos.length, 1); assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 2);
+  ok('edit: removing a saved photo deletes its files after the save');
+  await page.click('a:has-text("עריכה")'); await page.waitForSelector('#deal-form');
+  await page.setInputFiles('#photo-input', [IMG[1]]);
+  await page.waitForFunction(() => document.querySelectorAll('#photo-grid .ph:not(.pending)').length === 2);
+  assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4);
+  page.once('dialog', d => d.accept());
+  await page.click('.back'); await page.waitForSelector('.card-head');
+  await page.waitForFunction(() => PL_TEST_DB.files.size === 2);
+  assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 1);
+  ok('leaving an edit without saving removes the photos uploaded in it; saved photos stay');
   ok('sale → asking ₪/sqm + estimate labelled "הערכה"; rent fields cleared on save');
 
   /* phone normalization unit cases */

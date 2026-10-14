@@ -81,6 +81,16 @@
     },
     async addField(f) { const row = { id: id(), key: 'f_' + Math.random().toString(16).slice(2, 12), created_at: now(), ...f }; db.fields.push(row); return clone(row); },
     async setStatus(module, did, status) { const r = db[module].find(x => x.id === did); r.status = status; r.closed_at = status === 'active' ? null : now(); },
+    files: new Map(), // storage stand-in: path → blob URL
+    async uploadPhoto(path, blob) { await delay(); this.files.set(path, URL.createObjectURL(blob)); },
+    async photoUrls(paths) { return Object.fromEntries(paths.filter(x => this.files.has(x)).map(x => [x, this.files.get(x)])); },
+    async deletePhotos(paths) { paths.forEach(x => this.files.delete(x)); },
+    async setPhotos(module, did, photos) {
+      await delay();
+      if (photos.length > 5) throw new Error('אפשר לשמור עד 5 תמונות');
+      if (photos.some(x => !x.path.startsWith(did + '/') || !x.thumb.startsWith(did + '/'))) throw new Error('נתיב תמונה לא תקין');
+      const r = db[module].find(x => x.id === did); const previous = r.photos || []; r.photos = clone(photos); return { id: did, previous };
+    },
     _db: db,
   };
 })();

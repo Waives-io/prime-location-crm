@@ -193,7 +193,7 @@ try {
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(242, 242, 242)');
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis .kpi-value')).color), 'rgb(7, 28, 38)');
   await page.click('#tune-panel [data-t=reset]');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(9, 43, 59)');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(23, 113, 155)');
   await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
   ok('colour tool: only with ?tune; a light panel colour switches the text to dark; "ברירת מחדל" restores');
 

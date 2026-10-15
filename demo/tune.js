@@ -4,10 +4,10 @@
 (() => {
   const KEY = 'nadlan-demo:v1:tune';
   const ITEMS = [
-    { k: 'kpis', label: 'פאנל המדדים', sel: '#dash-kpis', def: '#3b1e3f', text: '#dash-kpis :is(.kpi-label,.kpi-value,.kpi-foot:not(.trend))' },
-    { k: 'overdue', label: 'באיחור', sel: '.alert-tile.red', def: '#b85e5a' },
-    { k: 'week', label: 'נדרש השבוע', sel: '.alert-tile.yellow', def: '#d4a24c' },
-    { k: 'stale', label: 'לא עודכנו', sel: ':is(.alert-tile.grey,.alert-tile.zero)', def: '#66757a' },
+    { k: 'kpis', label: 'כרטיסי המדדים', sel: '.mod-kpis .kpi-card', def: '#3b1e3f', text: '.mod-kpis .kpi-card :is(.kpi-label,.kpi-value,.kpi-foot)' },
+    { k: 'side', label: 'תפריט הצד', sel: '.side-nav', def: '#3b1e3f', text: '.side-nav :is(a.mod:not([aria-current]),.side-act)' },
+    { k: 'hot', label: 'סטטוס חם', sel: '.stage.stage-hot', def: '#b85e5a' },
+    { k: 'accent', label: 'הדגשה (נבחר)', sel: ':is(.side-nav a.mod[aria-current=page],.btn.accent)', def: '#e0a97f' },
   ];
   const INK = '#071c26', WHITE = '#ffffff';
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
@@ -35,7 +35,7 @@
   panel.style.cssText = 'position:fixed;z-index:1000;inset-inline-start:12px;bottom:12px;width:min(320px,calc(100vw - 24px));background:#fff;color:#071c26;border:2px solid #071c26;border-radius:12px;padding:14px;font:15px Rubik,Heebo,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25)';
   const draw = () => {
     panel.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong style="font-size:17px">צבעי רקע בדשבורד</strong>
+        <strong style="font-size:17px">צבעי רקע בדמו</strong>
         <button type="button" data-t="min" style="min-height:44px;min-width:44px;border:0;background:none;font:inherit;cursor:pointer" aria-label="מזעור">—</button></div>
       <div data-body>${ITEMS.map(it => { const v = colors[it.k] || it.def, r = ratio(v, textFor(v));
         return `<label style="display:flex;align-items:center;gap:10px;min-height:44px">
@@ -58,7 +58,7 @@
     const t = e.target.closest('[data-t]')?.dataset.t; if (!t) return;
     if (t === 'min') { const b = panel.querySelector('[data-body]'); b.hidden = !b.hidden; return; }
     if (t === 'reset') { colors = {}; write(colors); apply(); draw(); return; }
-    const text = 'צבעי דשבורד: ' + ITEMS.map(it => `${it.label} ${(colors[it.k] || it.def).toUpperCase()}`).join(' · ');
+    const text = 'צבעי דמו: ' + ITEMS.map(it => `${it.label} ${(colors[it.k] || it.def).toUpperCase()}`).join(' · ');
     try { await navigator.clipboard.writeText(text); e.target.textContent = 'הועתק ✓'; }
     catch { prompt('להעתקה:', text); }
     setTimeout(() => { e.target.textContent = 'העתקת הצבעים'; }, 1800);

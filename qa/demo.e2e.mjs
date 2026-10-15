@@ -20,7 +20,7 @@ await new Promise(r => server.once('listening', r));
 const BASE = `http://127.0.0.1:${server.address().port}/`;
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'he-IL' });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: 'he-IL' });
 await ctx.route(/supabase/, (r) => { throw new Error('demo must never call Supabase: ' + r.request().url()); });
 await ctx.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
 await ctx.route('https://nominatim.openstreetmap.org/**', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ display_name: 'אזור התעשייה, קריית גת', address: { industrial: 'אזור התעשייה', city: 'קריית גת' } }) }));
@@ -43,120 +43,107 @@ try {
   await page.reload();
   assert.equal(await page.inputValue('#email'), 'broker@nadlan-demo.co.il');
   assert.ok((await page.inputValue('#password')).length >= 8);
-  assert.match(await text('#login button[type=submit]'), /כניסה לדמו/);
-  assert.match(await text('.credit'), /WAIVES/);
+  assert.match(await text('#login button[type=submit]'), /התחברות/);
+  assert.match(await text('.login-title'), /ברוכים הבאים/);
+  assert.equal(await page.locator('.login-photo').count(), 1);
   assert.equal(await page.title(), 'נדל״ן בע״מ · דמו CRM');
+  await page.click('.login-row .link'); await page.waitForSelector('#toast.show:has-text("בדמו")');
   await shot('01-login');
-  ok('login: demo brand, credentials prefilled, "נבנה ע״י WAIVES"');
+  ok('login: split screen (photo + "ברוכים הבאים"), credentials prefilled, "שכחת סיסמה?" explains it is a demo');
   await page.fill('#password', 'wrong'); await page.click('#login button[type=submit]');
   await page.waitForSelector('#login-err:has-text("שגויים")');
-  ok('login is real: wrong password → error');
+  assert.match(await text('#login button[type=submit]'), /התחברות/);
+  ok('login is real: wrong password → error, the button keeps its label');
   await page.reload(); await page.click('#login button[type=submit]');
-  await page.waitForSelector('#dash-urgent');
-  ok('login → dashboard is the home screen');
+  await page.waitForSelector('.lead-table');
+  assert.ok(page.url().endsWith('#/m/lead'));
+  ok('login → מתעניינים (each module is its own dashboard; no separate dashboard page)');
 
-  /* ── dashboard ── */
-  const order = await page.$$eval('.dash-sec', ss => ss.map(x => x.id));
-  assert.deepEqual(order, ['dash-kpis', 'dash-urgent', 'dash-matches', 'dash-supply']);
-  assert.equal(await text('.topbar h1'), 'דשבורד');
+  /* ── shell ── */
   assert.match(await text('.demo-banner'), /סביבת הדגמה/);
-  const navs = await page.$$eval('.top-nav > *', a => a.map(x => x.textContent.trim()));
-  assert.deepEqual(navs, ['דשבורד', 'מתעניינים', 'נכסים']);
-  assert.equal(await page.locator('.bottom-new, [data-act=new-choice]').count(), 0);
-  assert.equal(await page.locator('.bottom-nav').count(), 0);
-  ok('dashboard: metrics first, then alerts, matches, supply; pages as tabs at the top; no "+ חדש" on the dashboard');
-  const tiles = await page.$$eval('.kpi-tile', t => t.map(x => [x.querySelector('.kpi-label').textContent, x.querySelector('.kpi-value').textContent]));
-  assert.equal(tiles.length, 6);
-  assert.ok(await page.locator('.kpi-tile .progress').count() === 1 && await page.locator('.kpi-tile .split').count() === 1);
-  ok('metrics: ' + tiles.map(t => t.join(' ')).join(' · '));
-  const alerts = await page.$$eval('.alert-tile', a => a.map(x => x.className));
-  assert.equal(alerts.length, 3); assert.ok(alerts[0].includes('red') && alerts[1].includes('yellow'));
-  // a lead needed tomorrow: red, with its date
+  const navs = await page.$$eval('.side-nav a.mod', a => a.map(x => x.textContent.trim()));
+  assert.deepEqual(navs, ['מתעניינים', 'נכסים', 'התאמות']);
+  assert.equal(await page.locator('.side-nav a.mod svg.ic:not(.cur-arrow)').count(), 3);
+  assert.equal((await page.locator('.side-nav a.mod[aria-current=page]').innerText()).trim(), 'מתעניינים');
+  ok('side menu: only working pages, with icons; the current page is marked');
+
+  /* ── leads: KPIs, table, filters, panel ── */
+  const kp = await page.$$eval('.mod-kpis .kpi-card', t => t.map(x => x.querySelector('.kpi-label').textContent));
+  assert.deepEqual(kp, ['מתעניינים חדשים', 'מתעניינים חמים', 'מתעניינים לא פעילים', 'זמן תגובה ממוצע']);
+  const heads = await page.$$eval('.lead-table thead th', t => t.map(x => x.textContent.trim()));
+  assert.deepEqual(heads, ['שם מלא', 'סוג לקוח', 'ערים מועדפות', 'תקציב', 'סוג נכס', 'ציון התאמה', 'סטטוס', 'מקור הגעה', 'יצירת קשר אחרונה']);
+  assert.ok(await page.locator('#l-rows tr[data-id]').count() >= 5);
+  assert.ok(await page.locator('#l-rows .score:not(.none)').count() >= 3);
+  assert.equal(await page.locator('#l-panel .dp').count(), 1);
+  await shot('02-leads');
+  ok('מתעניינים: 4 metrics, table with match score / status / source / last contact, first row open in the side panel');
+  const hotN = +(await page.locator('.kpi-card:has-text("חמים") .kpi-value').innerText());
+  await page.click('.kpi-card:has-text("חמים")'); await page.waitForFunction(() => location.hash === '#/m/lead');
+  await page.waitForSelector('.lead-table');
+  assert.equal(await page.inputValue('#l-stage'), 'חם');
+  assert.equal(await page.locator('#l-rows tr[data-id]').count(), Math.min(10, hotN));
+  ok(`metric "מתעניינים חמים" (${hotN}) filters the table to exactly those leads`);
+  await page.click('#l-clear'); await page.waitForSelector('.lead-table');
+  await page.selectOption('#l-quick', 'all');
+  const allN = await page.evaluate(() => S.data.lead.length);
+  assert.match(await text('#l-pager .count'), new RegExp(`1–10 מתוך ${allN}`));
+  await page.click('#l-pager .pg[data-pg="2"]'); assert.match(await text('#l-pager .count'), new RegExp(`11–20 מתוך ${allN}`));
+  ok('pager: 10 per page, "1–10 מתוך N", page 2 works');
+  await page.selectOption('#l-quick', 'active'); await page.fill('#lq', 'רונית');
+  await page.locator('#l-rows tr[data-id]').first().click();
   const tomorrow = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'); });
-  const ronit = page.locator('#dash-urgent .rec', { hasText: 'רונית שרעבי' });
-  assert.match(await ronit.locator('.date-badge').getAttribute('class'), /(^| )red( |$)/);
-  assert.match(await ronit.locator('.date-badge').innerText(), new RegExp(tomorrow));
-  ok(`alerts: באיחור (red) · נדרש השבוע (yellow) · לא עודכנו; "מחר" is a red badge with the date ${tomorrow}`);
-  const hot = await page.locator('#dash-matches .match').count();
-  assert.ok(hot >= 3 && hot <= 5);
-  assert.ok(await page.locator('#dash-matches .mchip').count() >= hot * 3);
-  const chip = page.locator('#dash-matches .fchip[data-hg="commerce"]');
-  const want = +(await chip.locator('bdi').innerText());
-  await chip.click();
-  assert.equal(await page.locator('#dash-matches .match').count(), Math.min(5, want));
-  assert.equal(await chip.getAttribute('aria-pressed'), 'true');
-  assert.match(await page.locator('#hot-more').getAttribute('href'), /g=commerce/);
-  await page.click('#dash-matches .fchip[data-hg=""]');
-  ok('התאמות חמות: cards with chips, filtered in place by ייעוד');
-  await shot('02-dashboard'); await shot('02-dashboard-full', true);
+  assert.match(await page.locator('#l-rows tr[data-id] .date-badge').first().getAttribute('class'), /(^| )red( |$)/);
+  assert.match(await page.locator('#l-rows tr[data-id] .date-badge').first().innerText(), new RegExp(tomorrow));
+  assert.match(await text('#l-panel .who strong'), /רונית שרעבי/);
+  ok(`search + row click: panel shows the lead; needed tomorrow = red date badge ${tomorrow} in the row`);
+  // quick actions: note + meeting + task done
+  await page.click('#l-panel [data-dp=note]'); await page.fill('#act-text', 'התקשרה, מבקשת לראות נכסים ביום ראשון'); await page.click('#act-form button[type=submit]');
+  await page.waitForSelector('#toast.show:has-text("ההערה נשמרה")'); await page.waitForSelector('#l-panel .notes li');
+  await page.click('#l-panel [data-dp=meeting]'); await page.click('#act-form button[type=submit]');
+  await page.waitForSelector('#toast.show:has-text("הפגישה נקבעה")');
+  const openT = await page.locator('#l-panel .tasks li').count();
+  await page.locator('#l-panel .tasks input[type=checkbox]').first().check();
+  await page.waitForSelector('#toast.show:has-text("בוצעה")');
+  await page.waitForFunction((n) => document.querySelectorAll('#l-panel .tasks li').length === n - 1 || n > 4, openT);
+  await page.click('#l-panel .quick a.wa-btn'); await page.waitForSelector('#toast.show:has-text("המספרים בדויים")');
+  ok('panel: "הוסף הערה" → יומן הערות, "קבע פגישה" → task with a time, ticking a task removes it, WhatsApp/call only explain');
+  await shot('03-lead-panel');
 
-  /* ── supply / demand → filtered list, survives refresh, chip clears ── */
-  const sdLink = page.locator('#dash-supply .sd-n').first();
-  const sdHref = await sdLink.getAttribute('href');
-  await sdLink.click(); await page.waitForSelector('.filter-chip');
-  const filtered = await page.locator('#rows .deal-row').count();
-  assert.ok(filtered >= 1);
-  await page.reload(); await page.waitForSelector('.filter-chip');
-  assert.equal(await page.locator('#rows .deal-row').count(), filtered);
-  assert.ok(page.url().endsWith(sdHref));
-  await shot('03-filtered-list');
-  await page.click('.filter-chip a'); await page.waitForSelector('.tabs:not([hidden])');
-  assert.ok(await page.locator('#rows .deal-row').count() > filtered);
-  ok('היצע מול ביקוש: tap → filtered list with "✕" chip, refresh keeps it, ✕ clears');
-  await page.goBack(); await page.waitForSelector('.filter-chip');
-  ok('back returns to the filtered list');
+  /* ── properties: KPIs, advanced filters, cards with photos, panel ── */
+  await page.click('.side-nav a.mod:has-text("נכסים")'); await page.waitForSelector('.pcard');
+  const pk = await page.$$eval('.mod-kpis .kpi-card', t => t.map(x => x.querySelector('.kpi-label').textContent));
+  assert.deepEqual(pk, ['סה״כ נכסים', 'נכסים פנויים', 'נכסים חדשים החודש', 'שיעור תפוסה ממוצע']);
+  assert.ok(await page.locator('.pcard img.pc-img').count() >= 10);
+  assert.ok(await page.locator('.pcard .pstatus').count() >= 10);
+  assert.equal(await page.locator('#p-panel .dp-photo img').count(), 1);
+  await shot('04-properties');
+  ok('נכסים: 4 metrics, photo cards with status, size / price / occupancy, first card open in the side panel');
+  const vac = +(await page.locator('.kpi-card:has-text("פנויים") .kpi-value').innerText());
+  await page.click('.kpi-card:has-text("פנויים")'); await page.waitForSelector('.pcard');
+  assert.equal(await page.locator('.pcard').count(), vac);
+  await page.selectOption('#p-status', ''); await page.selectOption('#p-g', 'storage');
+  const stor = await page.locator('.pcard').count(); assert.ok(stor >= 2);
+  await page.click('label:has(input[value=list])'); assert.equal(await page.locator('.prow').count(), stor);
+  await page.click('label:has(input[value=cards])'); await page.selectOption('#p-g', '');
+  ok(`metric "נכסים פנויים" (${vac}) filters the cards; סוג נכס filter; כרטיסים ⇄ רשימה`);
+  await page.locator('.pcard').nth(2).click();
+  await page.click('#p-panel [data-dp=task]'); await page.fill('#act-text', 'לשלוח תמונות עדכניות'); await page.click('#act-form button[type=submit]');
+  await page.waitForSelector('#p-panel .tasks li:has-text("לשלוח תמונות עדכניות")');
+  ok('property panel: "הוסף פעולה" adds to פעולות קרובות');
 
-  /* ── a metric opens its detail ── */
-  await page.goto(BASE + '#/'); await page.waitForSelector('.kpi-tile');
-  const newVal = +(await page.locator('.kpi-new .kpi-value').innerText());
-  await page.click('.kpi-new'); await page.waitForSelector('.kpi-detail');
-  assert.ok(page.url().endsWith('#/kpi/new'));
-  assert.equal(await page.locator('.kpi-detail .rec').count(), newVal);
-  assert.match(await text('.topbar .back'), /חזרה לדשבורד/);
-  await shot('04-kpi-detail');
-  for (const k of ['active', 'closed', 'rate', 'days', 'overdue', 'week', 'stale']) {
-    await page.goto(BASE + '#/kpi/' + k); await page.waitForSelector('.kpi-detail');
-  }
-  await page.goto(BASE + '#/'); await page.waitForSelector('.kpi-tile');
-  await page.click('.kpi-matches'); await page.waitForSelector('.match-filters');
-  assert.match(page.url(), /#\/matches\?lvl=high$/);
-  ok('every metric tile opens a detail screen (records + how it is counted); התאמות גבוהות → filtered matches');
-
-  /* ── matches screen: filters in the route ── */
+  /* ── full card + matches in both directions ── */
+  await page.click('#p-panel a.btn.primary'); await page.waitForSelector('.card-head');
+  assert.match(page.url(), /#\/m\/owner\/[0-9a-f-]+$/);
   await page.goto(BASE + '#/matches'); await page.waitForSelector('.ml-group');
   const total = +(await page.locator('.mf-count bdi').innerText());
   await page.click('.match-filters a.fchip[href*="t=rent"]'); await page.waitForSelector('.mf-clear');
-  const rentN = +(await page.locator('.mf-count bdi').innerText());
-  assert.ok(rentN > 0 && rentN < total);
-  const city = await page.locator('#mf-city option').nth(1).getAttribute('value');
-  await page.selectOption('#mf-city', city); await page.waitForURL(/a=/);
-  await page.reload(); await page.waitForSelector('.match-filters');
-  assert.equal(await page.inputValue('#mf-city'), city);
-  assert.ok(+(await page.locator('.mf-count bdi').innerText()) <= rentN);
-  await shot('05-matches-filtered');
-  await page.click('.mf-clear'); await page.waitForFunction(() => location.hash === '#/matches');
-  assert.equal(+(await page.locator('.mf-count bdi').innerText()), total);
-  ok('התאמות: filters by level, transaction, ייעוד and city (with counts), kept in the URL, "ניקוי הסינון"');
-  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-matches .match a');
-  await page.locator('#dash-matches .match a').first().click();
-  await page.waitForSelector('.card-matches');
-  assert.match(await text('.card-matches h3'), /נכסים מתאימים/);
-  await shot('06-lead-card', true);
-  await page.locator('.card-matches .match a').first().click();
-  await page.waitForSelector('.card-matches h3:has-text("מתעניינים מתאימים")');
-  assert.ok(await page.locator('.card-matches .match').count() >= 1);
-  ok('matches: dashboard card → lead card "נכסים מתאימים" → property card "מתעניינים מתאימים"');
-
-  /* ── demo: calling / WhatsApp only explain ── */
-  await page.click('.actions a.btn.primary'); // חיוג
-  await page.waitForSelector('#toast.show:has-text("המספרים בדויים")');
-  assert.ok(page.url().startsWith(BASE));
-  ok('demo: חיוג / WhatsApp do not dial, a toast explains');
+  assert.ok(+(await page.locator('.mf-count bdi').innerText()) < total);
+  await shot('05-matches');
+  await page.locator('.ml-lead').first().click(); await page.waitForSelector('.card-matches');
+  ok('"צפייה בפרטי נכס מלאים" → full card; התאמות screen with filters → lead card with its matching properties');
 
   /* ── property with asking rent: saves and changes matching ── */
-  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows .deal-row');
-  const coolRow = page.locator('#rows .deal-row', { hasText: 'ורד שושן' });
-  await coolRow.locator('a').click(); await page.waitForSelector('.card-head');
+  await page.goto(BASE + '#/m/owner/' + (await page.evaluate(() => S.data.owner.find(o => o.contact.name === 'ורד שושן').id))); await page.waitForSelector('.card-head');
   assert.ok(!(await page.locator('.dl').innerText()).includes('שכירות מבוקשת'));
   await page.click('a:has-text("עריכה")'); await page.waitForSelector('#asking_rent');
   if (shots) { await page.locator('[data-field=built_sqm]').evaluate(e => e.scrollIntoView({ block: 'center' })); await page.waitForTimeout(300); await page.locator('[data-field=built_sqm]').locator('xpath=..').screenshot({ path: SHOTS + 'demo-09-sqm.png' }); }
@@ -178,28 +165,26 @@ try {
   await page.click('#dlg [data-a=close]');
   ok('עריכת הרשימה: every value has a "קבוצת התאמה" picker that saves on change');
 
-  /* ── "+ חדש" lives in the modules only: alone at the bottom, opens that module's form ── */
-  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows .deal-row');
-  await page.click('.bottom-new .nav-new'); await page.waitForSelector('#deal-form');
+  /* ── "+ הוסף נכס חדש" on the properties page ── */
+  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('.pcard');
+  await page.click('.adv-head a.btn.accent'); await page.waitForSelector('#deal-form');
   assert.ok(page.url().endsWith('#/m/owner/new'));
-  await page.goto(BASE + '#/matches'); await page.waitForSelector('.match-filters');
-  assert.equal(await page.locator('.bottom-new').count(), 0);
-  ok('"+ חדש": at the bottom of מתעניינים / נכסים only (not on the dashboard or matches) → the module form');
+  ok('"+ הוסף נכס חדש" opens the property form');
 
   /* ── owner colour tool: hidden for visitors, ?tune opens it, text colour follows the background ── */
-  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.mod-kpis');
   assert.equal(await page.locator('#tune-panel').count(), 0);
-  await page.goto(BASE + '?tune#/'); await page.waitForSelector('#tune-panel');
+  await page.goto(BASE + '?tune#/m/lead'); await page.waitForSelector('#tune-panel');
+  await page.waitForSelector('.mod-kpis');
   await page.locator('#tune-panel input[data-k=kpis]').evaluate((el) => { el.value = '#f2f2f2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(242, 242, 242)');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis .kpi-value')).color), 'rgb(7, 28, 38)');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.mod-kpis .kpi-card')).backgroundColor), 'rgb(242, 242, 242)');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.mod-kpis .kpi-value')).color), 'rgb(7, 28, 38)');
   await page.click('#tune-panel [data-t=reset]');
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#dash-kpis')).backgroundColor), 'rgb(59, 30, 63)');
-  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
-  ok('colour tool: only with ?tune; a light panel colour switches the text to dark; "ברירת מחדל" restores');
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.mod-kpis');
+  ok('colour tool: only with ?tune; a light card colour switches the text to dark; "ברירת מחדל" restores');
 
   /* ── persistence, reset, storage isolation ── */
-  await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('#dash-urgent');
+  await page.goto(BASE + '#/m/lead'); await page.reload(); await page.waitForSelector('.lead-table');
   await page.goto(BASE + '#/m/owner/' + (await page.evaluate(() => S.data.owner.find(o => o.contact.name === 'ורד שושן').id)));
   await page.waitForSelector('.dl');
   assert.match(await page.locator('.dl').innerText(), /10,800/);
@@ -213,13 +198,11 @@ try {
   await page.reload(); await page.waitForFunction(() => document.querySelector('#card-photos img')?.src.startsWith('blob:'));
   ok('demo photos: added in the form, kept in IndexedDB, shown after a reload');
   assert.ok(!(await page.locator('[data-act=password]').count()), 'no password change in the demo');
-  await page.goto(BASE + '#/'); await page.waitForSelector('#dash-urgent');
-  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table');
   await page.click('.side-nav [data-act=demo-reset]');
   await page.click('#dlg [data-yes]'); await page.waitForSelector('#toast.show:has-text("הדמו אופס")');
   const shu = await page.evaluate(() => S.data.owner.find(o => o.contact.name === 'ורד שושן'));
   assert.equal(shu.asking_rent, null);
-  await page.setViewportSize({ width: 390, height: 844 });
   ok('"איפוס הדמו" (menu, confirm) → seed data back; no "שינוי סיסמה" in the demo');
   const leftPhotos = await page.evaluate(() => new Promise(res => { const r = indexedDB.open('nadlan-demo-photos', 1);
     r.onsuccess = () => { const q = r.result.transaction('files').objectStore('files').count(); q.onsuccess = () => res(q.result); }; }));
@@ -239,28 +222,33 @@ try {
     localStorage.setItem(k, JSON.stringify(db));
     return before;
   });
-  await page.reload(); await page.waitForSelector('#dash-urgent');
+  await page.reload(); await page.waitForSelector('.lead-table');
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('nadlan-demo:v1:data')));
   assert.equal(after.lead[0].notes, 'נערך');
   const shift = (new Date(after.lead[0].needed_by) - new Date(rebase)) / 86400000;
   assert.equal(Math.round(shift), 40);
   ok('new month with visitor changes: changes kept, all dates move forward');
   await page.evaluate(() => { const k = 'nadlan-demo:v1:data', db = JSON.parse(localStorage.getItem(k)); db.anchor = '2020-01-01'; db.dirty = false; db.lead[0].notes = 'X'; localStorage.setItem(k, JSON.stringify(db)); });
-  await page.reload(); await page.waitForSelector('#dash-urgent');
+  await page.reload(); await page.waitForSelector('.lead-table');
   assert.notEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('nadlan-demo:v1:data')).lead[0].notes), 'X');
   ok('new month, untouched demo: fresh seed');
 
   /* ── logout / login again ── */
-  await page.click('.hero-user [data-act=logout], .side-nav [data-act=logout]').catch(async () => { await page.setViewportSize({ width: 1280, height: 900 }); await page.click('.side-nav [data-act=logout]'); });
-  await page.waitForSelector('#login'); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table');
+  await page.click('.side-nav [data-act=logout]'); await page.waitForSelector('#login');
   ok('logout → login screen');
 
-  /* desktop */
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.click('#login button[type=submit]'); await page.waitForSelector('#dash-urgent');
-  assert.equal(await page.locator('.side-nav .nav-board[aria-current=page]').count(), 1);
-  if (shots) { await page.waitForTimeout(400); await page.screenshot({ path: SHOTS + 'demo-08-desktop.png' }); }
-  ok('desktop: side menu with "דשבורד" active');
+  /* phone */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.click('#login button[type=submit]'); await page.waitForSelector('.lead-table');
+  assert.equal(await page.locator('.top-nav a').count(), 3);
+  assert.equal(await page.locator('.bottom-new .nav-new').count(), 1);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal page scroll on a phone (leads)');
+  await shot('06-phone-leads', true);
+  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('.pcard');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal page scroll on a phone (properties)');
+  await shot('07-phone-props', true);
+  ok('phone: tabs at the top, "+ חדש" at the bottom, no horizontal scroll on מתעניינים / נכסים');
 
   assert.deepEqual(errors, []);
   ok('no JS errors in the console');

@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
 const APP = {
   name: 'נדל״ן בע״מ',
   logo: 'assets/logo.png', logoOnDark: 'assets/logo-dark.png', mark: 'assets/mark.png', logoAlt: 'נדל״ן בע״מ – נכסים מסחריים ותעשייה',
-  ownerTitle: 'נכסים',
+  ownerTitle: 'נכסים', loginLabel: 'התחברות',
   features: { dashboard: true },
   demo: { email: 'broker@nadlan-demo.co.il', password: 'Demo2026!', credit: 'נבנה ע״י WAIVES' },
 };

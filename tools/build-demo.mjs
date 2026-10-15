@@ -28,8 +28,10 @@ swap('<meta name="theme-color" content="#FFD400">', '<meta name="theme-color" co
 swap('<title>פריים לוקיישן · CRM</title>', '<title>נדל״ן בע״מ · דמו CRM</title>');
 swap('<meta name="apple-mobile-web-app-title" content="פריים לוקיישן">', '<meta name="apple-mobile-web-app-title" content="נדל״ן בע״מ">');
 // the chosen dashboard look (GPT "גיבור מאוחד", look 2) loads after the app's own CSS
-swap('</style>\n', '</style>\n<link rel="stylesheet" href="dashboard-look.css">\n');
-swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js"></script>\n<script src="demo-db.js"></script>\n<script src="tune.js"></script>\n<script src="screens.js"></script>\n<script>\n`);
+// ?v=<build> on every demo file: GitHub Pages lets browsers cache files for 10 minutes, so a new build must use new URLs
+const V = Date.now().toString(36);
+swap('</style>\n', `</style>\n<link rel="stylesheet" href="dashboard-look.css?v=${V}">\n`);
+swap('\n<script>\n', `\n<script>window.PL_APP = ${JSON.stringify(APP)};</script>\n<script src="seed.js?v=${V}"></script>\n<script src="demo-db.js?v=${V}"></script>\n<script src="tune.js?v=${V}"></script>\n<script src="screens.js?v=${V}"></script>\n<script>\n`);
 
 for (const d of ['', 'assets', 'icons']) await mkdir(join(OUT, d), { recursive: true });
 // files are overwritten in place, so the git repo inside demo-site/ survives a rebuild

@@ -366,7 +366,7 @@ try {
   await page.locator('#form-map').click({ position: { x: 180, y: 120 } });
   await page.waitForFunction(() => document.querySelector('#address').value === 'הגפן 5, קריית גת');
   ok('owner map tap → pin + address filled from reverse search (editable)');
-  assert.equal(await page.locator('[data-field=photos] .lbl').innerText().then(t => t.startsWith('תמונות')), true);
+  assert.equal(await page.locator('[data-field=photos] .lbl').innerText().then(t => t.startsWith('תמונות / סרטונים')), true);
   assert.equal(await page.getAttribute('#photo-input', 'accept'), 'image/*');   // videos: built, off
   await radio('entity_type', 'company');
   await fill('#company_number', '515555555');

@@ -488,7 +488,7 @@ const MAX_PHOTOS = 5;
 // see supabase/005_round2.sql). Until then only images can be picked and the field is called "תמונות".
 const ALLOW_VIDEO = !!(window.PL_APP && window.PL_APP.video);
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-const MEDIA_LABEL = ALLOW_VIDEO ? 'תמונות וסרטונים' : 'תמונות';
+const MEDIA_LABEL = 'תמונות / סרטונים';  // Galli: the field name already says videos; uploads of videos switch on with ALLOW_VIDEO
 async function videoPoster(file) {
   if (file.size > MAX_VIDEO_BYTES) throw new Error('too-big');
   const url = URL.createObjectURL(file);

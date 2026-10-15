@@ -343,6 +343,9 @@ const CONFIG = {
   key: 'sb_publishable_Ij-Epg5Zm1jcu9BOWckDow_OCa_QSTj',
 };
 const MAP_CENTER = [31.61, 34.77]; // קריית גת
+// GovMap (Israel's national map) finds exact house numbers. Its key works only from the approved domain
+// (waives-io.github.io). Empty = not connected yet: search uses the free OSM services only.
+const GOVMAP_TOKEN = (window.PL_APP && window.PL_APP.govmapToken) || '';
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {
   lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
@@ -1011,9 +1014,31 @@ const Geo = {
   // exact = same house number AND (when the result has a city) that city is in what was typed
   isExact(r, q) { return this.sameNumber(r.hn, q) && (!r.city || String(q).includes(r.city)); },
   score(r, q) { return (this.isExact(r, q) ? 2 : 0) + (r.city && String(q).includes(r.city) ? 1 : 0); },
+  // GovMap search → [{lat, lng, label, full, hn, city}]; coordinates come in ITM (Israeli grid) and are converted
+  loadScript(src) {
+    this.scripts ||= {};
+    return this.scripts[src] ||= new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('load ' + src)); document.head.append(el); });
+  },
+  async govmap(q) {
+    if (!GOVMAP_TOKEN) return [];
+    await Promise.all([this.loadScript('https://www.govmap.gov.il/govmap/api/govmap.api.js'),
+      this.loadScript('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js')]);
+    const ITM = '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=-24.0024,-17.1032,-17.8444,-0.33077,-1.85269,1.66969,5.4248 +units=m +no_defs';
+    const r = await window.govmap.search({ searchText: q, language: 'he', maxResults: 5, isAccurate: false, apiKey: GOVMAP_TOKEN });
+    return (r?.results || []).map(x => {
+      const m = String(x.centroid || '').match(/POINT\s*\(\s*([\d.]+)\s+([\d.]+)\s*\)/); if (!m) return null;
+      const [lng, lat] = window.proj4(ITM, 'EPSG:4326', [+m[1], +m[2]]);
+      const text = String(x.text || '');
+      return { lat, lng, label: text, full: text, hn: this.typedNumber(text), city: '', source: 'govmap' };
+    }).filter(Boolean);
+  },
   async search(q) {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
     let res = [];
+    // GovMap first (exact Israeli house numbers); the free services stay as the fallback
+    try { res = await this.govmap(q); } catch (e) { console.error(e); }
+    if (res.some(r => this.isExact(r, q))) { this.cache.set(key, res); return res; }
+    const gm = res; res = [];
     if (/\d/.test(q)) {
       // a house number: ask both services, exact matches (with the house number) first
       const [a, b] = await Promise.all([this.nominatim(q).catch(() => []), this.photon(q).catch(() => [])]);
@@ -1022,8 +1047,9 @@ const Geo = {
         .sort((x, y) => this.score(y, q) - this.score(x, q)).slice(0, 6);
     } else {
       try { res = await this.photon(q); } catch (e) { console.error(e); }
-      if (!res.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
+      if (!res.length && !gm.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
     }
+    res = [...gm, ...res].slice(0, 6);
     this.cache.set(key, res); return res;
   },
   async reverse(lat, lng) {

@@ -37,6 +37,8 @@ await ctx.route('https://nominatim.openstreetmap.org/**', (route) => {
   const u = route.request().url();
   const body = u.includes('/reverse')
     ? { display_name: 'הגפן 5, קריית גת', address: { road: 'הגפן', house_number: '5', city: 'קריית גת' } }
+    : decodeURIComponent(u).includes('הרצל 12') ? [{ lat: '31.6105', lon: '34.7705', display_name: 'הרצל 14, קריית גת', address: { road: 'הרצל', house_number: '14', city: 'קריית גת' } }]
+    : decodeURIComponent(u).includes('הרצל 20') ? [{ lat: '31.6107', lon: '34.7707', display_name: 'הרצל 20, קריית גת', address: { road: 'הרצל', house_number: '20', city: 'קריית גת' } }]
     : [{ lat: '31.6100', lon: '34.7700', display_name: 'קריית גת, מחוז הדרום, ישראל', address: { city: 'קריית גת' } }];
   route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
 });
@@ -309,9 +311,18 @@ try {
   assert.equal(await page.inputValue('#address'), 'הרצל 15, קריית גת');
   assert.equal(await page.locator('.leaflet-marker-draggable').count(), 1);
   ok('exact address: the typed house number is kept, approximate pin is flagged and can be dragged');
+  await page.fill('#address', 'הרצל 12, קריית גת'); await page.click('#geo-go');
+  await page.waitForSelector('#geo-results button:has-text("הרצל 14")'); await page.click('#geo-results button');
+  assert.equal(await page.inputValue('#address'), 'הרצל 12, קריית גת');
+  assert.equal(await page.isVisible('#geo-note'), true);
+  await page.fill('#address', 'הרצל 20, קריית גת'); await page.click('#geo-go');
+  await page.waitForSelector('#geo-results button:has-text("הרצל 20")'); await page.click('#geo-results button');
+  assert.equal(await page.inputValue('#address'), 'הרצל 20, קריית גת');
+  assert.equal(await page.isHidden('#geo-note'), true);
+  ok('a result with another house number (14 for 12) stays approximate; the same number counts as exact');
   await page.click('#save'); await page.waitForSelector('.card-head');
   const cardTxt = await text('.content');
-  assert.match(cardTxt, /מתווך/); assert.match(cardTxt, /31234/); assert.match(cardTxt, /הרצל 15, קריית גת/);
+  assert.match(cardTxt, /מתווך/); assert.match(cardTxt, /31234/); assert.match(cardTxt, /הרצל 20, קריית גת/);
   assert.doesNotMatch(cardTxt, /NaN|undefined|null/);
   ok('broker contact with licence number; a lead saves with only phone + name + address, card has no empty junk');
   await page.click('.back'); await page.waitForSelector('#rows');

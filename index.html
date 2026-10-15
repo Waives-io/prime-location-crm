@@ -990,7 +990,7 @@ const Geo = {
     return (res.features || []).filter(f => f.properties?.countrycode === 'IL').map(f => {
       const p = f.properties, street = p.street ? [p.street, p.housenumber].filter(Boolean).join(' ') : '';
       const city = p.city || p.town || p.village || p.county || '';
-      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], exact: !!p.housenumber,
+      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], hn: p.housenumber || '',
         label: this.uniq([street && p.housenumber ? street : (p.name || street), city]).join(', '),
         full: this.uniq([p.name, street, p.district, city]).join(', ') };
     });
@@ -998,8 +998,11 @@ const Geo = {
   async nominatim(q) {
     await this.wait();
     const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json();
-    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name, exact: !!r.address?.house_number }));
+    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name, hn: r.address?.house_number || '' }));
   },
+  // the house number the user typed ("הרצל 15א, קריית גת" → "15א"); a result is exact only when its number is the same
+  typedNumber: (q) => (String(q).match(/\d+\s*[א-ת]?(?![\d])/)?.[0] || '').replace(/\s/g, ''),
+  sameNumber(hn, q) { const t = this.typedNumber(q); return !!t && String(hn || '').replace(/\s/g, '') === t; },
   async search(q) {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
     let res = [];
@@ -1008,7 +1011,7 @@ const Geo = {
       const [a, b] = await Promise.all([this.nominatim(q).catch(() => []), this.photon(q).catch(() => [])]);
       const seen = new Set();
       res = [...a, ...b].filter(r => { const k = `${r.lat.toFixed(4)},${r.lng.toFixed(4)}`; if (seen.has(k)) return false; seen.add(k); return true; })
-        .sort((x, y) => (y.exact ? 1 : 0) - (x.exact ? 1 : 0)).slice(0, 6);
+        .sort((x, y) => (this.sameNumber(y.hn, q) ? 1 : 0) - (this.sameNumber(x.hn, q) ? 1 : 0)).slice(0, 6);
     } else {
       try { res = await this.photon(q); } catch (e) { console.error(e); }
       if (!res.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
@@ -1342,11 +1345,11 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       $$('button', ul).forEach(b => b.onclick = () => {
         const r = res[b.dataset.i];
         // the user typed a house number the map doesn't know: keep their text, mark the pin as approximate
-        const keepTyped = /\d/.test(q) && !r.exact;
+        const exact = Geo.sameNumber(r.hn, q), keepTyped = /\d/.test(q) && !exact;
         ul.innerHTML = ''; place({ lat: r.lat, lng: r.lng }, { fromSearch: true, label: keepTyped ? q : r.label });
         if (keepTyped) addressAuto = false;
         $('#geo-note').hidden = !keepTyped;
-        map?.setView([r.lat, r.lng], r.exact ? 18 : 16, { animate: false });
+        map?.setView([r.lat, r.lng], exact ? 18 : 16, { animate: false });
       });
     } catch (ex) { console.error(ex); if (seq === geoSeq) ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
   };
@@ -1484,7 +1487,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       if (v !== '' && v != null) custom[f.key] = f.type === 'number' ? parseNum(v) : v;
     }
     const et = radio('entity_type') || 'private';
-    const contact = { phone: Phone.normalize(val('phone')), name: val('name').trim(), entity_type: et,
+    const contact = { v: 2, phone: Phone.normalize(val('phone')), name: val('name').trim(), entity_type: et,
       company_name: et === 'company' ? val('company_name').trim() : null,
       company_number: et === 'company' ? val('company_number').trim() || null : null,
       broker_license: et === 'broker' ? val('broker_license').trim() || null : null };
@@ -1492,7 +1495,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     let p;
     if (isLead) {
       const smin = parseNum(val('size_min')), smax = parseNum(val('size_max'));
-      p = { id: dealId, contact, lead_date: val('lead_date') || null, need_id: optId('need_id'), purpose_id: optId('purpose_id'),
+      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_id: optId('need_id'), purpose_id: optId('purpose_id'),
         size_min: smin, size_max: smax, size_value: smin ?? smax, size_unit: radio('size_unit') || 'sqm',
         lat: pin.lat, lng: pin.lng, radius_m: pin.lat != null ? +radiusEl.value : null,
         height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,
@@ -1501,7 +1504,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
         needed_by: val('needed_by') || null, address: val('address').trim() || null, custom };
     } else {
       const kind = radio('deal_kind') || null, ir = radio('is_rented'), rented = kind && ir ? ir === 'true' : null;
-      p = { id: dealId, contact, purpose_id: optId('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
+      p = { v: 2, id: dealId, contact, purpose_id: optId('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
         lat: pin.lat, lng: pin.lng, address: val('address').trim() || null, description: val('description').trim() || null,
         notes: val('owner_notes').trim() || null, deal_kind: kind,
         asking_price: parseNum(val('asking_price')), is_rented: rented, monthly_rent: rented ? parseNum(val('monthly_rent')) : null,

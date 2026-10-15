@@ -277,4 +277,51 @@ await as('authenticated', LEAH, async () => {
   ok('005: media items carry a kind; video paths accepted by the RPC (uploads stay image-only until the bucket allows video)');
 });
 
+// ───────── 005: older app versions never destroy round-2 data ─────────
+await as('authenticated', LEAH, async () => {
+  const C = (phone, extra = {}) => ({ phone, name: 'בדיקת גרסה', entity_type: 'private', ...extra });
+  const oid1 = '66666666-6666-4666-8666-666666666661';
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, id: oid1, contact: { v: 2, ...C('0528880001') }, size_min: 500, size_max: null, size_unit: 'sqm' }]);
+  await q('select save_lead_deal($1::jsonb)', [{ id: oid1, contact: C('0528880001'), size_value: 500, size_unit: 'sqm' }]); // older app
+  assert.deepEqual((await q('select size_min::int a, size_max b from lead_deals where id=$1', [oid1]))[0], { a: 500, b: null });
+  ok('005: an older app keeps a one-sided range ("מ־500") as it is');
+
+  const oid2 = '66666666-6666-4666-8666-666666666662';
+  await q('select save_owner_deal($1::jsonb)', [{ v: 2, id: oid2, contact: { v: 2, ...C('0528880002') }, deal_kind: 'sale', asking_price: 3000000, is_rented: true, monthly_rent: 15000 }]);
+  await q('select save_owner_deal($1::jsonb)', [{ id: oid2, contact: C('0528880002'), deal_kind: 'sale', asking_price: 3000000, is_rented: null, monthly_rent: null }]); // older app
+  assert.deepEqual((await q('select is_rented, monthly_rent::int m, yield_pct::float y from owner_deals where id=$1', [oid2]))[0], { is_rented: true, m: 15000, y: 6 });
+  await q('select save_owner_deal($1::jsonb)', [{ v: 2, id: oid2, contact: { v: 2, ...C('0528880002') }, deal_kind: 'sale', asking_price: 3000000, is_rented: false }]);
+  assert.deepEqual((await q('select is_rented, monthly_rent from owner_deals where id=$1', [oid2]))[0], { is_rented: false, monthly_rent: null });
+  ok('005: an older app keeps rent + yield of a sale; the new app can still change them');
+
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, contact: { v: 2, ...C('0528880003', { entity_type: 'broker', broker_license: '777' }) } }]);
+  await q('select save_lead_deal($1::jsonb)', [{ contact: C('0528880003', { entity_type: '' }) }]); // older app: no broker choice
+  assert.deepEqual((await q(`select entity_type, broker_license from contacts where phone='052-8880003'`))[0], { entity_type: 'broker', broker_license: '777' });
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, contact: { v: 2, ...C('0528880003') } }]); // new app: broker → private on purpose
+  assert.deepEqual((await q(`select entity_type, broker_license from contacts where phone='052-8880003'`))[0], { entity_type: 'private', broker_license: null });
+  ok('005: an older app keeps a broker a broker (and the licence); the new app can still change it');
+});
+
+// ───────── 005 on a database whose constraints have other names ─────────
+{
+  const db2 = new PGlite();
+  await db2.exec(`
+    create schema auth; create table auth.users (id uuid primary key, email text);
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create role anon nologin; create role authenticated nologin;
+    create schema storage;
+    create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);`);
+  await db2.exec(schema); await db2.exec(migration); await db2.exec(photosSql);
+  const cons = (await db2.query(`select conname, conrelid::regclass::text t from pg_constraint where contype='c' and conrelid in ('public.contacts'::regclass, 'public.owner_deals'::regclass)`)).rows;
+  let k = 0;
+  for (const c of cons) await db2.exec(`alter table ${c.t} rename constraint "${c.conname}" to "renamed_${k++}"`);
+  await db2.exec(round2Sql);
+  await db2.exec(`insert into public.contacts (phone, name, entity_type) values ('050-7770001', 'מתווך', 'broker')`);
+  await assert.rejects(db2.exec(`insert into public.contacts (phone, name, entity_type) values ('050-7770002', 'x', 'company')`), /check constraint/);
+  await db2.exec(`insert into public.owner_deals (contact_id, deal_kind, is_rented, monthly_rent) select id, 'sale', true, 9000 from public.contacts where phone='050-7770001'`);
+  await assert.rejects(db2.exec(`insert into public.owner_deals (contact_id, is_rented, monthly_rent) select id, false, 9000 from public.contacts where phone='050-7770001'`), /check constraint/);
+  ok('005 on a copy where every check constraint has another name: old rules replaced, new rules active');
+}
+
 console.log(`\nDB tests passed: ${pass}`);

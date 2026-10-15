@@ -6,6 +6,17 @@ begin;
 -- ───────────── contacts: broker + business numbers ─────────────
 alter table public.contacts add column if not exists company_number text;   -- ח.פ. (optional)
 alter table public.contacts add column if not exists broker_license text;   -- מס' רישיון תיווך (optional)
+-- the old "company | private" check, found by its definition (any name); at most one expected
+do $$
+declare r record; n int := 0;
+begin
+  for r in select conname from pg_constraint
+           where conrelid = 'public.contacts'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) ilike '%entity_type%' and pg_get_constraintdef(oid) not ilike '%company_name%'
+             and pg_get_constraintdef(oid) not ilike '%broker%'
+  loop n := n + 1; execute format('alter table public.contacts drop constraint %I', r.conname); end loop;
+  if n > 1 then raise exception 'unexpected: % entity_type checks on contacts', n; end if;
+end $$;
 alter table public.contacts drop constraint if exists contacts_entity_type_check;
 alter table public.contacts add constraint contacts_entity_type_check check (entity_type in ('company', 'private', 'broker'));
 
@@ -69,10 +80,14 @@ alter table public.owner_deals add constraint owner_deals_rent_check check (mont
 
 -- ───────────── RPCs ─────────────
 -- Keys an older app version does not send keep their stored value (company_number, broker_license).
+-- The new app sends "v": 2. Without it (an older app, which has no "מתווך" choice) a broker stays a broker.
 create or replace function public.upsert_contact(c jsonb) returns uuid
 language plpgsql set search_path = public as $$
-declare v_id uuid; v_type text := coalesce(nullif(c->>'entity_type', ''), 'private');
+declare v_id uuid; v_type text := coalesce(nullif(c->>'entity_type', ''), 'private'); v_legacy boolean := not (c ? 'v');
 begin
+  if v_legacy and exists (select 1 from contacts where phone = normalize_phone(c->>'phone') and entity_type = 'broker') then
+    v_type := 'broker';
+  end if;
   insert into contacts (phone, name, entity_type, company_name, company_number, broker_license)
   values (normalize_phone(c->>'phone'), btrim(c->>'name'), v_type,
           case when v_type = 'company' then nullif(btrim(c->>'company_name'), '') end,
@@ -81,7 +96,8 @@ begin
   on conflict (phone) do update set
     name = excluded.name, entity_type = excluded.entity_type, company_name = excluded.company_name,
     company_number = case when c ? 'company_number' or excluded.entity_type <> 'company' then excluded.company_number else contacts.company_number end,
-    broker_license = case when c ? 'broker_license' or excluded.entity_type <> 'broker' then excluded.broker_license else contacts.broker_license end
+    broker_license = case when excluded.entity_type <> 'broker' then null
+                          when c ? 'broker_license' then excluded.broker_license else contacts.broker_license end
   returning id into v_id;
   return v_id;
 end $$;
@@ -105,7 +121,7 @@ begin
     v_min := nullif(p->>'size_min', '')::numeric; v_max := nullif(p->>'size_max', '')::numeric;
   else
     select size_min, size_max into o_min, o_max from lead_deals where id = v_id;
-    if o_min is not null and o_max is not null and o_min <> o_max then v_min := o_min; v_max := o_max;
+    if o_min is not null or o_max is not null then v_min := o_min; v_max := o_max;   -- keep the stored range as it is
     else v_min := nullif(p->>'size_value', '')::numeric; v_max := v_min; end if;
   end if;
   insert into lead_deals (id, contact_id, lead_date, need_id, purpose_id, size_value, size_min, size_max, size_unit,
@@ -160,7 +176,9 @@ begin
     description = excluded.description,
     notes = case when p ? 'notes' then excluded.notes else owner_deals.notes end,
     deal_kind = excluded.deal_kind, asking_price = excluded.asking_price,
-    is_rented = excluded.is_rented, monthly_rent = excluded.monthly_rent,
+    -- an older app (no "v") always sends empty rent fields for a sale: keep what the new app stored
+    is_rented = case when not (p ? 'v') and excluded.deal_kind = 'sale' then owner_deals.is_rented else excluded.is_rented end,
+    monthly_rent = case when not (p ? 'v') and excluded.deal_kind = 'sale' then owner_deals.monthly_rent else excluded.monthly_rent end,
     ai_price_per_sqm = excluded.ai_price_per_sqm, custom = excluded.custom;
   return jsonb_build_object('id', v_id, 'contact_id', v_contact);
 end $$;

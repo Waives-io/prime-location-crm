@@ -261,3 +261,25 @@ body .v3-shell button.btn.sm.row-act[disabled]{border-color:#B8AAA8;background:#
   .prow>.row-act{grid-column:2;justify-self:start}
   .prow .addr{max-width:100%;overflow-wrap:anywhere;white-space:normal}
 }
+
+/* Desktop density pass: keep the dashboard overview and open detail pane compact. */
+@media(min-width:900px){
+  .mod-hero:has(.hero-new){height:150px}
+  .mod-title{padding-block:19px 15px}
+  .mod-title p{margin-top:7px}
+  body .mod-title a.btn.accent.hero-new{min-height:36px;margin-top:9px}
+  .content.mod{padding-top:10px}
+  .mod-kpis{margin-bottom:10px;gap:8px}
+  .mod-kpis .kpi-card{min-height:102px;padding:12px 13px;gap:10px}
+  .mod-kpis .kpi-ic{width:40px;height:40px;flex-basis:40px}
+  .mod-kpis .kpi-ic .ic{width:23px;height:23px}
+  .mod-kpis .kpi-value{margin:3px 0}
+  .mod-body{gap:10px}
+  .mod-body.has-side{grid-template-columns:minmax(0,1fr) 320px}
+  .filters,.filters.adv{padding:10px 12px}
+  .filters.adv{margin-bottom:9px}
+  .adv-head{gap:10px}
+  .frow,.frow.labeled{margin-top:8px;gap:7px}
+  .lead-table th,.lead-table td{padding-inline:3px}
+  .table-wrap{overflow-x:hidden}
+}

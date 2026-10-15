@@ -240,8 +240,8 @@
         </section>
         <div class="mod-body">
           <section class="mod-main panel">
-            <div class="filters"><h2>חיפוש וסינון</h2>
-              <label class="search-box">${I('search', 'sm')}<span class="sr-only">חיפוש</span><input class="input" id="lq" type="search" placeholder="חפש לפי שם, טלפון, מייל או הערה…" value="${esc(st.lead.q)}"></label>
+            <div class="filters"><div class="adv-head"><h2>${I('sliders', 'sm')} חיפוש וסינון</h2>
+              <label class="search-box">${I('search', 'sm')}<span class="sr-only">חיפוש</span><input class="input" id="lq" type="search" placeholder="חפש לפי שם, טלפון, מייל או הערה…" value="${esc(st.lead.q)}"></label></div>
               <div class="frow">
                 ${sel('l-quick', 'הצגה', st.lead.quick, Object.entries(QUICK))}
                 ${sel('l-stage', 'סטטוס', st.lead.stage, [['', 'סטטוס – הכול'], ...Object.keys(STAGE).map(s => [s, s])])}

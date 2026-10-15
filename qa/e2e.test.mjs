@@ -311,6 +311,15 @@ try {
   assert.equal(await page.inputValue('#address'), 'הרצל 15, קריית גת');
   assert.equal(await page.locator('.leaflet-marker-draggable').count(), 1);
   ok('exact address: the typed house number is kept, approximate pin is flagged and can be dragged');
+  const mapBox = await page.locator('#form-map').boundingBox();
+  await page.mouse.click(mapBox.x + 70, mapBox.y + 70);
+  await page.waitForFunction(() => document.querySelector('#geo-note').hidden);
+  assert.equal(await page.inputValue('#address'), 'הרצל 15, קריית גת');
+  ok('tapping the map places the exact spot: the "approximate" note goes away, the typed address stays');
+  assert.deepEqual(await page.evaluate(() => [Geo.typedNumber('רמת הגולן 11 חולון'), Geo.typedNumber('הרצל 15א, קריית גת'),
+    Geo.isExact({ hn: '11', city: 'ירושלים' }, 'רמת הגולן 11 חולון'), Geo.isExact({ hn: '11', city: 'חולון' }, 'רמת הגולן 11 חולון')]),
+    ['11', '15א', false, true]);
+  ok('house number read correctly ("11 חולון" is 11, "15א" keeps the letter); same number in another city is not exact');
   await page.fill('#address', 'הרצל 12, קריית גת'); await page.click('#geo-go');
   await page.waitForSelector('#geo-results button:has-text("הרצל 14")'); await page.click('#geo-results button');
   assert.equal(await page.inputValue('#address'), 'הרצל 12, קריית גת');
@@ -341,6 +350,9 @@ try {
   await page.waitForSelector('#rows');
   await page.click('.bottom-nav .nav-new');
   await page.waitForSelector('#deal-form');
+  assert.equal(await page.locator('#entity_type label:visible').count(), 2); // owners: פרטי / חברה only
+  assert.match(await text('[data-field=photos] .lbl'), /עד 5 קבצים, תמונה עד 30MB/);
+  assert.doesNotMatch(await text('[data-field=photos] .lbl'), /לא חובה/);
   await fill('#phone', '053 999 8887');
   assert.equal(await page.inputValue('#phone'), '053-9998887');
   assert.equal(await page.isHidden('#existing-note'), true);
@@ -439,7 +451,19 @@ try {
   await page.waitForFunction(() => PL_TEST_DB.files.size === 2);
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 1);
   ok('leaving an edit without saving removes the photos uploaded in it; saved photos stay');
-  ok('sale → asking ₪/sqm + estimate labelled "הערכה"');
+  assert.match(await text('.dl'), /הערכת מחיר\s*₪ 1,610,000/);
+  const dts = await page.locator('.dl dt').allInnerTexts();
+  assert.equal(dts.indexOf('הערכת מחיר'), dts.indexOf('שטח מגרש') + 1);
+  ok('sale → asking ₪/sqm + estimate labelled "הערכה"; owner card shows "הערכת מחיר" right after the areas');
+
+  /* remove an added field */
+  await page.goto(BASE + '#/m/lead/new'); await page.waitForSelector('#deal-form');
+  await page.locator('[data-field^=cf_]').filter({ hasText: 'קומה' }).locator('.cf-remove').click();
+  await page.click('#dlg [data-a=yes]');
+  await page.waitForFunction(() => ![...document.querySelectorAll('[data-field^=cf_] label')].some(l => l.textContent.includes('קומה')));
+  assert.equal(await page.evaluate(() => PL_TEST_DB._db.fields.find(f => f.label === 'קומה').hidden), true);
+  ok('"הסרת השדה" removes an added field from the form (saved values stay)');
+  await page.goto(BASE + '#/');
 
   /* phone normalization unit cases */
   const cases = await page.evaluate(() => ['0501234567', '050-123-4567', '050 123 4567', '+972501234567', '+972-50-123-4567',

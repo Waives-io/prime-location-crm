@@ -441,6 +441,7 @@ function supabaseDB() {
     async saveDeal(module, p) { return must(await sb.rpc(module === 'lead' ? 'save_lead_deal' : 'save_owner_deal', { p })); },
     async addOption(listKey, value) { return must(await sb.rpc('add_option', { p_list_key: listKey, p_value: value })); },
     async addField(f) { return must(await sb.from('custom_fields').insert(f).select().single()); },
+    async hideField(id) { return must(await sb.from('custom_fields').update({ hidden: true }).eq('id', id).select().single()); },
     async updateOption(id, patch) { return must(await sb.from('option_lists').update(patch).eq('id', id).select().single()); },
     // photos: private bucket "deal-photos"; the deal row keeps storage paths only (supabase/004_photos.sql)
     async setPhotos(module, id, photos) { return must(await sb.rpc('set_deal_photos', { p_module: module, p_id: id, p_photos: photos })); },
@@ -469,7 +470,7 @@ const S = {
 // hidden ("removed") values stay readable on old deals, and selectable only on a deal that already uses them
 const opts = (key, keepId) => (S.data?.options || []).filter(o => o.list_key === key && (!o.hidden || o.id === keepId));
 const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value || '';
-const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module);
+const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module && !f.hidden);
 const SECTIONS = ['contact', 'property', 'location', 'money'];
 const sectionOf = (f) => SECTIONS.includes(f.section) ? f.section : 'money';
 const deals = (module) => S.data?.[module] || [];
@@ -834,6 +835,9 @@ function cardView(module, id) {
     add('ייעוד', esc(optText(d.purpose_id)));
     add('שטח בנוי', has(d.built_sqm) ? fmt.bi(fmt.size(d.built_sqm, 'sqm')) : '');
     add('שטח מגרש', has(d.plot_sqm) ? fmt.bi(fmt.size(d.plot_sqm, 'sqm')) : '');
+    const perEst = d.ai_price_per_sqm || estimatePricePerSqm(optText(d.purpose_id), +d.built_sqm);
+    add('הערכת מחיר', perEst && +d.built_sqm > 0
+      ? `${fmt.ltr(fmt.money(perEst * d.built_sqm))} <small>(הערכה · ${fmt.ltr(fmt.money(perEst))} למ״ר)</small>` : '');
     add('תיאור', esc(d.description));
     add(MEDIA_LABEL, photoStrip(d));
     sec = 'location';
@@ -845,7 +849,6 @@ function cardView(module, id) {
     if (d.is_rented && has(d.monthly_rent)) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', has(d.yield_pct) ? fmt.ltr(fmt.pct(d.yield_pct)) : ''); }
     if (d.deal_kind === 'sale') {
       add('מחיר למ״ר מבוקש', has(d.asking_price) && +d.built_sqm > 0 ? fmt.ltr(fmt.money(d.asking_price / d.built_sqm)) : '');
-      if (d.ai_price_per_sqm) add('הערכת מחיר למ״ר', fmt.ltr(fmt.money(d.ai_price_per_sqm)) + ' <small>(הערכה)</small>');
     }
     add('הערות', esc(d.notes));
   }
@@ -990,7 +993,7 @@ const Geo = {
     return (res.features || []).filter(f => f.properties?.countrycode === 'IL').map(f => {
       const p = f.properties, street = p.street ? [p.street, p.housenumber].filter(Boolean).join(' ') : '';
       const city = p.city || p.town || p.village || p.county || '';
-      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], hn: p.housenumber || '',
+      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], hn: p.housenumber || '', city,
         label: this.uniq([street && p.housenumber ? street : (p.name || street), city]).join(', '),
         full: this.uniq([p.name, street, p.district, city]).join(', ') };
     });
@@ -998,11 +1001,16 @@ const Geo = {
   async nominatim(q) {
     await this.wait();
     const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json();
-    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name, hn: r.address?.house_number || '' }));
+    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name, hn: r.address?.house_number || '',
+      city: r.address?.city || r.address?.town || r.address?.village || '' }));
   },
   // the house number the user typed ("הרצל 15א, קריית גת" → "15א"); a result is exact only when its number is the same
-  typedNumber: (q) => (String(q).match(/\d+\s*[א-ת]?(?![\d])/)?.[0] || '').replace(/\s/g, ''),
+  // "רמת הגולן 11 חולון" → "11"; "הרצל 15א" → "15א" (a letter only when it is glued to the number)
+  typedNumber: (q) => { const m = String(q).match(/(\d+)([א-ת](?![א-ת]))?/); return m ? m[1] + (m[2] || '') : ''; },
   sameNumber(hn, q) { const t = this.typedNumber(q); return !!t && String(hn || '').replace(/\s/g, '') === t; },
+  // exact = same house number AND (when the result has a city) that city is in what was typed
+  isExact(r, q) { return this.sameNumber(r.hn, q) && (!r.city || String(q).includes(r.city)); },
+  score(r, q) { return (this.isExact(r, q) ? 2 : 0) + (r.city && String(q).includes(r.city) ? 1 : 0); },
   async search(q) {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
     let res = [];
@@ -1011,7 +1019,7 @@ const Geo = {
       const [a, b] = await Promise.all([this.nominatim(q).catch(() => []), this.photon(q).catch(() => [])]);
       const seen = new Set();
       res = [...a, ...b].filter(r => { const k = `${r.lat.toFixed(4)},${r.lng.toFixed(4)}`; if (seen.has(k)) return false; seen.add(k); return true; })
-        .sort((x, y) => (this.sameNumber(y.hn, q) ? 1 : 0) - (this.sameNumber(x.hn, q) ? 1 : 0)).slice(0, 6);
+        .sort((x, y) => this.score(y, q) - this.score(x, q)).slice(0, 6);
     } else {
       try { res = await this.photon(q); } catch (e) { console.error(e); }
       if (!res.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
@@ -1056,7 +1064,8 @@ function customControl(f, v) {
     `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return textInput(id, v);
 }
-const customFieldHTML = (f, v) => field('cf_' + f.key, esc(f.label), customControl(f, v), { required: false });
+const customFieldHTML = (f, v) => field('cf_' + f.key, esc(f.label), customControl(f, v),
+  { hint: `<button type="button" class="link cf-remove" data-id="${f.id}" data-label="${esc(f.label)}">הסרת השדה</button>` });
 
 function formView(r) {
   const { module, mode } = r, M = MODULES[module], isLead = module === 'lead';
@@ -1091,13 +1100,13 @@ function formView(r) {
         <button type="button" class="btn" id="geo-go">חיפוש</button></div>
       <ul class="geo-results" id="geo-results" aria-live="polite"></ul>`,
       { hint: 'אפשר כתובת מדויקת עם מספר בית, או אזור. בחרי מהרשימה או הקישי על המפה' })}
-    <p class="note" id="geo-note" hidden aria-live="polite">לא נמצא מספר הבית במפה. המיקום משוער – גררי את הסיכה למקום המדויק.</p>
+    <p class="note" id="geo-note" hidden aria-live="polite">מספר הבית לא קיים במפה, אז הסיכה על הרחוב. הקישי על המפה במקום המדויק (או גררי את הסיכה).</p>
     ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה; אפשר לגרור את הסיכה כדי לדייק' })}
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
       <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
       <output id="radius-out" class="num"></output></div>` : ''}`;
   const photoField = `
-    <div class="field" data-field="photos"><span class="lbl">${MEDIA_LABEL} <small>(לא חובה, עד ${MAX_PHOTOS})</small></span>
+    <div class="field" data-field="photos"><span class="lbl">${MEDIA_LABEL} <small>(עד ${MAX_PHOTOS} קבצים, תמונה עד 30MB${ALLOW_VIDEO ? ', סרטון עד 50MB' : ''})</small></span>
       <div class="photo-grid" id="photo-grid"></div>
       <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="${ALLOW_VIDEO ? 'image/*,video/*' : 'image/*'}" multiple hidden>+ הוספת ${ALLOW_VIDEO ? 'תמונה או סרטון' : 'תמונה'}</label>
       <p class="hint">הראשונה מוצגת בכרטיס וברשימה. במחשב אפשר גם לגרור לכאן או להדביק.</p>
@@ -1127,7 +1136,7 @@ function formView(r) {
         <button type="button" class="btn" id="pick-contact" hidden>מאנשי הקשר</button></div>`, { required: true, hint: 'אפשר להדביק מספר שהועתק מאנשי הקשר' })}
       <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – אין צורך למלא שוב פרטים</p>
       ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'), { required: true })}
-      ${field('entity_type', 'פרטי / חברה / מתווך', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה'], ['broker', 'מתווך']], c.entity_type || 'private'))}
+      ${field('entity_type', isLead ? 'פרטי / חברה / מתווך' : 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה'], ['broker', 'מתווך']], c.entity_type || 'private'))}
       ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only', required: true })}
       ${field('company_number', 'ח.פ.', textInput('company_number', c.company_number, 'inputmode="numeric" dir="ltr"'), { cls: 'company-only' })}
       ${field('broker_license', 'מס׳ רישיון תיווך', textInput('broker_license', c.broker_license, 'inputmode="numeric" dir="ltr"'), { cls: 'broker-only' })}
@@ -1163,6 +1172,8 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   const sync = () => {
     $$('.company-only', form).forEach(el => el.hidden = radio('entity_type') !== 'company');
     $$('.broker-only', form).forEach(el => el.hidden = radio('entity_type') !== 'broker');
+    // owners: the "מתווך" choice shows only for a contact that is already a broker (shared with the leads module)
+    if (!isLead) { const bl = form.querySelector('input[name="entity_type"][value="broker"]')?.closest('label'); if (bl) bl.hidden = radio('entity_type') !== 'broker'; }
     if (!isLead) {
       const kind = radio('deal_kind');
       $('#rent-block').hidden = !kind;                       // rent AND sale: "is it rented?" → rent → yield
@@ -1233,7 +1244,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       $('#existing-note').hidden = !c;
       if (c) {
         form.elements.name.value = c.name;
-        form.querySelector(`input[name="entity_type"][value="${c.entity_type}"]`).checked = true;
+        const r = form.querySelector(`input[name="entity_type"][value="${c.entity_type}"]`); if (r) r.checked = true;
         form.elements.company_name.value = c.company_name || '';
         form.elements.company_number.value = c.company_number || '';
         form.elements.broker_license.value = c.broker_license || '';
@@ -1307,11 +1318,12 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     if (map) {
       if (!marker) {
         marker = L.marker(latlng, { draggable: true, autoPan: true }).addTo(map);
-        marker.on('dragend', () => { const ll = marker.getLatLng(); $('#geo-note').hidden = true; Dirty.on = true; place(ll, { dragged: true }); });
+        marker.on('dragend', () => { const ll = marker.getLatLng(); Dirty.on = true; place(ll, { dragged: true }); });
       } else marker.setLatLng(latlng);
       if (radiusEl) { if (!circle) circle = L.circle(latlng, { radius: +radiusEl.value, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(map); else circle.setLatLng(latlng); }
     }
     check('pin');
+    if (!fromSearch) $('#geo-note').hidden = true;   // a tap or a drag IS the exact spot
     if (fromSearch && label) { addrEl.value = label; addressAuto = true; check('address'); }
     else if (!fromSearch && (addressAuto || !addrEl.value.trim()) && !(dragged && !addressAuto)) {
       try {
@@ -1345,11 +1357,11 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       $$('button', ul).forEach(b => b.onclick = () => {
         const r = res[b.dataset.i];
         // the user typed a house number the map doesn't know: keep their text, mark the pin as approximate
-        const exact = Geo.sameNumber(r.hn, q), keepTyped = /\d/.test(q) && !exact;
+        const exact = Geo.isExact(r, q), keepTyped = /\d/.test(q) && !exact;
         ul.innerHTML = ''; place({ lat: r.lat, lng: r.lng }, { fromSearch: true, label: keepTyped ? q : r.label });
         if (keepTyped) addressAuto = false;
         $('#geo-note').hidden = !keepTyped;
-        map?.setView([r.lat, r.lng], exact ? 18 : 16, { animate: false });
+        map?.setView([r.lat, r.lng], exact ? 18 : 17, { animate: false });   // close enough to tap the right building
       });
     } catch (ex) { console.error(ex); if (seq === geoSeq) ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
   };
@@ -1367,6 +1379,24 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   });
   $('#nf_type').onchange = nfSync;
   $('#nf_cancel').onclick = nfClose;
+  // "הסרת השדה": hides an added field from every deal of this module (saved values stay in the database)
+  form.addEventListener('click', (e) => {
+    const b = e.target.closest('.cf-remove'); if (!b) return;
+    const dlg = $('#dlg'); dlg.oninput = null;
+    dlg.innerHTML = `<h2>להסיר את השדה "${esc(b.dataset.label)}"?</h2>
+      <p class="hint">השדה יוסר מהטופס ומהכרטיס בכל העסקאות. מה שכבר נשמר בו לא נמחק.</p>
+      <div class="stack"><button type="button" class="btn primary" data-a="yes">הסרת השדה</button><button type="button" class="link" data-a="no">ביטול</button></div>`;
+    dlg.onclick = async (ev) => {
+      const a = ev.target.closest('[data-a]')?.dataset.a; if (ev.target === dlg || a === 'no') return dlg.close(); if (a !== 'yes') return;
+      try {
+        const row = await DB.hideField(b.dataset.id);
+        const i = S.data.fields.findIndex(f => f.id === row.id); if (i >= 0) S.data.fields[i] = row;
+        b.closest('.field').remove(); dlg.close(); toast(`השדה "${b.dataset.label}" הוסר`);
+      } catch (ex) { console.error(ex); toast('ההסרה נכשלה. נסי שוב.'); }
+    };
+    dlg.showModal();
+  });
+
   $('#nf_save').onclick = async (e) => {
     const label = $('#nf_label').value.trim(), type = $('#nf_type').value;
     const options = type === 'list' ? $('#nf_options').value.split(',').map(s => s.trim()).filter(Boolean) : [];

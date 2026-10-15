@@ -8,6 +8,7 @@ const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 
 const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'leah2@example.com');
 const photosSql = readFileSync(new URL('../supabase/004_photos.sql', import.meta.url), 'utf8');
 const round2Sql = readFileSync(new URL('../supabase/005_round2.sql', import.meta.url), 'utf8');
+const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -38,6 +39,7 @@ await db.exec(photosSql);
 await db.exec(photosSql); // idempotent re-run
 await db.exec(round2Sql);
 await db.exec(round2Sql); // idempotent re-run
+await db.exec(removeSql); await db.exec(removeSql);
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -324,4 +326,13 @@ await as('authenticated', LEAH, async () => {
   ok('005 on a copy where every check constraint has another name: old rules replaced, new rules active');
 }
 
+await as('authenticated', LEAH, async () => {
+  const f = (await q("insert into custom_fields (module,label,type) values ('owner','ח.פ','text') returning id"))[0];
+  await q('update custom_fields set hidden = true where id=$1', [f.id]);
+  assert.equal((await q('select hidden from custom_fields where id=$1', [f.id]))[0].hidden, true);
+});
+await as('authenticated', OTHER, async () => {
+  assert.equal((await q("update custom_fields set hidden = false returning id")).length, 0);
+});
+ok('006: a member can remove (hide) an added field; a non-member cannot touch fields');
 console.log(`\nDB tests passed: ${pass}`);

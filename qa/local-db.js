@@ -84,6 +84,7 @@
       Object.assign(o, patch); return clone(o);
     },
     async addField(f) { const row = { id: id(), key: 'f_' + Math.random().toString(16).slice(2, 12), created_at: now(), ...f }; db.fields.push(row); return clone(row); },
+    async hideField(fid) { const f = db.fields.find(x => x.id === fid); f.hidden = true; return clone(f); },
     async setStatus(module, did, status) { const r = db[module].find(x => x.id === did); r.status = status; r.closed_at = status === 'active' ? null : now(); },
     files: new Map(), // storage stand-in: path → blob URL
     async uploadPhoto(path, blob) { await delay(); this.files.set(path, URL.createObjectURL(blob)); },

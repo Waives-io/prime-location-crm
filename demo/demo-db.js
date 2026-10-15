@@ -22,8 +22,8 @@
     return d.slice(0, 3) + '-' + d.slice(3);
   };
 
-  // bump when demo/seed.js changes: visitors who did not change anything get the new data on their next visit
-  const SEED_VERSION = 4;
+  // bump when demo/seed.js changes: every visitor gets the new demo data on the next visit (older copies lack new fields)
+  const SEED_VERSION = 5;
   const fresh = () => ({ anchor: today(), dirty: false, seed: SEED_VERSION, ...window.PL_DEMO_SEED(today()) });
   // A new month: an untouched demo is re-seeded; a demo the visitor changed moves all its dates forward,
   // so "this month" and "needed soon" stay meaningful.
@@ -47,7 +47,7 @@
   }
   let db;
   try { db = JSON.parse(store.get(KEY)); } catch { db = null; }
-  db = db && db.lead && db.anchor && (db.dirty || db.seed === SEED_VERSION) ? rebase(db) : fresh();
+  db = db && db.lead && db.anchor && db.seed === SEED_VERSION ? rebase(db) : fresh();
   const save = (changed = true) => { if (changed) db.dirty = true; store.set(KEY, JSON.stringify(db)); };
   save(false);
 

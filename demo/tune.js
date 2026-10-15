@@ -2,7 +2,7 @@
 // (e.g. https://waives-io.github.io/nadlan-demo/?tune), never for visitors. The choice is kept on this device
 // ("nadlan-demo:v1:tune"); "העתקת הצבעים" copies the values so they can be fixed for everyone.
 (() => {
-  const KEY = 'nadlan-demo:v1:tune';
+  const KEY = 'nadlan-demo:v1:tune2'; // new design = new key: colours picked for an older design are ignored
   const ITEMS = [
     { k: 'kpis', label: 'כרטיסי המדדים', sel: '.mod-kpis .kpi-card', def: '#3b1e3f', text: '.mod-kpis .kpi-card :is(.kpi-label,.kpi-value,.kpi-foot)' },
     { k: 'side', label: 'תפריט הצד', sel: '.side-nav', def: '#3b1e3f', text: '.side-nav :is(a.mod:not([aria-current]),.side-act)' },

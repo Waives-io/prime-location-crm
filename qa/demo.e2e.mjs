@@ -232,6 +232,14 @@ try {
   await page.reload(); await page.waitForSelector('.lead-table');
   assert.notEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('nadlan-demo:v1:data')).lead[0].notes), 'X');
   ok('new month, untouched demo: fresh seed');
+  // a visitor who used an older demo version (changed data + colours picked for the old design)
+  await page.evaluate(() => { const k = 'nadlan-demo:v1:data', db = JSON.parse(localStorage.getItem(k)); db.seed = 1; db.dirty = true;
+    db.lead.forEach(l => { l.custom = {}; }); localStorage.setItem(k, JSON.stringify(db));
+    localStorage.setItem('nadlan-demo:v1:tune', JSON.stringify({ kpis: '#17719b' })); });
+  await page.reload(); await page.waitForSelector('.lead-table');
+  assert.ok(await page.evaluate(() => S.data.lead.some(l => l.custom?.f_stage === 'חם')));
+  assert.ok(await page.evaluate(() => { const cs = getComputedStyle(document.querySelector('.mod-kpis .kpi-card')); return cs.backgroundColor !== 'rgb(23, 113, 155)' && !cs.backgroundImage.includes('23, 113, 155'); }));
+  ok('older demo copy → new demo data with all fields; colours picked for an older design are ignored');
 
   /* ── logout / login again ── */
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table');

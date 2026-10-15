@@ -23,7 +23,7 @@
   };
 
   // bump when demo/seed.js changes: visitors who did not change anything get the new data on their next visit
-  const SEED_VERSION = 3;
+  const SEED_VERSION = 4;
   const fresh = () => ({ anchor: today(), dirty: false, seed: SEED_VERSION, ...window.PL_DEMO_SEED(today()) });
   // A new month: an untouched demo is re-seeded; a demo the visitor changed moves all its dates forward,
   // so "this month" and "needed soon" stay meaningful.
@@ -163,8 +163,9 @@
     async addTask(module, did, t) {
       await delay();
       const row = db[module].find(r => r.id === did); if (!row) throw new Error('העסקה לא נמצאה');
-      if (!String(t.text || '').trim() || !t.due) throw new Error('חסר טקסט או מועד');
-      const task = { id: id(), kind: t.kind === 'meeting' ? 'meeting' : 'task', text: String(t.text).trim(), due: t.due, done: false };
+      if (!String(t.text || '').trim() || !Number.isFinite(Date.parse(t.due))) throw new Error('חסר טקסט או מועד');
+      if (String(t.text).length > 300) throw new Error('הטקסט ארוך מדי');
+      const task = { id: id(), kind: t.kind === 'meeting' ? 'meeting' : 'task', text: String(t.text).trim(), due: new Date(t.due).toISOString(), done: false };
       (row.tasks ||= []).push(task); row.updated_at = now(); save();
       return clone(task);
     },
@@ -176,6 +177,7 @@
       await delay();
       const row = db[module].find(r => r.id === did); if (!row) throw new Error('העסקה לא נמצאה');
       if (!String(text || '').trim()) throw new Error('הערה ריקה');
+      if (String(text).length > 2000) throw new Error('ההערה ארוכה מדי');
       const note = { id: id(), text: String(text).trim(), at: now() };
       (row.log ||= []).push(note); row.updated_at = now(); save();
       return clone(note);

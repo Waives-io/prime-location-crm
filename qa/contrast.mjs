@@ -56,8 +56,8 @@ const AUDIT = (rootSel) => {
   return bad;
 };
 
-const PAGES = ['#/', '#/kpi/new', '#/kpi/overdue', '#/kpi/stale', '#/kpi/rate', '#/matches', '#/matches?lvl=near', '#/matches?t=rent',
-  '#/m/lead', '#/m/lead?u=stale', '#/m/owner', 'CARD:lead', 'CARD:owner', '#/m/lead/new', '#/m/owner/new', 'ARCHIVE', 'DLG:close', 'DLG:options', 'DLG:reset'];
+const PAGES = ['#/m/lead', '#/m/lead?k=hot', '#/m/lead?k=stale', 'PLIST', '#/m/owner', '#/m/owner?k=vacant', '#/matches', '#/matches?lvl=near', '#/matches?t=rent',
+  'CARD:lead', 'CARD:owner', '#/m/lead/new', '#/m/owner/new', 'ARCHIVE', 'DLG:close', 'DLG:options', 'DLG:reset', 'DLG:task'];
 const HOVER = 'a, button, .seg label, summary, .fchip';
 const browser = await chromium.launch();
 const failures = [];
@@ -84,14 +84,16 @@ for (const [w, h, vp] of [[390, 844, 'phone'], [1366, 900, 'desktop']]) {
     await page.mouse.move(1, 1);
   };
   await check('login');
-  await page.click('#login button[type=submit]'); await page.waitForSelector('#dash-kpis');
+  await page.click('#login button[type=submit]'); await page.waitForSelector('.lead-table');
   const ids = await page.evaluate(() => ({ lead: S.data.lead.find(d => d.status === 'active').id, owner: S.data.owner.find(d => d.status === 'active').id }));
   for (const p of PAGES) try {
     if (p.startsWith('CARD:')) { const m = p.slice(5); await page.goto(BASE + `#/m/${m}/${ids[m]}`); await page.waitForSelector('.card-head'); await check(p); continue; }
-    if (p === 'ARCHIVE') { await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows'); await page.click('label:has(input[value=archive])'); await check('lead archive'); continue; }
+    if (p === 'ARCHIVE') { await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table'); await page.selectOption('#l-quick', 'archive'); await check('lead archive'); continue; }
+    if (p === 'PLIST') { await page.goto(BASE + '#/m/owner'); await page.waitForSelector('.pcard'); await page.click('label:has(input[value=list])'); await check('owner list view'); await page.click('label:has(input[value=cards])'); continue; }
+    if (p === 'DLG:task') { await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#l-panel [data-dp=meeting]'); await page.click('#l-panel [data-dp=meeting]'); await check(p, '#dlg'); await page.keyboard.press('Escape'); continue; }
     if (p === 'DLG:close') { await page.goto(BASE + `#/m/lead/${ids.lead}`); await page.waitForSelector('#close-deal'); await page.click('#close-deal'); await check(p, '#dlg'); await page.keyboard.press('Escape'); continue; }
     if (p === 'DLG:options') { await page.goto(BASE + '#/m/lead/new'); await page.waitForSelector('.opt-edit'); await page.click('.opt-edit'); await check(p, '#dlg'); await page.keyboard.press('Escape'); continue; }
-    if (p === 'DLG:reset') { await page.goto(BASE + '#/'); await page.waitForSelector('#dash-kpis');
+    if (p === 'DLG:reset') { await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table');
       if (vp === 'desktop') { await page.click('.side-nav [data-act=demo-reset]'); await check(p, '#dlg'); await page.keyboard.press('Escape'); } continue; }
     await page.goto(BASE + p); await page.waitForTimeout(400);
     if (p.startsWith('#/m/') && p.endsWith('/new')) { await page.waitForSelector('#deal-form'); if (p.includes('owner')) await page.click('label:has(> input[name=deal_kind][value=rent])'); await page.click('#save'); }

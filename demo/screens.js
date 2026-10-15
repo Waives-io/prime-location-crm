@@ -156,7 +156,7 @@
   /* ── state per module (filters, page, selection) ── */
   const st = {
     lead: { q: '', quick: 'active', stage: '', g: '', budget: '', city: '', page: 1, size: 10, sort: 'created', sel: undefined },
-    owner: { q: '', city: '', g: '', size: '', price: '', pstatus: '', sort: 'updated', view: 'cards', sel: undefined },
+    owner: { q: '', city: '', g: '', size: '', price: '', pstatus: '', fresh: false, sort: 'updated', view: 'cards', sel: undefined },
   };
   const draw = {};
   const cities = (list) => [...new Set(list.map(cityOf))].sort((a, b) => a.localeCompare(b, 'he'));
@@ -168,7 +168,8 @@
     const s = st.lead, q = s.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
     const ils = (d) => d.budget_value * (d.budget_currency === 'USD' ? USD_RATE : 1);
     let rows = deals('lead').filter(d => {
-      if (q) return dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)) || String(cf(d, 'f_email')).includes(q);
+      if (q) return dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)) || String(cf(d, 'f_email')).includes(q)
+        || String(d.notes || '').toLowerCase().includes(q) || (d.log || []).some(n => n.text.toLowerCase().includes(q));
       const ok = { all: true, active: d.status === 'active', archive: d.status !== 'active', overdue: isOverdue(d), week: isThisWeek(d), stale: isStale(d), new: inMonth(d.lead_date) }[s.quick];
       return ok;
     }).filter(d => (!s.stage || cf(d, 'f_stage') === s.stage) && (!s.g || optGroup(d.purpose_id) === s.g) && (!s.city || cityOf(d) === s.city)
@@ -253,7 +254,7 @@
       draw.lead = () => {
         const rows = leadRows(), pages = Math.max(1, Math.ceil(rows.length / s.size)); s.page = Math.min(s.page, pages);
         const slice = rows.slice((s.page - 1) * s.size, s.page * s.size);
-        if (s.sel === undefined) s.sel = slice[0]?.id || null;
+        if (s.sel === undefined || (s.sel && !slice.some(d => d.id === s.sel))) s.sel = slice[0]?.id || null;
         const tb = $('#l-rows'); if (!tb) return;
         tb.innerHTML = slice.length ? slice.map(d => { const c = d.contact || {}, bm = bestMatch(d), due = d.status === 'active' && d.needed_by && daysFrom(d.needed_by) <= 7;
           return `<tr data-id="${d.id}" tabindex="0" ${s.sel === d.id ? 'aria-selected="true"' : ''}>
@@ -296,7 +297,7 @@
     const rows = deals('owner').filter(d => {
       if (q) return dealSearchText(d).includes(q) || String(d.description || '').toLowerCase().includes(q) || optText(d.purpose_id).includes(q);
       if (s.pstatus === 'archive') return d.status !== 'active';
-      return d.status === 'active' && (!s.pstatus || cf(d, 'f_pstatus') === s.pstatus);
+      return d.status === 'active' && (!s.pstatus || cf(d, 'f_pstatus') === s.pstatus) && (!s.fresh || inMonth(d.created_at));
     }).filter(d => (!s.city || cityOf(d) === s.city) && (!s.g || optGroup(d.purpose_id) === s.g)
       && (!s.size || ({ s1: d.built_sqm <= 200, s2: d.built_sqm > 200 && d.built_sqm <= 1000, s3: d.built_sqm > 1000 && d.built_sqm <= 3000, s4: d.built_sqm > 3000 })[s.size])
       && (!s.price || (s.price === 'rent' ? d.deal_kind === 'rent' : d.deal_kind === 'sale' && ({ s5: d.asking_price <= 5e6, s20: d.asking_price > 5e6 && d.asking_price <= 2e7, smax: d.asking_price > 2e7 })[s.price])));
@@ -365,10 +366,10 @@
     const mount = () => {
       const s = st.owner;
       $('#pq').oninput = (e) => { s.q = e.target.value; draw.owner(); };
-      [['p-city', 'city'], ['p-g', 'g'], ['p-size', 'size'], ['p-price', 'price'], ['p-status', 'pstatus'], ['p-sort', 'sort']].forEach(([id, k]) => $('#' + id).onchange = (e) => { s[k] = e.target.value; draw.owner(); });
+      [['p-city', 'city'], ['p-g', 'g'], ['p-size', 'size'], ['p-price', 'price'], ['p-status', 'pstatus'], ['p-sort', 'sort']].forEach(([id, k]) => $('#' + id).onchange = (e) => { s[k] = e.target.value; s.fresh = false; draw.owner(); });
       $$('input[name=pview]').forEach(r => r.onchange = () => { s.view = r.value; draw.owner(); });
       draw.owner = () => {
-        const rows = propRows(); if (s.sel === undefined) s.sel = rows[0]?.id || null;
+        const rows = propRows(); if (s.sel === undefined || (s.sel && !rows.some(d => d.id === s.sel))) s.sel = rows[0]?.id || null;
         $('#p-count').innerHTML = `מציג <bdi class="num">${rows.length}</bdi> נכסים`;
         const box = $('#p-items'); if (!box) return;
         box.className = s.view === 'cards' ? 'pgrid' : 'plist';
@@ -400,8 +401,9 @@
     const k = new URLSearchParams(query || '').get('k'); if (!k) return;
     if (module === 'lead') Object.assign(st.lead, { q: '', stage: '', g: '', budget: '', city: '', page: 1, sel: undefined,
       quick: k === 'new' ? 'new' : k === 'stale' ? 'stale' : k === 'overdue' ? 'overdue' : k === 'week' ? 'week' : 'active', ...(k === 'hot' ? { stage: 'חם' } : {}) });
-    else Object.assign(st.owner, { q: '', city: '', g: '', size: '', price: '', sel: undefined, pstatus: k === 'vacant' ? 'פנוי' : '' }, k === 'new' ? { sort: 'updated' } : {});
-    history.replaceState(null, '', `#/m/${module}`);
+    else Object.assign(st.owner, { q: '', city: '', g: '', size: '', price: '', sel: undefined, pstatus: k === 'vacant' ? 'פנוי' : '', fresh: k === 'new' });
+    // back to the plain module URL without a new history entry (the filter now lives in the page's own controls)
+    location.replace(`#/m/${module}`);
   }
 
   window.PL_VIEWS = {

@@ -120,7 +120,7 @@ window.PL_DEMO_SEED = (todayISO) => {
   // ── demo-only fields (as the app's own custom fields, so the form edits them with no extra code) ──
   const fields = [
     { id: uid('f0000000'), module: 'lead', key: 'f_stage', label: 'סטטוס', type: 'list', options: ['חם', 'בתהליך', 'חדש', 'לא פעיל'], sort: 10, section: 'contact', created_at: ts(-200) },
-    { id: uid('f0000000'), module: 'lead', key: 'f_source', label: 'מקור הגעה', type: 'list', options: ['אתר החברה', 'הפניה', 'גוגל', 'לידים נכנסים', 'קמפיין פייסבוק', 'יד 2'], sort: 20, section: 'contact', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'lead', key: 'f_source', label: 'מקור הגעה', type: 'list', options: ['אתר החברה', 'הפניה', 'גוגל', 'לידים נכנסים', 'קמפיין פייסבוק', 'יד2'], sort: 20, section: 'contact', created_at: ts(-200) },
     { id: uid('f0000000'), module: 'lead', key: 'f_email', label: 'אימייל', type: 'text', options: [], sort: 30, section: 'contact', created_at: ts(-200) },
     { id: uid('f0000000'), module: 'owner', key: 'f_pstatus', label: 'סטטוס נכס', type: 'list', options: ['פעיל', 'פנוי', 'מושכר', 'בתהליך שיווק'], sort: 10, section: 'property', created_at: ts(-200) },
     { id: uid('f0000000'), module: 'owner', key: 'f_occ', label: 'תפוסה %', type: 'number', options: [], sort: 20, section: 'property', created_at: ts(-200) },

@@ -54,8 +54,8 @@ await writeFile(join(OUT, 'manifest.json'), JSON.stringify({
   ],
 }, null, 2));
 let sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
-sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v3', PREFIX = 'nadlan-demo-shell-';")
-  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './dashboard-look.css', './tune.js', './assets/logo.png', './assets/logo-dark.png', './assets/mark.png', './icons/icon-192.png'];")
+sw = sw.replace(/const CACHE = '[^']+';/, "const CACHE = 'nadlan-demo-shell-v5', PREFIX = 'nadlan-demo-shell-';")
+  .replace(/const SHELL = \[[^\]]+\];/s, "const SHELL = ['./', './index.html', './manifest.json', './seed.js', './demo-db.js', './dashboard-look.css', './tune.js', './screens.js', './assets/photos/login-hero.jpg', './assets/photos/banner-leads.jpg', './assets/photos/banner-props.jpg', './assets/logo.png', './assets/logo-dark.png', './assets/mark.png', './icons/icon-192.png'];")
   .replace("ks.filter(k => k.startsWith('pl-shell-') && k !== CACHE)", 'ks.filter(k => k.startsWith(PREFIX) && k !== CACHE)');
 assert.ok(sw.includes("k.startsWith(PREFIX) && k !== CACHE"), 'build-demo: sw cleanup must be limited to the demo prefix');
 await writeFile(join(OUT, 'sw.js'), sw);

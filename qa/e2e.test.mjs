@@ -140,9 +140,11 @@ try {
   await page.click('#save');
   await page.waitForSelector('[data-field=phone].invalid');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'phone');
-  const errCount = await page.locator('.field.invalid').count();
-  assert.ok(errCount >= 8, 'errors: ' + errCount);
-  ok(`save on empty form → ${errCount} inline errors, focus on first (phone)`);
+  const errFields = await page.locator('.field.invalid').evaluateAll(els => els.map(e => e.dataset.field));
+  assert.deepEqual(errFields, ['phone', 'name']);
+  const errCount = errFields.length;
+  assert.equal(await page.locator('.req:visible').count(), 2); // only phone + name carry the * (company name is hidden)
+  ok(`save on empty form → only phone + name are required (${errCount} inline errors), focus on phone`);
   await fill('#phone', '12345');
   assert.equal(await text('#phone-err'), 'מספר נייד צריך להכיל 10 ספרות ולהתחיל ב-05');
   await page.fill('#phone', '052-111');
@@ -168,13 +170,18 @@ try {
   ok('slow lookup for an older phone does not overwrite the newer contact');
 
   /* + חדש in dropdown keeps typed data */
-  await fill('#size_value', '2');
+  await fill('#size_min', '3'); await fill('#size_max', '2');
+  await page.click('#save');
+  assert.equal(await text('#size_min-err'), 'הערך ב"עד" צריך להיות גדול מהערך ב"מ־"');
+  await fill('#size_min', '2'); await fill('#size_max', '3');
+  assert.equal(await text('#size_min-err'), '');
+  ok('size range: from / to, reversed range explained inline');
   await page.selectOption('#need_id', '__new');
   await page.fill('#need_id-new input', 'לחכור');
   await page.click('#need_id-new button:has-text("הוספה")');
   await page.waitForFunction(() => document.querySelector('#need_id').selectedOptions[0]?.textContent === 'לחכור');
   assert.equal(await page.inputValue('#name'), 'מירב כהן');
-  assert.equal(await page.inputValue('#size_value'), '2');
+  assert.equal(await page.inputValue('#size_min'), '2');
   ok('"+ חדש" adds "לחכור", selects it, keeps everything typed');
 
   await page.click('[data-field=purpose_id] .opt-edit');
@@ -238,7 +245,9 @@ try {
 
   /* card */
   assert.match(await text('.dl'), /לחכור/);
-  assert.match(await text('.dl'), /2 דונם/);
+  assert.match(await text('.dl'), /2–3 דונם/);
+  assert.match(await text('.dl'), /דדליין/);
+  assert.equal(await page.locator('#card-photos').count(), 0);
   assert.match(await text('.dl'), /\$ 1,500,000 סה״כ/);
   assert.match(await text('.dl'), /אזור התעשייה חולון/);
   ok('budget in $ shown on the card; lead keeps the address / area');
@@ -281,6 +290,41 @@ try {
   assert.equal(await text('.chip'), 'פעילה');
   ok('archive → "החזרה לפעילות" restores');
 
+  /* ── round 2: phone + name only, broker, exact address, paste, no photos for leads ── */
+  await page.click('.bottom-nav .nav-new'); await page.waitForSelector('#deal-form');
+  assert.equal(await page.locator('#photo-input').count(), 0);
+  assert.match(await text('[data-field=needed_by] label'), /דדליין/);
+  await page.locator('#phone').focus();
+  await page.evaluate(() => { const el = document.querySelector('#phone'); const dt = new DataTransfer(); dt.setData('text/plain', '\u202a+972 52-333-4444\u202c');
+    el.value = dt.getData('text/plain'); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true })); });
+  await page.waitForFunction(() => document.querySelector('#phone').value === '052-3334444');
+  ok('phone pasted from iPhone contacts (hidden marks, +972) is cleaned at once');
+  await fill('#name', 'דני מתווך');
+  await radio('entity_type', 'broker');
+  assert.equal(await page.isVisible('#broker_license'), true); assert.equal(await page.isHidden('#company_name'), true);
+  await fill('#broker_license', '31234');
+  await page.fill('#address', 'הרצל 15, קריית גת'); await page.click('#geo-go');
+  await page.click('#geo-results button');
+  await page.waitForSelector('#geo-note:not([hidden])');
+  assert.equal(await page.inputValue('#address'), 'הרצל 15, קריית גת');
+  assert.equal(await page.locator('.leaflet-marker-draggable').count(), 1);
+  ok('exact address: the typed house number is kept, approximate pin is flagged and can be dragged');
+  await page.click('#save'); await page.waitForSelector('.card-head');
+  const cardTxt = await text('.content');
+  assert.match(cardTxt, /מתווך/); assert.match(cardTxt, /31234/); assert.match(cardTxt, /הרצל 15, קריית גת/);
+  assert.doesNotMatch(cardTxt, /NaN|undefined|null/);
+  ok('broker contact with licence number; a lead saves with only phone + name + address, card has no empty junk');
+  await page.click('.back'); await page.waitForSelector('#rows');
+  await page.click('.bottom-nav .nav-new'); await page.waitForSelector('#deal-form');
+  await fill('#phone', '0523335555'); await fill('#name', 'רק שם');
+  await page.click('#save'); await page.waitForSelector('.card-head');
+  assert.equal(await page.locator('#card-map').count(), 0);
+  assert.doesNotMatch(await text('.content'), /NaN|undefined|null|₪ 0/);
+  ok('a lead with phone + name only: saved, card without map or empty values');
+  await page.click('.back'); await page.waitForSelector('#rows');
+  assert.doesNotMatch(await text('#rows'), /NaN|undefined|null/);
+  ok('list rows cope with empty fields');
+
   /* ── owner: rent + rented → yield ── */
   await page.click('.bottom-nav a:has-text("בעלים")');
   await page.waitForSelector('#rows');
@@ -299,6 +343,10 @@ try {
   await page.locator('#form-map').click({ position: { x: 180, y: 120 } });
   await page.waitForFunction(() => document.querySelector('#address').value === 'הגפן 5, קריית גת');
   ok('owner map tap → pin + address filled from reverse search (editable)');
+  assert.equal(await page.locator('[data-field=photos] .lbl').innerText().then(t => t.startsWith('תמונות')), true);
+  assert.equal(await page.getAttribute('#photo-input', 'accept'), 'image/*');   // videos: built, off
+  await radio('entity_type', 'company');
+  await fill('#company_number', '515555555');
   /* photos */
   const IMG = [fileURLToPath(new URL('../assets/photo-building.jpg', import.meta.url)), fileURLToPath(new URL('../assets/photo-warehouse.jpg', import.meta.url))];
   assert.equal(await page.evaluate(() => document.querySelector('[data-field=photos]').closest('section').querySelector('h2').textContent), 'הנכס');
@@ -355,7 +403,9 @@ try {
   await page.locator('#photo-grid .ph').nth(1).locator('[data-a=remove]').click();
   assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 4); // a saved photo is deleted only after a successful save
   await radio('deal_kind', 'sale');
-  assert.equal(await page.isHidden('#rent-block'), true);
+  assert.equal(await page.isVisible('#rent-block'), true);   // sale keeps "is it rented?" → rent → yield
+  assert.equal(await text('#yield'), 'תשואה: 6.0%');
+  await page.fill('#owner_notes', 'מושכר לרשת עד 2028');
   const sale = await text('#sale-calc');
   assert.match(sale, /מחיר למ״ר מבוקש: ₪ 20,000/);
   assert.match(sale, /הערכת מחיר למ״ר: ₪ 16,100/);
@@ -363,7 +413,10 @@ try {
   await page.click('#save');
   await page.waitForSelector('.card-head');
   const saved = await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת'));
-  assert.equal(saved.is_rented, null); assert.equal(saved.monthly_rent, null); assert.equal(saved.ai_price_per_sqm, 16100);
+  assert.equal(saved.is_rented, true); assert.equal(saved.monthly_rent, 10000); assert.equal(saved.ai_price_per_sqm, 16100);
+  assert.equal(saved.notes, 'מושכר לרשת עד 2028');
+  assert.match(await text('.dl'), /תשואה\s*6\.0%/); assert.match(await text('.dl'), /מושכר לרשת עד 2028/);
+  ok('sale + rented: monthly rent and yield on the sale too; owner notes saved and shown');
   assert.equal(saved.photos.length, 1); assert.equal(await page.evaluate(() => PL_TEST_DB.files.size), 2);
   ok('edit: removing a saved photo deletes its files after the save');
   await page.click('a:has-text("עריכה")'); await page.waitForSelector('#deal-form');
@@ -375,7 +428,7 @@ try {
   await page.waitForFunction(() => PL_TEST_DB.files.size === 2);
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 1);
   ok('leaving an edit without saving removes the photos uploaded in it; saved photos stay');
-  ok('sale → asking ₪/sqm + estimate labelled "הערכה"; rent fields cleared on save');
+  ok('sale → asking ₪/sqm + estimate labelled "הערכה"');
 
   /* phone normalization unit cases */
   const cases = await page.evaluate(() => ['0501234567', '050-123-4567', '050 123 4567', '+972501234567', '+972-50-123-4567',
@@ -383,7 +436,7 @@ try {
   assert.deepEqual(cases, ['050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', '050-1234567', null, null, null, null]);
   ok('phone tests: valid, spaces, dashes, brackets, +972, 00972, 972; invalid rejected');
 
-  assert.ok(geoCalls <= 2, 'nominatim calls: ' + geoCalls);
+  assert.ok(geoCalls <= 4, 'nominatim calls: ' + geoCalls);
   ok(`geocoding: ${photonCalls} Photon searches, ${geoCalls} Nominatim requests (map-tap reverse only)`);
 
   /* desktop layout: side nav */

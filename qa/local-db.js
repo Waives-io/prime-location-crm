@@ -37,7 +37,10 @@
     if (c.entity_type === 'company' && !c.company_name?.trim()) throw new Error('company required');
     let row = db.contacts.find(x => x.phone === phone);
     if (!row) { row = { id: id(), phone, created_at: now() }; db.contacts.push(row); }
-    Object.assign(row, { name: c.name.trim(), entity_type: c.entity_type, company_name: c.entity_type === 'company' ? c.company_name.trim() : null });
+    const t = c.entity_type || 'private';
+    Object.assign(row, { name: c.name.trim(), entity_type: t, company_name: t === 'company' ? c.company_name.trim() : null,
+      company_number: t === 'company' ? (('company_number' in c) ? c.company_number : row.company_number) || null : null,
+      broker_license: t === 'broker' ? (('broker_license' in c) ? c.broker_license : row.broker_license) || null : null });
     return row.id;
   };
   const delay = () => new Promise(r => setTimeout(r, 60));
@@ -64,7 +67,8 @@
         const { contact, ...fields } = p;
         if (!row) { row = { id: p.id, status: 'active', closed_at: null, created_at: now() }; table.push(row); }
         Object.assign(row, fields, { contact_id });
-        if (module === 'owner') row.yield_pct = row.monthly_rent ? Math.round(row.monthly_rent * 12 / row.asking_price * 10000) / 100 : null;
+        if (fields.size_min != null && fields.size_max != null && fields.size_min > fields.size_max) throw new Error('size range');
+        if (module === 'owner') row.yield_pct = row.monthly_rent && row.asking_price ? Math.round(row.monthly_rent * 12 / row.asking_price * 10000) / 100 : null;
         return { id: p.id, contact_id };
       } catch (e) { db.contacts = snapshot; throw e; }
     },

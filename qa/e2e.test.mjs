@@ -462,6 +462,10 @@ try {
   await page.click('#dlg [data-a=yes]');
   await page.waitForFunction(() => ![...document.querySelectorAll('[data-field^=cf_] label')].some(l => l.textContent.includes('קומה')));
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.fields.find(f => f.label === 'קומה').hidden), true);
+  const withFloor = await page.evaluate(() => { const f = PL_TEST_DB._db.fields.find(x => x.label === 'קומה'); const d = PL_TEST_DB._db.lead.find(x => x.custom?.[f.key] != null); return { id: d.id, key: f.key }; });
+  await page.goto(BASE + '#/m/lead/' + withFloor.id + '/edit'); await page.waitForSelector('#deal-form');
+  await fill('#height_m', '8'); await page.click('#save'); await page.waitForSelector('.card-head');
+  assert.equal(await page.evaluate((w) => PL_TEST_DB._db.lead.find(x => x.id === w.id).custom[w.key], withFloor), 3);
   ok('"הסרת השדה" removes an added field from the form (saved values stay)');
   await page.goto(BASE + '#/');
 

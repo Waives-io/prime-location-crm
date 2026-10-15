@@ -1511,8 +1511,10 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       (wrap.querySelector('input:not([type=radio]),select,textarea') || wrap.querySelector('input'))?.focus({ preventScroll: true });
       return;
     }
-    const custom = {};
+    // start from what is stored: values of removed (hidden) fields are kept, visible ones are rewritten below
+    const custom = { ...(mode === 'edit' ? src?.custom || {} : {}) };
     for (const f of fieldsOf(module)) {
+      delete custom[f.key];
       const v = val('cf_' + f.key);
       if (v !== '' && v != null) custom[f.key] = f.type === 'number' ? parseNum(v) : v;
     }

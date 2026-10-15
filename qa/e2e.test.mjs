@@ -407,7 +407,7 @@ try {
   await page.click('#dlg [data-a=next]'); assert.match(await text('#dlg .lb-nav'), /1 \/ 2/);
   await page.click('#dlg [data-a=close]');
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.owner.find(d => d.address === 'הגפן 5, קריית גת').photos.length), 2);
-  assert.equal(await page.evaluate(() => document.querySelector('#card-photos').closest('dd').previousElementSibling.textContent), 'תמונות');
+  assert.equal(await page.evaluate(() => document.querySelector('#card-photos').closest('dd').previousElementSibling.textContent), 'תמונות / סרטונים');
   const ratios = await page.evaluate(() => [...document.querySelectorAll('#card-photos img')].map(i => { const r = i.getBoundingClientRect(); return [r.width / r.height, i.naturalWidth / i.naturalHeight]; }));
   ratios.forEach(([shown, real]) => assert.ok(Math.abs(shown - real) < 0.03, 'photo stretched: ' + shown + ' vs ' + real));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'card wider than the screen');

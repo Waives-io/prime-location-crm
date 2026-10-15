@@ -71,7 +71,7 @@ try {
   const kp = await page.$$eval('.mod-kpis .kpi-card', t => t.map(x => x.querySelector('.kpi-label').textContent));
   assert.deepEqual(kp, ['מתעניינים חדשים', 'מתעניינים חמים', 'מתעניינים לא פעילים', 'זמן תגובה ממוצע']);
   const heads = await page.$$eval('.lead-table thead th', t => t.map(x => x.textContent.trim()));
-  assert.deepEqual(heads, ['שם מלא', 'סוג לקוח', 'ערים מועדפות', 'תקציב', 'סוג נכס', 'ציון התאמה', 'סטטוס', 'מקור הגעה', 'יצירת קשר אחרונה']);
+  assert.deepEqual(heads, ['שם מלא', 'סוג לקוח', 'ערים מועדפות', 'תקציב', 'סוג נכס', 'ציון התאמה', 'סטטוס', 'מקור הגעה', 'יצירת קשר אחרונה', 'פעולה']);
   assert.ok(await page.locator('#l-rows tr[data-id]').count() >= 5);
   assert.ok(await page.locator('#l-rows .score:not(.none)').count() >= 3);
   assert.equal(await page.locator('#l-panel .dp').count(), 1);
@@ -89,6 +89,19 @@ try {
   assert.match(await text('#l-pager .count'), new RegExp(`1–10 מתוך ${allN}`));
   await page.click('#l-pager .pg[data-pg="2"]'); assert.match(await text('#l-pager .count'), new RegExp(`11–20 מתוך ${allN}`));
   ok('pager: 10 per page, "1–10 מתוך N", page 2 works');
+  // close a deal from the list → archive → bring it back (Leah's app mechanism)
+  await page.selectOption('#l-quick', 'active');
+  const closeRow = page.locator('#l-rows tr[data-id]').nth(1), closeId = await closeRow.getAttribute('data-id');
+  await closeRow.locator('[data-row-act=close]').click(); await page.click('#dlg [data-s=closed]');
+  await page.waitForSelector('#toast.show:has-text("העסקה עברה לארכיון")');
+  assert.equal(await page.locator(`#l-rows tr[data-id="${closeId}"]`).count(), 0);
+  await page.selectOption('#l-quick', 'archive');
+  await page.locator(`#l-rows tr[data-id="${closeId}"] [data-row-act=restore]`).click();
+  await page.waitForSelector('#toast.show:has-text("הוחזרה לפעילות")');
+  assert.equal(await page.evaluate((id) => S.data.lead.find(l => l.id === id).status, closeId), 'active');
+  await page.selectOption('#l-quick', 'active');
+  ok('"סגירת עסקה" in the row → נסגרה → archive; "החזרה לפעילות" from the archive brings it back');
+  assert.equal(await page.locator('.mod-hero .hero-new').getAttribute('href'), '#/m/lead/new');
   await page.selectOption('#l-quick', 'active'); await page.fill('#lq', 'רונית');
   await page.locator('#l-rows tr[data-id]').first().click();
   const tomorrow = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'); });
@@ -130,6 +143,17 @@ try {
   await page.click('#p-panel [data-dp=task]'); await page.fill('#act-text', 'לשלוח תמונות עדכניות'); await page.click('#act-form button[type=submit]');
   await page.waitForSelector('#p-panel .tasks li:has-text("לשלוח תמונות עדכניות")');
   ok('property panel: "הוסף פעולה" adds to פעולות קרובות');
+  const covers = await page.$$eval('.pcard img.pc-img', im => im.map(i => i.getAttribute('src')));
+  assert.equal(new Set(covers).size, covers.length, 'no property picture is repeated');
+  const pcard = page.locator('.pcard').nth(0), pcId = await pcard.getAttribute('data-id');
+  await pcard.locator('[data-row-act=close]').click(); await page.click('#dlg [data-s=irrelevant]');
+  await page.waitForSelector('#toast.show:has-text("העסקה עברה לארכיון")');
+  assert.equal(await page.locator(`.pcard[data-id="${pcId}"]`).count(), 0);
+  await page.selectOption('#p-status', 'archive');
+  await page.locator(`.pcard[data-id="${pcId}"] [data-row-act=restore]`).click();
+  await page.waitForSelector('#toast.show:has-text("הוחזרה לפעילות")');
+  await page.selectOption('#p-status', '');
+  ok('properties: every card has its own picture; close from the card → archive → restore');
 
   /* ── full card + matches in both directions ── */
   await page.click('#p-panel a.btn.primary'); await page.waitForSelector('.card-head');
@@ -167,9 +191,9 @@ try {
 
   /* ── "+ הוסף נכס חדש" on the properties page ── */
   await page.goto(BASE + '#/m/owner'); await page.waitForSelector('.pcard');
-  await page.click('.adv-head a.btn.accent'); await page.waitForSelector('#deal-form');
+  await page.click('.mod-hero .hero-new'); await page.waitForSelector('#deal-form');
   assert.ok(page.url().endsWith('#/m/owner/new'));
-  ok('"+ הוסף נכס חדש" opens the property form');
+  ok('"+ נכס חדש" in the top banner opens the property form');
 
   /* ── owner colour tool: hidden for visitors, ?tune opens it, text colour follows the background ── */
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.mod-kpis');
@@ -251,10 +275,10 @@ try {
   await page.click('#login button[type=submit]'); await page.waitForSelector('.lead-table');
   assert.equal(await page.locator('.top-nav a').count(), 3);
   assert.equal(await page.locator('.bottom-new .nav-new').count(), 1);
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal page scroll on a phone (leads)');
+  assert.ok(await page.evaluate(() => (scrollTo(-3000, 0), scrollX === 0) && (scrollTo(3000, 0), scrollX === 0) && ![...document.querySelectorAll('body *')].some(el => { const r = el.getBoundingClientRect(); return r.width && !el.closest('.table-wrap') && (r.left < -1 || r.right > innerWidth + 1); })), 'no horizontal page scroll on a phone (leads)');
   await shot('06-phone-leads', true);
   await page.goto(BASE + '#/m/owner'); await page.waitForSelector('.pcard');
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal page scroll on a phone (properties)');
+  assert.ok(await page.evaluate(() => (scrollTo(-3000, 0), scrollX === 0) && (scrollTo(3000, 0), scrollX === 0) && ![...document.querySelectorAll('body *')].some(el => { const r = el.getBoundingClientRect(); return r.width && !el.closest('.table-wrap') && (r.left < -1 || r.right > innerWidth + 1); })), 'no horizontal page scroll on a phone (properties)');
   await shot('07-phone-props', true);
   ok('phone: tabs at the top, "+ חדש" at the bottom, no horizontal scroll on מתעניינים / נכסים');
 

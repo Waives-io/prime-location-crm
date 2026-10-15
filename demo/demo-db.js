@@ -23,7 +23,7 @@
   };
 
   // bump when demo/seed.js changes: every visitor gets the new demo data on the next visit (older copies lack new fields)
-  const SEED_VERSION = 5;
+  const SEED_VERSION = 6;
   const fresh = () => ({ anchor: today(), dirty: false, seed: SEED_VERSION, ...window.PL_DEMO_SEED(today()) });
   // A new month: an untouched demo is re-seeded; a demo the visitor changed moves all its dates forward,
   // so "this month" and "needed soon" stay meaningful.

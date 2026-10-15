@@ -66,7 +66,8 @@
   const opt = (v, t, cur) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(t)}</option>`;
   const sel = (id, label, cur, pairs) => `<label class="fsel"><span class="sr-only">${label}</span><select class="input" id="${id}" aria-label="${label}">${pairs.map(([v, t]) => opt(v, t, cur)).join('')}</select></label>`;
   const inMonth = (iso, off = 0) => inMonthOf(iso, monthOf(off));
-  const hero = (img, title, sub) => `<header class="mod-hero"><div class="mod-title"><h1>${title}</h1><p>${sub}</p></div>
+  const hero = (img, title, sub, newHref, newLabel) => `<header class="mod-hero"><div class="mod-title"><h1>${title}</h1><p>${sub}</p>
+    <a class="btn accent hero-new" href="${newHref}">${I('plus', 'sm')} ${newLabel}</a></div>
     <div class="mod-banner" style="background-image:url('${img}')" role="img" aria-label="מבני משרדים ותעשייה"></div></header>`;
 
   /* ── shell: plum side menu with icons (desktop), tabs at the top + "+ חדש" at the bottom (phone) ── */
@@ -153,6 +154,19 @@
     Photos.hydrate(root);
   }
 
+  /* ── close a deal from the list (נסגרה / לא רלוונטית → ארכיון) or bring it back – like Leah's app ── */
+  const rowAct = (d) => d.status === 'active'
+    ? `<button type="button" class="btn sm row-act" data-row-act="close">סגירת עסקה</button>`
+    : `<button type="button" class="btn sm row-act" data-row-act="restore">החזרה לפעילות</button>`;
+  function dealAct(m, e, after) {
+    const b = e.target.closest('[data-row-act]'); if (!b) return false;
+    e.stopPropagation();
+    const d = findDeal(m, b.closest('[data-id]').dataset.id); if (!d) return true;
+    if (b.dataset.rowAct === 'close') closeDialog(m, d, after);
+    else { b.disabled = true; setStatusWithUndo(m, d, 'active', 'העסקה הוחזרה לפעילות', after).catch(ex => { console.error(ex); toast('הפעולה נכשלה. נסי שוב.'); b.disabled = false; }); }
+    return true;
+  }
+
   /* ── state per module (filters, page, selection) ── */
   const st = {
     lead: { q: '', quick: 'active', stage: '', g: '', budget: '', city: '', page: 1, size: 10, sort: 'created', sel: undefined },
@@ -216,7 +230,7 @@
     const hot = act.filter(d => cf(d, 'f_stage') === 'חם'), stale = act.filter(isStale);
     const avg = (list) => list.length ? Math.round(list.reduce((a, d) => a + (d.response_h || 0), 0) / list.length * 10) / 10 : 0;
     const rNow = avg(newNow), rPrev = avg(newPrev);
-    const html = `${hero('assets/photos/banner-leads.jpg', 'מתעניינים', 'ניהול לידים, מעקב וטיפול בהזדמנויות')}
+    const html = `${hero('assets/photos/banner-leads.jpg', 'מתעניינים', 'ניהול לידים, מעקב וטיפול בהזדמנויות', '#/m/lead/new', 'מתעניין חדש')}
       <div class="content mod">
         <section class="mod-kpis" aria-label="מדדים">
           ${kpi('userPlus', 'מתעניינים חדשים', `<bdi class="num">${newNow.length}</bdi>`, trend(newNow.length, newPrev.length), '#/m/lead?k=new')}
@@ -238,7 +252,7 @@
               </div></div>
             <div class="table-wrap"><table class="lead-table">
               <thead><tr><th scope="col">שם מלא</th><th scope="col">סוג לקוח</th><th scope="col">ערים מועדפות</th><th scope="col">תקציב</th><th scope="col">סוג נכס</th>
-                <th scope="col">ציון התאמה</th><th scope="col">סטטוס</th><th scope="col">מקור הגעה</th><th scope="col">יצירת קשר אחרונה</th></tr></thead>
+                <th scope="col">ציון התאמה</th><th scope="col">סטטוס</th><th scope="col">מקור הגעה</th><th scope="col">יצירת קשר אחרונה</th><th scope="col"><span class="sr-only">פעולה</span></th></tr></thead>
               <tbody id="l-rows"></tbody></table></div>
             <div class="pager" id="l-pager"></div>
           </section>
@@ -262,8 +276,9 @@
             <td>${c.entity_type === 'company' ? 'חברה' : 'לקוח פרטי'}</td><td>${esc(cityOf(d))}</td><td>${fmt.ltr(budgetText(d))}</td>
             <td>${esc(MATCH_GROUPS[optGroup(d.purpose_id)] || optText(d.purpose_id))}</td>
             <td>${bm ? `<span class="score lvl-${bm.level}">${pct(bm.score)}</span>` : '<span class="score none">—</span>'}</td>
-            <td>${stageChip(cf(d, 'f_stage'))}</td><td>${esc(cf(d, 'f_source'))}</td><td class="when">${lastContact(d) ? when(lastContact(d)) : ''}</td></tr>`; }).join('')
-          : `<tr><td colspan="9" class="state">${s.q ? `לא נמצאו תוצאות ל־"${esc(s.q)}"` : 'אין מתעניינים בסינון הזה.'}</td></tr>`;
+            <td>${stageChip(cf(d, 'f_stage'))}</td><td>${esc(cf(d, 'f_source'))}</td><td class="when">${lastContact(d) ? when(lastContact(d)) : ''}</td>
+            <td>${rowAct(d)}</td></tr>`; }).join('')
+          : `<tr><td colspan="10" class="state">${s.q ? `לא נמצאו תוצאות ל־"${esc(s.q)}"` : 'אין מתעניינים בסינון הזה.'}</td></tr>`;
         const from = rows.length ? (s.page - 1) * s.size + 1 : 0, to = Math.min(rows.length, s.page * s.size);
         $('#l-pager').innerHTML = `<label class="fsel">הצגה: <select class="input" id="l-size">${[10, 20, 50].map(n => opt(n, n, s.size)).join('')}</select></label>
           <label class="fsel">מיון: <select class="input" id="l-sort">${opt('created', 'לפי תאריך פנייה', s.sort)}${opt('contact', 'לפי קשר אחרון', s.sort)}${opt('score', 'לפי ציון התאמה', s.sort)}</select></label>
@@ -279,7 +294,7 @@
         document.querySelector('.mod-body')?.classList.toggle('has-side', !!d);
         if (d) { wirePanel('lead', d, pane.firstElementChild); }
       };
-      $('#l-rows').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) { s.sel = tr.dataset.id; draw.lead(); if (matchMedia('(max-width: 899px)').matches) $('#l-panel').scrollIntoView({ behavior: 'smooth' }); } });
+      $('#l-rows').addEventListener('click', (e) => { if (dealAct('lead', e, () => draw.lead())) return; const tr = e.target.closest('tr[data-id]'); if (tr) { s.sel = tr.dataset.id; draw.lead(); if (matchMedia('(max-width: 899px)').matches) $('#l-panel').scrollIntoView({ behavior: 'smooth' }); } });
       $('#l-rows').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-id]')) e.target.click(); });
       draw.lead();
     };
@@ -333,7 +348,7 @@
     const newNow = all.filter(d => inMonth(d.created_at)), newPrev = all.filter(d => inMonth(d.created_at, -1));
     const vacant = act.filter(d => cf(d, 'f_pstatus') === 'פנוי');
     const occAvg = act.length ? Math.round(act.reduce((a, d) => a + (+cf(d, 'f_occ') || 0), 0) / act.length) : 0;
-    const html = `${hero('assets/photos/banner-props.jpg', 'נכסים', 'ניהול נכסי החברה, שיווק והשכרה')}
+    const html = `${hero('assets/photos/banner-props.jpg', 'נכסים', 'ניהול נכסי החברה, שיווק והשכרה', '#/m/owner/new', 'נכס חדש')}
       <div class="content mod">
         <section class="mod-kpis" aria-label="מדדים">
           ${kpi('building', 'סה״כ נכסים', `<bdi class="num">${act.length}</bdi>`, `<span class="trend up">+${newNow.length}</span> החודש`, '#/m/owner?k=all')}
@@ -342,8 +357,7 @@
           ${kpi('gauge', 'שיעור תפוסה ממוצע', pct(occAvg), `ממוצע על ${act.length} נכסים פעילים`, '#/m/owner?k=all', `<span class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${occAvg}"><span style="width:${occAvg}%"></span></span>`)}
         </section>
         <section class="panel filters adv"><div class="adv-head"><h2>${I('sliders', 'sm')} סינון מתקדם</h2>
-            <label class="search-box">${I('search', 'sm')}<span class="sr-only">חיפוש</span><input class="input" id="pq" type="search" placeholder="חיפוש נכסים לפי מיקום, גודל, תיאור…" value="${esc(st.owner.q)}"></label>
-            <a class="btn accent" href="#/m/owner/new">${I('plus', 'sm')} הוסף נכס חדש</a></div>
+            <label class="search-box">${I('search', 'sm')}<span class="sr-only">חיפוש</span><input class="input" id="pq" type="search" placeholder="חיפוש נכסים לפי מיקום, גודל, תיאור…" value="${esc(st.owner.q)}"></label></div>
           <div class="frow labeled">
             <label class="fsel"><span>עיר</span><select class="input" id="p-city">${[['', 'הכל'], ...cities(all).map(c => [c, c])].map(([v, t]) => opt(v, t, st.owner.city)).join('')}</select></label>
             <label class="fsel"><span>סוג נכס</span><select class="input" id="p-g">${[['', 'הכל'], ...Object.entries(MATCH_GROUPS)].map(([v, t]) => opt(v, t, st.owner.g)).join('')}</select></label>
@@ -377,10 +391,10 @@
           ? `<article class="pcard" data-id="${d.id}" tabindex="0" ${s.sel === d.id ? 'aria-selected="true"' : ''}>
               <div class="pc-photo">${img(d, 'pc-img')}${pChip(d.status === 'active' ? cf(d, 'f_pstatus') : 'מושכר')}</div>
               <div class="pc-body"><h3>${esc(optText(d.purpose_id))}, ${esc(cityOf(d))}</h3><p class="addr">${I('pin', 'sm')} ${esc(d.address)}</p>
-                ${stats(d)}<div class="tags">${tags(d)}</div><p class="pc-foot">${updated(d)}</p></div></article>`
+                ${stats(d)}<div class="tags">${tags(d)}</div><div class="pc-foot-row"><p class="pc-foot">${updated(d)}</p>${rowAct(d)}</div></div></article>`
           : `<article class="prow" data-id="${d.id}" tabindex="0" ${s.sel === d.id ? 'aria-selected="true"' : ''}>${img(d, 'row-thumb')}
               <div><h3>${esc(optText(d.purpose_id))}, ${esc(cityOf(d))}</h3><p class="addr">${esc(d.address)}</p></div>
-              ${pChip(cf(d, 'f_pstatus'))}<span>${fmt.bi(fmt.size(d.built_sqm, 'sqm'))}</span><span>${fmt.ltr(priceText(d))}</span><span>${pct(+cf(d, 'f_occ') || 0)}</span><span class="pc-foot">${updated(d)}</span></article>`).join('')
+              ${pChip(cf(d, 'f_pstatus'))}<span>${fmt.bi(fmt.size(d.built_sqm, 'sqm'))}</span><span>${fmt.ltr(priceText(d))}</span><span>${pct(+cf(d, 'f_occ') || 0)}</span><span class="pc-foot">${updated(d)}</span>${rowAct(d)}</article>`).join('')
           : `<p class="state">${s.q ? `לא נמצאו נכסים ל־"${esc(s.q)}"` : 'אין נכסים בסינון הזה.'}</p>`;
         Photos.hydrate(box);
         const d = s.sel && findDeal('owner', s.sel), pane = $('#p-panel');
@@ -388,7 +402,7 @@
         document.querySelector('.mod-body')?.classList.toggle('has-side', !!d);
         if (d) wirePanel('owner', d, pane.firstElementChild);
       };
-      const pick = (e) => { const el = e.target.closest('[data-id]'); if (!el) return; s.sel = el.dataset.id; draw.owner(); if (matchMedia('(max-width: 899px)').matches) $('#p-panel').scrollIntoView({ behavior: 'smooth' }); };
+      const pick = (e) => { if (dealAct('owner', e, () => draw.owner())) return; const el = e.target.closest('[data-id]'); if (!el) return; s.sel = el.dataset.id; draw.owner(); if (matchMedia('(max-width: 899px)').matches) $('#p-panel').scrollIntoView({ behavior: 'smooth' }); };
       $('#p-items').addEventListener('click', pick);
       $('#p-items').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-id]')) pick(e); });
       draw.owner();

@@ -140,11 +140,14 @@ window.PL_DEMO_SEED = (todayISO) => {
       ...(i % 3 === 0 ? [{ id: uid('e0000000'), kind: 'meeting', text: 'סיור בנכס', due: at2(2 + (i % 3), 10, 30), done: false }] : []),
     ];
   });
-  const COVERS = { storage: ['p-logistics', 'p-industry'], industry: ['p-industry', 'p-logistics'], offices: ['p-office-tower', 'p-office-2', 'p-office-3', 'p-office-big'], commerce: ['p-retail'], land: ['p-industry'] };
-  const groupOfOpt = (id) => options.find(o => o.id === id)?.match_group;
+  // one picture per property, matching its type, never repeated (Unsplash photos, see assets/photos/CREDITS.txt)
+  const COVERS = { 'מחסן': 'storage', 'מרלו״ג': 'storage', 'מבנה תעשייה': 'industry', 'משרדים': 'offices', 'חנות': 'shop', 'מסחר': 'mall', 'קרקע': 'land' };
+  const used = {};
+  const optValue = (id) => options.find(o => o.id === id)?.value;
   owner.forEach((d, i) => {
-    const list = COVERS[groupOfOpt(d.purpose_id)] || ['p-office-2'];
-    d.cover = `assets/photos/${list[i % list.length]}.jpg`;          // demo picture when the deal has no photo of its own
+    const kind = COVERS[optValue(d.purpose_id)] || 'offices';
+    used[kind] = (used[kind] || 0) + 1;
+    d.cover = `assets/photos/u-${kind}-${used[kind]}.jpg`;           // demo picture when the deal has no photo of its own
     const pstatus = d.status !== 'active' || (d.deal_kind === 'rent' && d.is_rented) ? 'מושכר' : ['פנוי', 'פעיל', 'בתהליך שיווק', 'פנוי', 'פעיל'][i % 5];
     const occ = pstatus === 'מושכר' ? 100 : pstatus === 'פנוי' ? 0 : [95, 75, 40, 88, 60][i % 5];
     d.custom = { f_pstatus: pstatus, f_occ: occ, f_email: `${['info', 'office', 'nadlan', 'invest'][i % 4]}@${['dahan', 'gross', 'shemesh', 'yifrach', 'karmi'][i % 5]}.co.il` };

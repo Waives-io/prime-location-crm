@@ -1135,7 +1135,7 @@ function formView(r) {
   const photoField = `
     <div class="field" data-field="photos"><span class="lbl">${MEDIA_LABEL} <small>(עד ${MAX_PHOTOS} קבצים, תמונה עד 30MB${ALLOW_VIDEO ? ', סרטון עד 50MB' : ''})</small></span>
       <div class="photo-grid" id="photo-grid"></div>
-      <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="${ALLOW_VIDEO ? 'image/*,video/*' : 'image/*'}" multiple hidden>+ הוספת ${ALLOW_VIDEO ? 'תמונה או סרטון' : 'תמונה'}</label>
+      <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="${ALLOW_VIDEO ? 'image/*,video/*' : 'image/*'}" multiple hidden>+ הוספת תמונה / סרטון</label>
       <p class="hint">הראשונה מוצגת בכרטיס וברשימה. במחשב אפשר גם לגרור לכאן או להדביק.</p>
       <p class="err" id="photos-err" aria-live="polite"></p></div>`;
   const leadMoney = `

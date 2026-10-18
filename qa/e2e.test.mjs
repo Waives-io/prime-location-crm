@@ -21,6 +21,7 @@ const BASE = `http://127.0.0.1:${server.address().port}/`;
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'he-IL', hasTouch: false });
+await ctx.addInitScript(() => { window.PL_APP = { govmapToken: '' }; }); // GovMap off here (its key works only on the live domain; govmap.test.mjs covers it)
 await ctx.addInitScript({ path: fileURLToPath(new URL('./local-db.js', import.meta.url)) });
 let geoCalls = 0, photonCalls = 0;
 await ctx.route('https://photon.komoot.io/**', (route) => {

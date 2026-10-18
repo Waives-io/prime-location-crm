@@ -345,8 +345,8 @@ const CONFIG = {
 };
 const MAP_CENTER = [31.61, 34.77]; // קריית גת
 // GovMap (Israel's national map) finds exact house numbers. Its key works only from the approved domain
-// (waives-io.github.io). Empty = not connected yet: search uses the free OSM services only.
-const GOVMAP_TOKEN = (window.PL_APP && window.PL_APP.govmapToken) || '';
+// (waives-io.github.io; the key is public by design, it is bound to that domain). PL_APP.govmapToken = '' turns it off (tests).
+const GOVMAP_TOKEN = (window.PL_APP && 'govmapToken' in window.PL_APP) ? window.PL_APP.govmapToken : '811e5502-cd1e-4557-a510-ddd38cf0d8f9';
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {
   lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
@@ -1037,7 +1037,8 @@ const Geo = {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
     let res = [];
     // GovMap first (exact Israeli house numbers); the free services stay as the fallback
-    try { res = await this.govmap(q); } catch (e) { console.error(e); }
+    // GovMap gets 6 seconds; if it is slow or down, the free services answer instead
+    try { res = await Promise.race([this.govmap(q), new Promise((_, rej) => setTimeout(() => rej(new Error('govmap timeout')), 6000))]); } catch (e) { console.error(e); res = []; }
     if (res.some(r => this.isExact(r, q))) { this.cache.set(key, res); return res; }
     const gm = res; res = [];
     if (/\d/.test(q)) {

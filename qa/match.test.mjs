@@ -11,7 +11,8 @@ const opts = [
   { id: 'lp-storage', match_group: 'storage' }, { id: 'lp-land', match_group: 'land' }, { id: 'lp-none', match_group: null },
   { id: 'op-storage', match_group: 'storage' }, { id: 'op-land', match_group: 'land' }, { id: 'op-shop', match_group: 'commerce' },
 ];
-const ctx = { S: { data: { options: opts, lead: [], owner: [] } }, APP: { dashboard: true },
+const ctx = { has: (v) => v !== null && v !== undefined && v !== '' && !(typeof v === 'number' && Number.isNaN(v)),
+  S: { data: { options: opts, lead: [], owner: [] } }, APP: { dashboard: true },
   fmt: { num: (n) => String(n), size: () => '', bi: (s) => s }, esc: (s) => s, optText: () => '', deals: () => [], todayISO: () => '2026-10-14', Math, URLSearchParams, Date, String };
 vm.createContext(ctx);
 vm.runInContext(block + '\nthis.matchPair = matchPair; this.cityOf = cityOf; this.listFilter = listFilter;', ctx);
@@ -102,5 +103,21 @@ t('list filters: unknown values ignored, group+city, urgent', () => {
   assert.equal(ctx.listFilter('lead', 'g=storage&a=' + encodeURIComponent('קריית גת')).label, 'אחסנה ולוגיסטיקה · קריית גת');
   assert.equal(ctx.listFilter('lead', 'u=soon').label, 'נדרש בשבוע הקרוב');
   assert.equal(ctx.listFilter('owner', 'u=soon'), null);
+});
+t('size range (round 2): inside the range = full; just outside = כמעט; far outside = no match', () => {
+  const l = lead({ size_value: 500, size_min: 500, size_max: 1500 });
+  assert.equal(matchPair(l, owner({ built_sqm: 1200, asking_rent: 50000 })).chips[1].t, 'בטווח השטח');
+  assert.equal(matchPair(l, owner({ built_sqm: 1700, asking_rent: 50000 })).near, true);
+  assert.equal(matchPair(l, owner({ built_sqm: 2500, asking_rent: 50000 })), null);
+  assert.equal(matchPair(lead({ size_value: null, size_min: 800, size_max: null }), owner({ built_sqm: 5000, asking_rent: 1 })).chips[1].t, 'בטווח השטח');
+  assert.equal(matchPair(lead({ size_value: 2, size_unit: 'dunam', size_min: 1, size_max: 2 }), owner({ built_sqm: 1500, asking_rent: 1 })).chips[1].t, 'בטווח השטח');
+});
+t('empty optional fields = no limit (never 0 / NaN)', () => {
+  const m = matchPair(lead({ need_id: null, purpose_id: null, size_value: null, size_min: null, size_max: null, budget_value: null, lat: null, lng: null }), owner());
+  assert.ok(m); assert.equal(m.score, 100);
+  assert.deepEqual(m.chips.map(c => c.t), ['בלי הגבלת אזור', 'בלי הגבלת שטח', 'בלי הגבלת תקציב']);
+  assert.ok(matchPair(lead({ budget_value: 50 }), owner({ deal_kind: null, asking_rent: null, asking_price: null })));
+  const noSize = matchPair(lead(), owner({ built_sqm: null }));
+  assert.ok(noSize && !JSON.stringify(noSize).includes('NaN'));
 });
 console.log(`\nMatch tests passed: ${pass}`);

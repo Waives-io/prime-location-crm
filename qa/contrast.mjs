@@ -63,6 +63,7 @@ const browser = await chromium.launch();
 const failures = [];
 for (const [w, h, vp] of [[390, 844, 'phone'], [1366, 900, 'desktop']]) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, locale: 'he-IL' });
+  await (typeof ctx !== 'undefined' ? ctx : page).route(/govmap.gov.il|proj4js/, (r) => r.abort());
   await page.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
   await page.route('https://nominatim.openstreetmap.org/**', (r) => r.fulfill({ contentType: 'application/json', body: '[]' }));
   page.on('dialog', d => d.accept().catch(() => {}));

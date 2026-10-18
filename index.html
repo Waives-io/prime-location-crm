@@ -303,8 +303,14 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
   .hero{padding:34px 48px}.home-buttons{max-width:300px;padding-block:64px}
   .side-nav a.mod:not([aria-current=page]):hover{background:#fff;border-color:var(--ink)}
 }
+/* functional: round 2 (size range inputs share the row, video badge) */
+.size-range .affix{min-width:0}
+.ph-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:1.6rem;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none}
+.card-photos button{position:relative}
+.lightbox video{display:block;width:100%;max-height:70vh;background:#111;border-radius:10px}
 /* functional: deal photos */
 .photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.field label.btn.photo-add{display:flex;margin-bottom:0}
 .photo-grid:empty{display:none}
 .ph{position:relative;margin:0;width:96px;height:96px;border-radius:10px;overflow:hidden;background:var(--surface)}
 .ph img{width:100%;height:100%;object-fit:cover;display:block}
@@ -549,6 +555,9 @@ const APP = (() => {
   });
 })();
 const MAP_CENTER = APP.mapCenter; // קריית גת
+// GovMap (Israel's national map) finds exact house numbers. Its key works only from the approved domain
+// (waives-io.github.io; the key is public by design, it is bound to that domain). PL_APP.govmapToken = '' turns it off (tests).
+const GOVMAP_TOKEN = (window.PL_APP && 'govmapToken' in window.PL_APP) ? window.PL_APP.govmapToken : '811e5502-cd1e-4557-a510-ddd38cf0d8f9';
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {
   lead:  { title: 'מתעניינים',    one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
@@ -566,7 +575,10 @@ const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.g
 const Phone = {
   // returns '05X-XXXXXXX' or null
   normalize(raw) {
-    let d = String(raw || '').replace(/[\s\-().]/g, '').replace(/^\+/, '');
+    const t = String(raw || '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\u00a0\u2007\u202f]/g, ' ');
+    // take the phone-looking part of a pasted text ("דני  +972 54-123 4567"), then keep digits only
+    const m = t.match(/(\+\s*972|00\s*972|972|0)[\d\s\-().]{8,18}/);
+    let d = (m ? m[0] : t).replace(/\D/g, '');
     if (d.startsWith('00972')) d = '0' + d.slice(5);
     else if (d.startsWith('972')) d = '0' + d.slice(3);
     return /^05\d{8}$/.test(d) ? d.slice(0, 3) + '-' + d.slice(3) : null;
@@ -584,7 +596,17 @@ const fmt = {
   bi: (s) => `<bdi class="num">${esc(s)}</bdi>`, // number + Hebrew unit: keep natural RTL order
   ltr: (s, cls = 'num') => `<bdi dir="ltr" class="${cls}">${esc(s)}</bdi>`,
   size: (v, unit) => v == null ? '' : `${fmt.num(v)} ${unit === 'dunam' ? 'דונם' : 'מ״ר'}`,
+  // lead size range: "500–800 מ״ר", "מ־500 מ״ר", "עד 800 מ״ר"
+  sizeRange: (min, max, unit) => {
+    const u = unit === 'dunam' ? 'דונם' : 'מ״ר', a = min ?? null, b = max ?? null;
+    if (a == null && b == null) return '';
+    if (a != null && b != null) return +a === +b ? `${fmt.num(a)} ${u}` : `${fmt.num(a)}–${fmt.num(b)} ${u}`;
+    return a != null ? `מ־${fmt.num(a)} ${u}` : `עד ${fmt.num(b)} ${u}`;
+  },
 };
+const has = (v) => v !== null && v !== undefined && v !== '' && !(typeof v === 'number' && Number.isNaN(v));
+const ENTITY = { private: 'פרטי', company: 'חברה', broker: 'מתווך' };
+const leadSize = (d) => fmt.sizeRange(d.size_min ?? d.size_value, d.size_max ?? d.size_value, d.size_unit);
 const parseNum = (s) => { const t = String(s ?? '').replace(/[^\d.]/g, ''); return t === '' ? null : Number(t); };
 
 /* Simulated price-per-sqm estimate (phase 2 → Edge Function). Always shown as "הערכה". */
@@ -634,6 +656,7 @@ function supabaseDB() {
     async saveDeal(module, p) { return must(await sb.rpc(module === 'lead' ? 'save_lead_deal' : 'save_owner_deal', { p })); },
     async addOption(listKey, value) { return must(await sb.rpc('add_option', { p_list_key: listKey, p_value: value })); },
     async addField(f) { return must(await sb.from('custom_fields').insert(f).select().single()); },
+    async hideField(id) { return must(await sb.from('custom_fields').update({ hidden: true }).eq('id', id).select().single()); },
     async updateOption(id, patch) { return must(await sb.from('option_lists').update(patch).eq('id', id).select().single()); },
     // photos: private bucket "deal-photos"; the deal row keeps storage paths only (supabase/004_photos.sql)
     async setPhotos(module, id, photos) { return must(await sb.rpc('set_deal_photos', { p_module: module, p_id: id, p_photos: photos })); },
@@ -662,7 +685,7 @@ const S = {
 // hidden ("removed") values stay readable on old deals, and selectable only on a deal that already uses them
 const opts = (key, keepId) => (S.data?.options || []).filter(o => o.list_key === key && (!o.hidden || o.id === keepId));
 const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value || '';
-const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module);
+const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module && !f.hidden);
 const SECTIONS = ['contact', 'property', 'location', 'money'];
 const sectionOf = (f) => SECTIONS.includes(f.section) ? f.section : 'money';
 const deals = (module) => S.data?.[module] || [];
@@ -676,6 +699,26 @@ async function reload() {
 
 /* ════════════ photos ════════════ */
 const MAX_PHOTOS = 5;
+// Videos: built but OFF. Turn on with window.PL_APP = { video: true } after the storage bucket allows video (Pro plan,
+// see supabase/005_round2.sql). Until then only images can be picked and the field is called "תמונות".
+const ALLOW_VIDEO = !!(window.PL_APP && window.PL_APP.video);
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MEDIA_LABEL = 'תמונות / סרטונים';  // Galli: the field name already says videos; uploads of videos switch on with ALLOW_VIDEO
+async function videoPoster(file) {
+  if (file.size > MAX_VIDEO_BYTES) throw new Error('too-big');
+  const url = URL.createObjectURL(file);
+  try {
+    const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('decode')); });
+    v.currentTime = Math.min(0.5, (v.duration || 1) / 2);
+    await new Promise(r => { v.onseeked = r; });
+    const k = Math.min(1, 400 / Math.max(v.videoWidth, v.videoHeight)), w = Math.round(v.videoWidth * k), h = Math.round(v.videoHeight * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(v, 0, 0, w, h);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.75));
+    if (!blob) throw new Error('encode');
+    return { thumb: { blob, w, h }, w: v.videoWidth, h: v.videoHeight };
+  } finally { URL.revokeObjectURL(url); }
+}
 const Photos = {
   cache: new Map(), // path → { url, exp }
   async urls(paths) {
@@ -688,7 +731,7 @@ const Photos = {
   },
   // <img data-photo="path"> → src from a (cached) signed URL
   async hydrate(root = document) {
-    const imgs = $$('img[data-photo]', root); if (!imgs.length) return;
+    const imgs = $$('img[data-photo], video[data-photo]', root); if (!imgs.length) return;
     const m = await this.urls(imgs.map(i => i.dataset.photo));
     imgs.forEach(i => { const u = m[i.dataset.photo]; if (u && i.isConnected) i.src = u; });
   },
@@ -727,7 +770,9 @@ async function photoVersions(file) {
 function lightbox(photos, start = 0) {
   const dlg = $('#dlg'); let i = start;
   const draw = () => {
-    dlg.innerHTML = `<figure class="lightbox"><img data-photo="${esc(photos[i].path)}" alt="תמונה ${i + 1} מתוך ${photos.length}"></figure>
+    dlg.innerHTML = `<figure class="lightbox">${photos[i].kind === 'video'
+        ? `<video data-photo="${esc(photos[i].path)}" controls playsinline preload="metadata"></video>`
+        : `<img data-photo="${esc(photos[i].path)}" alt="תמונה ${i + 1} מתוך ${photos.length}">`}</figure>
       ${photos.length > 1 ? `<div class="lb-nav"><button type="button" class="btn" data-a="prev">→ הקודמת</button>
         <span class="num">${i + 1} / ${photos.length}</span><button type="button" class="btn" data-a="next">הבאה ←</button></div>` : ''}
       <div class="stack"><button type="button" class="link" data-a="close">סגירה</button></div>`;
@@ -775,7 +820,7 @@ window.addEventListener('beforeunload', (e) => { if (Dirty.on) { e.preventDefaul
 let mapsToCleanup = [];
 let formDiscard = null; // set by an open form; called when it is left without saving
 async function render() {
-  mapsToCleanup.forEach(m => m.remove()); mapsToCleanup = [];
+  mapsToCleanup.forEach(m => { try { m.stop?.(); m.remove(); } catch (e) { console.warn(e); } }); mapsToCleanup = [];
   const app = $('#app');
   // a build may supply its own screens (the demo does, in demo/screens.js); Leah's app has none
   const V = window.PL_VIEWS || {};
@@ -957,11 +1002,11 @@ function renderHome(app) {
 /* ════════════ list ════════════ */
 function dealSearchText(d) {
   const c = d.contact || {};
-  return [c.name, c.company_name, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
+  return [c.name, c.company_name, c.company_number, c.broker_license, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
 }
 function rowSummary(module, d) {
-  if (module === 'lead') return [optText(d.need_id), optText(d.purpose_id), fmt.size(d.size_value, d.size_unit)];
-  return [d.deal_kind === 'rent' ? 'השכרה' : 'מכירה', optText(d.purpose_id), fmt.size(d.built_sqm, 'sqm')];
+  if (module === 'lead') return [optText(d.need_id), optText(d.purpose_id), leadSize(d)];
+  return [d.deal_kind === 'rent' ? 'השכרה' : d.deal_kind === 'sale' ? 'מכירה' : '', optText(d.purpose_id), fmt.size(d.built_sqm, 'sqm')];
 }
 const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
 
@@ -1020,7 +1065,7 @@ function listView(module, filter = null) {
 // photos keep their own proportions (width follows the stored w/h at a fixed height)
 const photoStrip = (d) => d.photos?.length ? `<div class="card-photos" id="card-photos">${d.photos.map((x, i) =>
   `<button type="button" data-i="${i}" aria-label="פתיחת תמונה ${i + 1}"><img data-photo="${esc(x.thumb)}" alt=""
-     style="aspect-ratio:${+x.w > 0 && +x.h > 0 ? `${+x.w} / ${+x.h}` : '4 / 3'}"></button>`).join('')}</div>` : '';
+     style="aspect-ratio:${+x.w > 0 && +x.h > 0 ? `${+x.w} / ${+x.h}` : '4 / 3'}">${x.kind === 'video' ? '<span class="ph-play" aria-hidden="true">▶</span>' : ''}</button>`).join('')}</div>` : '';
 function cardView(module, id) {
   const d = findDeal(module, id), M = MODULES[module];
   if (!d) return { html: `${topbar(M.one, `#/m/${module}`)}<div class="content state">העסקה לא נמצאה.</div>` };
@@ -1030,41 +1075,44 @@ function cardView(module, id) {
   let sec = 'contact';
   const add = (k, v) => { if (v !== '' && v != null) groups[sec].push(`<dt>${k}</dt><dd>${v}</dd>`); };
   add('טלפון', fmt.ltr(c.phone));
-  add('סוג', c.entity_type === 'company' ? 'חברה' : 'פרטי');
+  add('סוג', ENTITY[c.entity_type] || 'פרטי');
+  if (c.entity_type === 'company') add('ח.פ.', has(c.company_number) ? fmt.ltr(c.company_number) : '');
+  if (c.entity_type === 'broker') add('מס׳ רישיון תיווך', has(c.broker_license) ? fmt.ltr(c.broker_license) : '');
   sec = 'property';
   if (module === 'lead') {
     add('תאריך פנייה', fmt.ltr(fmt.date(d.lead_date)));
     add('צורך', esc(optText(d.need_id)));
     add('ייעוד', esc(optText(d.purpose_id)));
-    add('גודל', fmt.bi(fmt.size(d.size_value, d.size_unit)));
-    add('גובה נדרש', fmt.bi(fmt.num(d.height_m) + ' מ׳'));
-    add('תמונות', photoStrip(d));
+    add('גודל', leadSize(d) ? fmt.bi(leadSize(d)) : '');
+    add('גובה נדרש', has(d.height_m) ? fmt.bi(fmt.num(d.height_m) + ' מ׳') : '');
     sec = 'location';
     add('כתובת / אזור', esc(d.address));
-    add('רדיוס חיפוש', fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ'));
+    add('רדיוס חיפוש', has(d.lat) && has(d.radius_m) ? fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ') : '');
     sec = 'money';
-    add('תקציב', fmt.ltr(fmt.money(d.budget_value, d.budget_currency)) + (d.budget_kind === 'per_sqm' ? ' למ״ר' : ' סה״כ'));
-    add('נדרש עד', fmt.ltr(fmt.date(d.needed_by)));
+    add('תקציב', has(d.budget_value) ? fmt.ltr(fmt.money(d.budget_value, d.budget_currency)) + (d.budget_kind === 'per_sqm' ? ' למ״ר' : ' סה״כ') : '');
+    add('דדליין', fmt.ltr(fmt.date(d.needed_by)));
     add('הערות', esc(d.notes));
   } else {
     add('ייעוד', esc(optText(d.purpose_id)));
-    add('שטח בנוי', fmt.bi(fmt.size(d.built_sqm, 'sqm')));
-    add('שטח מגרש', fmt.bi(fmt.size(d.plot_sqm, 'sqm')));
+    add('שטח בנוי', has(d.built_sqm) ? fmt.bi(fmt.size(d.built_sqm, 'sqm')) : '');
+    add('שטח מגרש', has(d.plot_sqm) ? fmt.bi(fmt.size(d.plot_sqm, 'sqm')) : '');
+    const perEst = d.ai_price_per_sqm || estimatePricePerSqm(optText(d.purpose_id), +d.built_sqm);
+    add('הערכת מחיר', perEst && +d.built_sqm > 0
+      ? `${fmt.ltr(fmt.money(perEst * d.built_sqm))} <small>(הערכה · ${fmt.ltr(fmt.money(perEst))} למ״ר)</small>` : '');
     add('תיאור', esc(d.description));
-    add('תמונות', photoStrip(d));
+    add(MEDIA_LABEL, photoStrip(d));
     sec = 'location';
     add('כתובת', esc(d.address));
     sec = 'money';
-    add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : 'מכירה');
-    add('מחיר מבוקש / שווי', fmt.ltr(fmt.money(d.asking_price)));
-    if (d.deal_kind === 'rent') {
-      if (APP.dashboard && d.asking_rent) add('שכירות מבוקשת לחודש', fmt.ltr(fmt.money(d.asking_rent)));
-      add('מושכר כרגע', d.is_rented ? 'כן' : 'לא');
-      if (d.is_rented) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', fmt.ltr(fmt.pct(d.yield_pct))); }
-    } else {
-      add('מחיר למ״ר מבוקש', fmt.ltr(fmt.money(d.asking_price / d.built_sqm)));
-      if (d.ai_price_per_sqm) add('הערכת מחיר למ״ר', fmt.ltr(fmt.money(d.ai_price_per_sqm)) + ' <small>(הערכה)</small>');
+    add('סוג עסקה', d.deal_kind === 'rent' ? 'השכרה' : d.deal_kind === 'sale' ? 'מכירה' : '');
+    add('מחיר מבוקש / שווי', has(d.asking_price) ? fmt.ltr(fmt.money(d.asking_price)) : '');
+    if (APP.dashboard && d.deal_kind === 'rent' && has(d.asking_rent)) add('שכירות מבוקשת לחודש', fmt.ltr(fmt.money(d.asking_rent)));
+    if (d.deal_kind && d.is_rented != null) add('מושכר כרגע', d.is_rented ? 'כן' : 'לא');
+    if (d.is_rented && has(d.monthly_rent)) { add('שכירות חודשית', fmt.ltr(fmt.money(d.monthly_rent))); add('תשואה', has(d.yield_pct) ? fmt.ltr(fmt.pct(d.yield_pct)) : ''); }
+    if (d.deal_kind === 'sale') {
+      add('מחיר למ״ר מבוקש', has(d.asking_price) && +d.built_sqm > 0 ? fmt.ltr(fmt.money(d.asking_price / d.built_sqm)) : '');
     }
+    add('הערות', esc(d.notes));
   }
   for (const f of fieldsOf(module)) {
     const v = d.custom?.[f.key];
@@ -1083,7 +1131,7 @@ function cardView(module, id) {
       <a class="btn" href="${Phone.wa(c.phone)}" target="_blank" rel="noopener">WhatsApp</a>
     </div>
     <dl class="dl">${rows.join('')}</dl>
-    <div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>
+    ${has(d.lat) && has(d.lng) ? '<div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>' : ''}
     ${APP.dashboard ? matchSection(module, d) : ''}
     <div class="actions">
       <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
@@ -1092,11 +1140,11 @@ function cardView(module, id) {
     </div>
   </div>`;
   const mount = () => {
-    if (window.L) {
+    if (window.L && $('#card-map')) {
       const m = L.map('card-map', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, keyboard: false, attributionControl: true })
-        .setView([d.lat, d.lng], module === 'lead' ? zoomForRadius(d.radius_m) : 15);
+        .setView([d.lat, d.lng], module === 'lead' && has(d.radius_m) ? zoomForRadius(d.radius_m) : 16);
       tiles().addTo(m); L.marker([d.lat, d.lng]).addTo(m);
-      if (module === 'lead') L.circle([d.lat, d.lng], { radius: d.radius_m, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(m);
+      if (module === 'lead' && has(d.radius_m)) L.circle([d.lat, d.lng], { radius: d.radius_m, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(m);
       mapsToCleanup.push(m);
     }
     $('#close-deal')?.addEventListener('click', () => closeDialog(module, d));
@@ -1216,21 +1264,61 @@ const Geo = {
     return (res.features || []).filter(f => f.properties?.countrycode === 'IL').map(f => {
       const p = f.properties, street = p.street ? [p.street, p.housenumber].filter(Boolean).join(' ') : '';
       const city = p.city || p.town || p.village || p.county || '';
-      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
-        label: this.uniq([p.name || street, city]).join(', '),
+      return { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], hn: p.housenumber || '', city,
+        label: this.uniq([street && p.housenumber ? street : (p.name || street), city]).join(', '),
         full: this.uniq([p.name, street, p.district, city]).join(', ') };
     });
   },
   async nominatim(q) {
     await this.wait();
     const res = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json();
-    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name }));
+    return res.map(r => ({ lat: +r.lat, lng: +r.lon, label: this.short(r), full: r.display_name, hn: r.address?.house_number || '',
+      city: r.address?.city || r.address?.town || r.address?.village || '' }));
+  },
+  // the house number the user typed ("הרצל 15א, קריית גת" → "15א"); a result is exact only when its number is the same
+  // "רמת הגולן 11 חולון" → "11"; "הרצל 15א" → "15א" (a letter only when it is glued to the number)
+  typedNumber: (q) => { const m = String(q).match(/(\d+)([א-ת](?![א-ת]))?/); return m ? m[1] + (m[2] || '') : ''; },
+  sameNumber(hn, q) { const t = this.typedNumber(q); return !!t && String(hn || '').replace(/\s/g, '') === t; },
+  // exact = same house number AND (when the result has a city) that city is in what was typed
+  isExact(r, q) { return this.sameNumber(r.hn, q) && (!r.city || String(q).includes(r.city)); },
+  score(r, q) { return (this.isExact(r, q) ? 2 : 0) + (r.city && String(q).includes(r.city) ? 1 : 0); },
+  // GovMap search → [{lat, lng, label, full, hn, city}]; coordinates come in ITM (Israeli grid) and are converted
+  loadScript(src) {
+    this.scripts ||= {};
+    return this.scripts[src] ||= new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('load ' + src)); document.head.append(el); });
+  },
+  async govmap(q) {
+    if (!GOVMAP_TOKEN) return [];
+    await Promise.all([this.loadScript('https://www.govmap.gov.il/govmap/api/govmap.api.js'),
+      this.loadScript('https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js')]);
+    const ITM = '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=-24.0024,-17.1032,-17.8444,-0.33077,-1.85269,1.66969,5.4248 +units=m +no_defs';
+    const r = await window.govmap.search({ searchText: q, language: 'he', maxResults: 5, isAccurate: false, apiKey: GOVMAP_TOKEN });
+    return (r?.results || []).map(x => {
+      const m = String(x.centroid || '').match(/POINT\s*\(\s*([\d.]+)\s+([\d.]+)\s*\)/); if (!m) return null;
+      const [lng, lat] = window.proj4(ITM, 'EPSG:4326', [+m[1], +m[2]]);
+      const text = String(x.text || '');
+      return { lat, lng, label: text, full: text, hn: this.typedNumber(text), city: '', source: 'govmap' };
+    }).filter(Boolean);
   },
   async search(q) {
     const key = 's:' + q; if (this.cache.has(key)) return this.cache.get(key);
     let res = [];
-    try { res = await this.photon(q); } catch (e) { console.error(e); }
-    if (!res.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
+    // GovMap first (exact Israeli house numbers); the free services stay as the fallback
+    // GovMap gets 6 seconds; if it is slow or down, the free services answer instead
+    try { res = await Promise.race([this.govmap(q), new Promise((_, rej) => setTimeout(() => rej(new Error('govmap timeout')), 6000))]); } catch (e) { console.error(e); res = []; }
+    if (res.some(r => this.isExact(r, q))) { this.cache.set(key, res); return res; }
+    const gm = res; res = [];
+    if (/\d/.test(q)) {
+      // a house number: ask both services, exact matches (with the house number) first
+      const [a, b] = await Promise.all([this.nominatim(q).catch(() => []), this.photon(q).catch(() => [])]);
+      const seen = new Set();
+      res = [...a, ...b].filter(r => { const k = `${r.lat.toFixed(4)},${r.lng.toFixed(4)}`; if (seen.has(k)) return false; seen.add(k); return true; })
+        .sort((x, y) => this.score(y, q) - this.score(x, q)).slice(0, 6);
+    } else {
+      try { res = await this.photon(q); } catch (e) { console.error(e); }
+      if (!res.length && !gm.length) res = await this.nominatim(q.replace(/תעשיה/g, 'תעשייה'));
+    }
+    res = [...gm, ...res].slice(0, 6);
     this.cache.set(key, res); return res;
   },
   async reverse(lat, lng) {
@@ -1246,7 +1334,7 @@ const Geo = {
 };
 
 /* ════════════ form ════════════ */
-function field(id, label, control, { required = true, hint = '', cls = '' } = {}) {
+function field(id, label, control, { required = false, hint = '', cls = '' } = {}) {
   return `<div class="field ${cls}" data-field="${id}">
     <label for="${id}" ${control.startsWith('<div class="seg') ? `id="${id}-lbl"` : ''}>${label}${required ? ' <span class="req" aria-hidden="true">*</span>' : ''}</label>
     ${control}${hint ? `<p class="hint">${hint}</p>` : ''}<p class="err" id="${id}-err" aria-live="polite"></p></div>`;
@@ -1271,7 +1359,8 @@ function customControl(f, v) {
     `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return textInput(id, v);
 }
-const customFieldHTML = (f, v) => field('cf_' + f.key, esc(f.label), customControl(f, v), { required: false });
+const customFieldHTML = (f, v) => field('cf_' + f.key, esc(f.label), customControl(f, v),
+  { hint: `<button type="button" class="link cf-remove" data-id="${f.id}" data-label="${esc(f.label)}">הסרת השדה</button>` });
 
 function formView(r) {
   const { module, mode } = r, M = MODULES[module], isLead = module === 'lead';
@@ -1293,7 +1382,8 @@ function formView(r) {
     ${field('lead_date', 'תאריך פנייה', dateInput('lead_date', d.lead_date || todayISO()))}
     ${field('need_id', 'צורך', optSelect('need_id', LISTS.need, d.need_id))}
     ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.lead_purpose, d.purpose_id))}
-    ${field('size_value', 'גודל', `<div class="row">${numInput('size_value', d.size_value)}${seg('size_unit', [['sqm', 'מ״ר'], ['dunam', 'דונם']], d.size_unit || 'sqm')}</div>`)}
+    ${field('size_min', 'גודל', `<div class="row size-range">${numInput('size_min', d.size_min ?? d.size_value, '', 'placeholder="מ־" aria-label="גודל מ־"')}${numInput('size_max', d.size_max ?? d.size_value, '', 'placeholder="עד" aria-label="גודל עד"')}${seg('size_unit', [['sqm', 'מ״ר'], ['dunam', 'דונם']], d.size_unit || 'sqm')}</div>`,
+      { hint: 'אפשר למלא רק "מ־" או רק "עד"' })}
     ${field('height_m', 'גובה נדרש', numInput('height_m', d.height_m, 'מ׳'), { hint: 'גובה תקרה מינימלי במטרים' })}`;
   const ownerProperty = `
     ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.owner_purpose, d.purpose_id))}
@@ -1304,22 +1394,23 @@ function formView(r) {
         <input class="input" id="address" name="address" type="search" autocomplete="off" enterkeyhint="search" placeholder="למשל: אזור התעשייה, קריית גת" value="${esc(d.address)}">
         <button type="button" class="btn" id="geo-go">חיפוש</button></div>
       <ul class="geo-results" id="geo-results" aria-live="polite"></ul>`,
-      { required: !isLead, hint: 'הקלידי כתובת או אזור ובחרי מהרשימה, או הקישי על המפה' })}
-    ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה וממלאת את הכתובת' })}
+      { hint: 'אפשר כתובת מדויקת עם מספר בית, או אזור. בחרי מהרשימה או הקישי על המפה' })}
+    <p class="note" id="geo-note" hidden aria-live="polite">מספר הבית לא קיים במפה, אז הסיכה על הרחוב. הקישי על המפה במקום המדויק (או גררי את הסיכה).</p>
+    ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה; אפשר לגרור את הסיכה כדי לדייק' })}
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
       <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
       <output id="radius-out" class="num"></output></div>` : ''}`;
   const photoField = `
-    <div class="field" data-field="photos"><span class="lbl">תמונות <small>(לא חובה, עד ${MAX_PHOTOS})</small></span>
+    <div class="field" data-field="photos"><span class="lbl">${MEDIA_LABEL} <small>(עד ${MAX_PHOTOS} קבצים, תמונה עד 30MB${ALLOW_VIDEO ? ', סרטון עד 50MB' : ''})</small></span>
       <div class="photo-grid" id="photo-grid"></div>
-      <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="image/*" multiple hidden>+ הוספת תמונה</label>
+      <label class="btn photo-add" id="photo-add"><input type="file" id="photo-input" accept="${ALLOW_VIDEO ? 'image/*,video/*' : 'image/*'}" multiple hidden>+ הוספת תמונה / סרטון</label>
       <p class="hint">הראשונה מוצגת בכרטיס וברשימה. במחשב אפשר גם לגרור לכאן או להדביק.</p>
       <p class="err" id="photos-err" aria-live="polite"></p></div>`;
   const leadMoney = `
     ${field('budget_value', 'תקציב', `<div class="row">${moneyInput('budget_value', d.budget_value, d.budget_currency || 'ILS')}${seg('budget_currency', [['ILS', 'ש״ח'], ['USD', '$']], d.budget_currency || 'ILS')}</div>
       <div class="row" style="margin-top:8px">${seg('budget_kind', [['total', 'סה״כ'], ['per_sqm', 'למ״ר']], d.budget_kind || 'total')}</div>`)}
-    ${field('needed_by', 'נדרש עד', dateInput('needed_by', d.needed_by))}
-    ${field('notes', 'הערות', `<textarea class="input" id="notes" name="notes">${esc(d.notes)}</textarea>`, { required: false })}`;
+    ${field('needed_by', 'דדליין', dateInput('needed_by', d.needed_by))}
+    ${field('notes', 'הערות', `<textarea class="input" id="notes" name="notes">${esc(d.notes)}</textarea>`)}`;
   const ownerMoney = `
     ${field('deal_kind', 'סוג עסקה', seg('deal_kind', [['rent', 'השכרה'], ['sale', 'מכירה']], d.deal_kind))}
     ${field('asking_price', 'מחיר מבוקש / שווי הנכס', moneyInput('asking_price', d.asking_price))}
@@ -1331,19 +1422,23 @@ function formView(r) {
         <div class="calc" id="yield" aria-live="polite"></div>
       </div>
     </div>
-    <div id="sale-block" hidden><div class="calc" id="sale-calc" aria-live="polite"></div></div>`;
+    <div id="sale-block" hidden><div class="calc" id="sale-calc" aria-live="polite"></div></div>
+    ${field('owner_notes', 'הערות', `<textarea class="input" id="owner_notes" name="owner_notes">${esc(d.notes)}</textarea>`)}`;
 
   const html = `${topbar(title, back)}
   <form class="content" id="deal-form" novalidate>
     <section class="form-section"><h2>פרטי לקוח</h2>
-      ${field('phone', 'טלפון נייד', `<input class="input num" id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="050-0000000" value="${esc(c.phone)}">`)}
+      ${field('phone', 'טלפון נייד', `<div class="add-inline phone-box" style="margin:0"><input class="input num" id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="050-0000000" value="${esc(c.phone)}">
+        <button type="button" class="btn" id="pick-contact" hidden>מאנשי הקשר</button></div>`, { required: true, hint: 'אפשר להדביק מספר שהועתק מאנשי הקשר' })}
       <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – אין צורך למלא שוב פרטים</p>
-      ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'))}
-      ${field('entity_type', 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה']], c.entity_type || 'private'))}
-      ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only' })}
+      ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'), { required: true })}
+      ${field('entity_type', isLead ? 'פרטי / חברה / מתווך' : 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה'], ['broker', 'מתווך']], c.entity_type || 'private'))}
+      ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only', required: true })}
+      ${field('company_number', 'ח.פ.', textInput('company_number', c.company_number, 'inputmode="numeric" dir="ltr"'), { cls: 'company-only' })}
+      ${field('broker_license', 'מס׳ רישיון תיווך', textInput('broker_license', c.broker_license, 'inputmode="numeric" dir="ltr"'), { cls: 'broker-only' })}
       ${cfBlock('contact')}
     </section>
-    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty}${photoField}${cfBlock('property')}</section>
+    <section class="form-section"><h2>הנכס</h2>${isLead ? leadProperty : ownerProperty + photoField}${cfBlock('property')}</section>
     <section class="form-section"><h2>מיקום</h2>${locSection}${cfBlock('location')}</section>
     <section class="form-section"><h2>כסף ותזמון</h2>${isLead ? leadMoney : ownerMoney}${cfBlock('money')}</section>
       <div id="new-field" hidden class="form-section" style="margin-top:8px">
@@ -1372,11 +1467,14 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   /* visibility */
   const sync = () => {
     $$('.company-only', form).forEach(el => el.hidden = radio('entity_type') !== 'company');
+    $$('.broker-only', form).forEach(el => el.hidden = radio('entity_type') !== 'broker');
+    // owners: the "מתווך" choice shows only for a contact that is already a broker (shared with the leads module)
+    if (!isLead) { const bl = form.querySelector('input[name="entity_type"][value="broker"]')?.closest('label'); if (bl) bl.hidden = radio('entity_type') !== 'broker'; }
     if (!isLead) {
       const kind = radio('deal_kind');
-      $('#rent-block').hidden = kind !== 'rent';
+      $('#rent-block').hidden = !kind;                       // rent AND sale: "is it rented?" → rent → yield
       $('#sale-block').hidden = kind !== 'sale';
-      $('#rented-block').hidden = !(kind === 'rent' && radio('is_rented') === 'true');
+      $('#rented-block').hidden = !(kind && radio('is_rented') === 'true');
       const price = parseNum(val('asking_price')), rent = parseNum(val('monthly_rent')), built = parseNum(val('built_sqm'));
       $('#yield').textContent = price && rent ? `תשואה: ${fmt.pct(rent * 12 / price * 100)}` : 'תשואה: מלאי מחיר ושכירות';
       const est = estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, built);
@@ -1386,29 +1484,22 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   };
 
   /* validation */
+  // Only phone + name are required. Other fields are optional, but a number that was typed must be > 0.
   const rules = {
     phone: () => Phone.normalize(val('phone')) ? '' : Phone.error,
     name: () => val('name').trim() ? '' : 'יש למלא שם',
     company_name: () => radio('entity_type') !== 'company' || val('company_name').trim() ? '' : 'יש למלא שם חברה',
-    pin: () => pin.lat != null ? '' : 'יש לבחור מיקום על המפה',
-    purpose_id: () => val('purpose_id') && val('purpose_id') !== '__new' ? '' : 'יש לבחור ייעוד',
   };
-  const posNum = (id, msg) => rules[id] = () => (parseNum(val(id)) > 0 ? '' : msg);
+  const optNum = (id) => rules[id] = () => (!val(id).trim() || parseNum(val(id)) > 0 ? '' : 'יש להזין מספר גדול מ-0');
   if (isLead) {
-    rules.lead_date = () => val('lead_date') ? '' : 'יש לבחור תאריך';
-    rules.need_id = () => val('need_id') && val('need_id') !== '__new' ? '' : 'יש לבחור צורך';
-    posNum('size_value', 'יש למלא גודל');
-    posNum('height_m', 'יש למלא גובה');
-    posNum('budget_value', 'יש למלא תקציב');
-    rules.needed_by = () => val('needed_by') ? '' : 'יש לבחור תאריך';
+    rules.size_min = () => {
+      const a = val('size_min').trim(), b = val('size_max').trim(), na = parseNum(a), nb = parseNum(b);
+      if ((a && !(na > 0)) || (b && !(nb > 0))) return 'יש להזין מספר גדול מ-0';
+      return a && b && na > nb ? 'הערך ב"עד" צריך להיות גדול מהערך ב"מ־"' : '';
+    };
+    optNum('height_m'); optNum('budget_value');
   } else {
-    posNum('built_sqm', 'יש למלא שטח בנוי');
-    posNum('plot_sqm', 'יש למלא שטח מגרש');
-    rules.address = () => val('address').trim() ? '' : 'יש למלא כתובת';
-    rules.deal_kind = () => radio('deal_kind') ? '' : 'יש לבחור השכרה או מכירה';
-    posNum('asking_price', 'יש למלא מחיר');
-    rules.is_rented = () => radio('deal_kind') !== 'rent' || radio('is_rented') ? '' : 'יש לבחור כן או לא';
-    rules.monthly_rent = () => radio('deal_kind') !== 'rent' || radio('is_rented') !== 'true' || parseNum(val('monthly_rent')) > 0 ? '' : 'יש למלא שכירות חודשית';
+    optNum('built_sqm'); optNum('plot_sqm'); optNum('asking_price'); optNum('monthly_rent');
   }
   const check = (id) => {
     const wrap = form.querySelector(`[data-field="${id}"]`); if (!wrap || !rules[id]) return true;
@@ -1437,7 +1528,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   /* phone first: existing contact prefill */
   const phoneEl = $('#phone');
   let lastPhone = Phone.normalize(phoneEl.value);
-  phoneEl.addEventListener('blur', async () => {
+  const lookupPhone = async () => {
     const p = Phone.normalize(phoneEl.value);
     if (!p) return;
     phoneEl.value = p;
@@ -1449,13 +1540,35 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       $('#existing-note').hidden = !c;
       if (c) {
         form.elements.name.value = c.name;
-        form.querySelector(`input[name="entity_type"][value="${c.entity_type}"]`).checked = true;
+        const r = form.querySelector(`input[name="entity_type"][value="${c.entity_type}"]`); if (r) r.checked = true;
         form.elements.company_name.value = c.company_name || '';
+        form.elements.company_number.value = c.company_number || '';
+        form.elements.broker_license.value = c.broker_license || '';
         ['name', 'company_name'].forEach(id => { if (touched.has(id) || form.querySelector(`[data-field="${id}"]`).classList.contains('invalid')) check(id); });
         sync();
       }
     } catch (ex) { console.error(ex); }
-  });
+  };
+  phoneEl.addEventListener('blur', lookupPhone);
+  // a number pasted from the phone's contacts: clean it at once
+  phoneEl.addEventListener('paste', () => setTimeout(() => {
+    const p = Phone.normalize(phoneEl.value); if (p) { phoneEl.value = p; check('phone'); lookupPhone(); }
+  }));
+  // Android Chrome (and Safari with the Contact Picker flag): pick from the phone's contacts
+  const pickBtn = $('#pick-contact');
+  if (navigator.contacts?.select) {
+    pickBtn.hidden = false;
+    pickBtn.onclick = async () => {
+      try {
+        const [ct] = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+        if (!ct) return;
+        const tel = (ct.tel || []).map(Phone.normalize).find(Boolean) || (ct.tel || [])[0] || '';
+        phoneEl.value = tel;
+        if (ct.name?.[0] && !form.elements.name.value.trim()) form.elements.name.value = ct.name[0];
+        Dirty.on = true; check('phone'); await lookupPhone();
+      } catch (ex) { console.error(ex); }
+    };
+  }
 
   /* "+ חדש" in dropdowns */
   $$('select[data-list]', form).forEach(sel => {
@@ -1496,15 +1609,19 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   radiusLabel();
   const addrEl = $('#address');
   let addressAuto = !addrEl.value;
-  const place = async (latlng, { fromSearch, label } = {}) => {
+  const place = async (latlng, { fromSearch, label, dragged } = {}) => {
     pin.lat = latlng.lat; pin.lng = latlng.lng;
     if (map) {
-      if (!marker) marker = L.marker(latlng).addTo(map); else marker.setLatLng(latlng);
+      if (!marker) {
+        marker = L.marker(latlng, { draggable: true, autoPan: true }).addTo(map);
+        marker.on('dragend', () => { const ll = marker.getLatLng(); Dirty.on = true; place(ll, { dragged: true }); });
+      } else marker.setLatLng(latlng);
       if (radiusEl) { if (!circle) circle = L.circle(latlng, { radius: +radiusEl.value, color: '#1A1A1A', weight: 2, fillColor: '#FFD400', fillOpacity: .25 }).addTo(map); else circle.setLatLng(latlng); }
     }
     check('pin');
+    if (!fromSearch) $('#geo-note').hidden = true;   // a tap or a drag IS the exact spot
     if (fromSearch && label) { addrEl.value = label; addressAuto = true; check('address'); }
-    else if (!fromSearch && (addressAuto || !addrEl.value.trim())) {
+    else if (!fromSearch && (addressAuto || !addrEl.value.trim()) && !(dragged && !addressAuto)) {
       try {
         const r = await Geo.reverse(pin.lat, pin.lng);
         if (r && !r.error && pin.lat === latlng.lat && pin.lng === latlng.lng) { addrEl.value = Geo.short(r); addressAuto = true; check('address'); Dirty.on = true; }
@@ -1512,7 +1629,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     }
   };
   if (window.L) {
-    map = L.map('form-map').setView(lat != null ? [lat, lng] : MAP_CENTER, lat != null ? (isLead ? zoomForRadius(+radiusEl.value) : 15) : 12);
+    map = L.map('form-map').setView(lat != null ? [lat, lng] : MAP_CENTER, lat != null ? 16 : 12);
     tiles().addTo(map); mapsToCleanup.push(map);
     if (lat != null) place({ lat, lng }, { fromSearch: true });
     map.on('click', (e) => place(e.latlng));
@@ -1520,7 +1637,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     $('#form-map').innerHTML = '<p class="state">המפה לא נטענה. בדקי את החיבור לאינטרנט.</p>';
   }
   radiusEl?.addEventListener('input', () => { radiusLabel(); circle?.setRadius(+radiusEl.value); });
-  radiusEl?.addEventListener('change', () => { if (circle && map) map.fitBounds(circle.getBounds(), { padding: [10, 10] }); });
+  radiusEl?.addEventListener('change', () => { if (circle && map) map.fitBounds(circle.getBounds(), { padding: [10, 10], animate: false }); });
 
   // one field: typing shows suggestions (debounced), Enter / "חיפוש" searches now, picking one places the pin
   let geoSeq = 0, geoTimer;
@@ -1535,8 +1652,12 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
         : '<li class="hint" style="padding:8px">לא נמצאה כתובת. נסי לכתוב אחרת, או הקישי על המפה.</li>';
       $$('button', ul).forEach(b => b.onclick = () => {
         const r = res[b.dataset.i];
-        ul.innerHTML = ''; place({ lat: r.lat, lng: r.lng }, { fromSearch: true, label: r.label });
-        map?.setView([r.lat, r.lng], isLead ? zoomForRadius(+radiusEl.value) : 16);
+        // the user typed a house number the map doesn't know: keep their text, mark the pin as approximate
+        const exact = Geo.isExact(r, q), keepTyped = /\d/.test(q) && !exact;
+        ul.innerHTML = ''; place({ lat: r.lat, lng: r.lng }, { fromSearch: true, label: keepTyped ? q : r.label });
+        if (keepTyped) addressAuto = false;
+        $('#geo-note').hidden = !keepTyped;
+        map?.setView([r.lat, r.lng], exact ? 18 : 17, { animate: false });   // close enough to tap the right building
       });
     } catch (ex) { console.error(ex); if (seq === geoSeq) ul.innerHTML = '<li class="hint" style="padding:8px">החיפוש נכשל. נסי שוב או הקישי על המפה.</li>'; }
   };
@@ -1554,6 +1675,24 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   });
   $('#nf_type').onchange = nfSync;
   $('#nf_cancel').onclick = nfClose;
+  // "הסרת השדה": hides an added field from every deal of this module (saved values stay in the database)
+  form.addEventListener('click', (e) => {
+    const b = e.target.closest('.cf-remove'); if (!b) return;
+    const dlg = $('#dlg'); dlg.oninput = null;
+    dlg.innerHTML = `<h2>להסיר את השדה "${esc(b.dataset.label)}"?</h2>
+      <p class="hint">השדה יוסר מהטופס ומהכרטיס בכל העסקאות. מה שכבר נשמר בו לא נמחק.</p>
+      <div class="stack"><button type="button" class="btn primary" data-a="yes">הסרת השדה</button><button type="button" class="link" data-a="no">ביטול</button></div>`;
+    dlg.onclick = async (ev) => {
+      const a = ev.target.closest('[data-a]')?.dataset.a; if (ev.target === dlg || a === 'no') return dlg.close(); if (a !== 'yes') return;
+      try {
+        const row = await DB.hideField(b.dataset.id);
+        const i = S.data.fields.findIndex(f => f.id === row.id); if (i >= 0) S.data.fields[i] = row;
+        b.closest('.field').remove(); dlg.close(); toast(`השדה "${b.dataset.label}" הוסר`);
+      } catch (ex) { console.error(ex); toast('ההסרה נכשלה. נסי שוב.'); }
+    };
+    dlg.showModal();
+  });
+
   $('#nf_save').onclick = async (e) => {
     const label = $('#nf_label').value.trim(), type = $('#nf_type').value;
     const options = type === 'list' ? $('#nf_options').value.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -1575,15 +1714,17 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
 
   /* photos: upload on pick (compressed), keep paths in the form, save them with the deal */
   const savedPhotos = mode === 'edit' ? (src?.photos || []) : [];
-  const photos = savedPhotos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h }));
+  const media = (x) => ({ kind: x.kind || 'image', path: x.path, thumb: x.thumb, w: x.w, h: x.h });
+  const photos = savedPhotos.map(media);
   const sessionUploads = [], removedSaved = [];
   const previews = new Map(); // thumb path → local blob URL (only in this form, never saved)
   const dropPreview = (thumb) => { const u = previews.get(thumb); if (u) { URL.revokeObjectURL(u); previews.delete(thumb); } };
   let uploading = 0;
   const grid = $('#photo-grid'), addLbl = $('#photo-add'), photoErr = $('#photos-err');
   const drawPhotos = () => {
+    if (!grid) return;
     grid.innerHTML = photos.map((x, i) => `<figure class="ph${i === 0 ? ' first' : ''}" data-i="${i}">
-        <img data-photo="${esc(x.thumb)}" alt="תמונה ${i + 1}">
+        <img data-photo="${esc(x.thumb)}" alt="${x.kind === 'video' ? 'סרטון' : 'תמונה'} ${i + 1}">${x.kind === 'video' ? '<span class="ph-play" aria-hidden="true">▶</span>' : ''}
         ${i === 0 ? '<span class="ph-badge">ראשית</span>' : '<button type="button" class="ph-first" data-a="first">קביעה כראשית</button>'}
         <button type="button" class="ph-x" data-a="remove" aria-label="הסרת תמונה ${i + 1}">×</button></figure>`).join('')
       + Array.from({ length: uploading }, () => '<figure class="ph pending"><span class="spinner"></span></figure>').join('');
@@ -1593,18 +1734,22 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   };
   const addFiles = async (files) => {
     photoErr.textContent = '';
-    const imgs = [...files].filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+    const imgs = [...files].filter(f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name) || (ALLOW_VIDEO && f.type.startsWith('video/')));
     const room = MAX_PHOTOS - photos.length - uploading;
     if (imgs.length > room) photoErr.textContent = `אפשר לשמור עד ${MAX_PHOTOS} תמונות לעסקה`;
     for (const f of imgs.slice(0, Math.max(0, room))) {
       uploading++; drawPhotos();
-      const u = uuid(), path = `${dealId}/${u}.jpg`, thumb = `${dealId}/${u}_t.jpg`;
+      const isVideo = ALLOW_VIDEO && f.type.startsWith('video/');
+      const ext = isVideo ? (/webm/.test(f.type) ? 'webm' : /quicktime/.test(f.type) ? 'mov' : 'mp4') : 'jpg';
+      const u = uuid(), path = `${dealId}/${u}.${ext}`, thumb = `${dealId}/${u}_t.jpg`;
       try {
-        const { full, thumb: th } = await photoVersions(f);
-        await DB.uploadPhoto(path, full.blob); sessionUploads.push(path);   // tracked at once, so a failure below can clean it
+        let fullBlob, th, w, h;
+        if (isVideo) { const v = await videoPoster(f); fullBlob = f; th = v.thumb; w = v.w; h = v.h; }
+        else { const r = await photoVersions(f); fullBlob = r.full.blob; th = r.thumb; w = r.full.w; h = r.full.h; }
+        await DB.uploadPhoto(path, fullBlob); sessionUploads.push(path);   // tracked at once, so a failure below can clean it
         await DB.uploadPhoto(thumb, th.blob); sessionUploads.push(thumb);
         previews.set(thumb, URL.createObjectURL(th.blob));
-        photos.push({ path, thumb, w: full.w, h: full.h });
+        photos.push({ kind: isVideo ? 'video' : 'image', path, thumb, w, h });
         Dirty.on = true;
       } catch (ex) {
         console.error(ex);
@@ -1615,6 +1760,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       } finally { uploading--; drawPhotos(); }
     }
   };
+  if (grid) {
   $('#photo-input').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
   grid.onclick = (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
@@ -1635,6 +1781,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   const onPaste = (e) => { const files = [...(e.clipboardData?.files || [])]; if (files.some(f => f.type.startsWith('image/'))) { e.preventDefault(); addFiles(files); } };
   document.addEventListener('paste', onPaste);
   mapsToCleanup.push({ remove: () => document.removeEventListener('paste', onPaste) });
+  }
   formDiscard = () => {
     [...previews.keys()].forEach(dropPreview);
     const keep = Photos.referenced();
@@ -1660,24 +1807,34 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       (wrap.querySelector('input:not([type=radio]),select,textarea') || wrap.querySelector('input'))?.focus({ preventScroll: true });
       return;
     }
-    const custom = {};
+    // start from what is stored: values of removed (hidden) fields are kept, visible ones are rewritten below
+    const custom = { ...(mode === 'edit' ? src?.custom || {} : {}) };
     for (const f of fieldsOf(module)) {
+      delete custom[f.key];
       const v = val('cf_' + f.key);
       if (v !== '' && v != null) custom[f.key] = f.type === 'number' ? parseNum(v) : v;
     }
-    const contact = { phone: Phone.normalize(val('phone')), name: val('name').trim(), entity_type: radio('entity_type'),
-      company_name: radio('entity_type') === 'company' ? val('company_name').trim() : null };
+    const et = radio('entity_type') || 'private';
+    const contact = { v: 2, phone: Phone.normalize(val('phone')), name: val('name').trim(), entity_type: et,
+      company_name: et === 'company' ? val('company_name').trim() : null,
+      company_number: et === 'company' ? val('company_number').trim() || null : null,
+      broker_license: et === 'broker' ? val('broker_license').trim() || null : null };
+    const optId = (id) => (val(id) && val(id) !== '__new' ? val(id) : null);
     let p;
     if (isLead) {
-      p = { id: dealId, contact, lead_date: val('lead_date'), need_id: val('need_id'), purpose_id: val('purpose_id'),
-        size_value: parseNum(val('size_value')), size_unit: radio('size_unit'), lat: pin.lat, lng: pin.lng,
-        radius_m: +radiusEl.value, height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,
-        budget_value: parseNum(val('budget_value')), budget_kind: radio('budget_kind'), budget_currency: radio('budget_currency') || 'ILS',
-        needed_by: val('needed_by'), address: val('address').trim() || null, custom };
+      const smin = parseNum(val('size_min')), smax = parseNum(val('size_max'));
+      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_id: optId('need_id'), purpose_id: optId('purpose_id'),
+        size_min: smin, size_max: smax, size_value: smin ?? smax, size_unit: radio('size_unit') || 'sqm',
+        lat: pin.lat, lng: pin.lng, radius_m: pin.lat != null ? +radiusEl.value : null,
+        height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,
+        budget_value: parseNum(val('budget_value')), budget_kind: has(parseNum(val('budget_value'))) ? radio('budget_kind') : null,
+        budget_currency: radio('budget_currency') || 'ILS',
+        needed_by: val('needed_by') || null, address: val('address').trim() || null, custom };
     } else {
-      const kind = radio('deal_kind'), rented = kind === 'rent' ? radio('is_rented') === 'true' : null;
-      p = { id: dealId, contact, purpose_id: val('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
-        lat: pin.lat, lng: pin.lng, address: val('address').trim(), description: val('description').trim() || null, deal_kind: kind,
+      const kind = radio('deal_kind') || null, ir = radio('is_rented'), rented = kind && ir ? ir === 'true' : null;
+      p = { v: 2, id: dealId, contact, purpose_id: optId('purpose_id'), built_sqm: parseNum(val('built_sqm')), plot_sqm: parseNum(val('plot_sqm')),
+        lat: pin.lat, lng: pin.lng, address: val('address').trim() || null, description: val('description').trim() || null,
+        notes: val('owner_notes').trim() || null, deal_kind: kind,
         asking_price: parseNum(val('asking_price')), is_rented: rented, monthly_rent: rented ? parseNum(val('monthly_rent')) : null,
         ai_price_per_sqm: kind === 'sale' ? estimatePricePerSqm($('#purpose_id').selectedOptions[0]?.textContent, parseNum(val('built_sqm'))) : null,
         custom };
@@ -1689,8 +1846,8 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     const btn = $('#save'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> שומרת…';
     try {
       await DB.saveDeal(module, p);
-      const clean = photos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h }));
-      if (JSON.stringify(clean) !== JSON.stringify(savedPhotos.map(({ path, thumb, w, h }) => ({ path, thumb, w, h })))) {
+      const clean = photos.map(media);
+      if (JSON.stringify(clean) !== JSON.stringify(savedPhotos.map(media))) {
         try { await DB.setPhotos(module, dealId, clean); }
         catch (ex) {
           console.error(ex); await reload();
@@ -1747,6 +1904,7 @@ function distKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 function cityOf(d) {
+  if (!has(d.lat) || !has(d.lng)) return '';
   let best = null, bd = Infinity;
   for (const [name, lat, lng] of CITIES) { const k = distKm([d.lat, d.lng], [lat, lng]); if (k < bd) { bd = k; best = name; } }
   return bd <= 12 ? best : 'אחר';
@@ -1758,35 +1916,56 @@ function cityOf(d) {
    More than one "near" → no match; exactly one → "כמעט מתאים". Missing asking rent → budget 0 and at most "טובה". */
 function matchPair(lead, owner) {
   if (lead.status !== 'active' || owner.status !== 'active') return null;
+  // an empty field means "no limit" (round 2: only phone + name are required), never 0
   const need = optGroup(lead.need_id);
-  if (!NEED_TO_KIND[need] || owner.deal_kind !== NEED_TO_KIND[need]) return null;
-  const g = optGroup(lead.purpose_id);
-  if (!g || g !== optGroup(owner.purpose_id)) return null;
+  if (lead.need_id && !NEED_TO_KIND[need]) return null;                       // להשכיר / not mapped → not a buyer or renter
+  if (need && owner.deal_kind && owner.deal_kind !== NEED_TO_KIND[need]) return null;
+  const g = optGroup(lead.purpose_id), og = optGroup(owner.purpose_id);
+  if (lead.purpose_id && !g) return null;                                     // a purpose with no group is left out of matching
+  if (g && owner.purpose_id && g !== og) return null;
   const chips = []; let near = 0, score = 0;
-  // location
-  const km = distKm([lead.lat, lead.lng], [owner.lat, owner.lng]), r = lead.radius_m / 1000;
-  const kmText = fmt.num(Math.round(km * 10) / 10);
-  if (km <= r) { score += 40; chips.push({ t: km < 0.5 ? 'בתוך האזור' : `${kmText} ק״מ מהמרכז`, k: 'ok' }); }
-  else if (km <= r * 1.5) { score += 20; near++; chips.push({ t: `${kmText} ק״מ – מחוץ לרדיוס`, k: 'near' }); }
-  else return null;
-  // size (land / private → plot area, everything else → built area)
-  const want = lead.size_value * (lead.size_unit === 'dunam' ? 1000 : 1);
-  const have = g === 'land' ? owner.plot_sqm : owner.built_sqm;
-  const diff = Math.round((have / want - 1) * 1000) / 1000, pct = Math.round(Math.abs(diff) * 100); // rounded: 1300/1000 is exactly +30%
-  const sizeText = pct < 3 ? 'שטח מדויק' : diff > 0 ? `גדול ב-${pct}%` : `קטן ב-${pct}%`;
-  if (diff >= -0.10 && diff <= 0.30) { score += 30; chips.push({ t: sizeText, k: 'ok' }); }
-  else if (diff >= -0.25 && diff <= 0.60) { score += 15; near++; chips.push({ t: sizeText, k: 'near' }); }
-  else return null;
-  // budget, in ₪ (USD at a fixed rate)
-  const budget = lead.budget_value * (lead.budget_currency === 'USD' ? USD_RATE : 1);
-  const total = owner.deal_kind === 'rent' ? owner.asking_rent : owner.asking_price;
-  const price = total ? (lead.budget_kind === 'per_sqm' ? total / owner.built_sqm : total) : null;
-  const usd = lead.budget_currency === 'USD' ? ` (לפי $1 = ₪${USD_RATE})` : '';
+  // location (no point on either side → no limit)
+  if (has(lead.lat) && has(lead.lng) && has(owner.lat) && has(owner.lng)) {
+    const km = distKm([lead.lat, lead.lng], [owner.lat, owner.lng]), r = (+lead.radius_m || 5000) / 1000;
+    const kmText = fmt.num(Math.round(km * 10) / 10);
+    if (km <= r) { score += 40; chips.push({ t: km < 0.5 ? 'בתוך האזור' : `${kmText} ק״מ מהמרכז`, k: 'ok' }); }
+    else if (km <= r * 1.5) { score += 20; near++; chips.push({ t: `${kmText} ק״מ – מחוץ לרדיוס`, k: 'near' }); }
+    else return null;
+  } else { score += 40; chips.push({ t: 'בלי הגבלת אזור', k: 'ok' }); }
+  // size: the lead's range (size_min…size_max, one number = both ends); land / private → plot area, else built area
+  const f = lead.size_unit === 'dunam' ? 1000 : 1;
+  const lo = has(lead.size_min) ? lead.size_min * f : has(lead.size_value) ? lead.size_value * f : null;
+  const hi = has(lead.size_max) ? lead.size_max * f : has(lead.size_value) ? lead.size_value * f : null;
+  const have = g === 'land' || og === 'land' ? owner.plot_sqm : owner.built_sqm;
+  if (lo == null && hi == null) { score += 30; chips.push({ t: 'בלי הגבלת שטח', k: 'ok' }); }
+  else if (!has(have) || !(+have > 0)) { score += 15; chips.push({ t: 'שטח הנכס לא צוין', k: 'warn' }); }
+  else {
+    // a single number keeps the old tolerance (−10%…+30%); a range must contain the property
+    const single = lo != null && hi != null && lo === hi;
+    const okLo = single ? lo * 0.9 : lo, okHi = single ? hi * 1.3 : hi;
+    const nearLo = single ? lo * 0.75 : lo == null ? null : lo * 0.75, nearHi = single ? hi * 1.6 : hi == null ? null : hi * 1.25;
+    const inside = (x, a, b) => (a == null || x >= a - 1e-9) && (b == null || x <= b + 1e-9);
+    const ref = single ? lo : null, diff = ref ? Math.round((have / ref - 1) * 1000) / 1000 : 0, pct = Math.round(Math.abs(diff) * 100);
+    const sizeText = single ? (pct < 3 ? 'שטח מדויק' : diff > 0 ? `גדול ב-${pct}%` : `קטן ב-${pct}%`)
+      : inside(have, lo, hi) ? 'בטווח השטח' : have < (lo ?? 0) ? 'קטן מהטווח' : 'גדול מהטווח';
+    if (inside(have, okLo, okHi)) { score += 30; chips.push({ t: sizeText, k: 'ok' }); }
+    else if (inside(have, nearLo, nearHi)) { score += 15; near++; chips.push({ t: sizeText, k: 'near' }); }
+    else return null;
+  }
+  // budget, in ₪ (USD at a fixed rate); no budget → no limit
   let missing = false;
-  if (price == null) { missing = true; chips.push({ t: 'חסרה שכירות מבוקשת', k: 'warn' }); }
-  else if (price <= budget * 1.0001) { score += 30; chips.push({ t: 'בתקציב' + usd, k: 'ok' }); }
-  else if (price <= budget * 1.15) { score += 15; near++; chips.push({ t: `מעל התקציב ב-${Math.max(1, Math.ceil((price / budget - 1) * 100))}%${usd}`, k: 'near' }); }
-  else return null;
+  if (!has(lead.budget_value) || !(+lead.budget_value > 0)) { score += 30; chips.push({ t: 'בלי הגבלת תקציב', k: 'ok' }); }
+  else {
+    const budget = lead.budget_value * (lead.budget_currency === 'USD' ? USD_RATE : 1);
+    const total = owner.deal_kind === 'rent' ? owner.asking_rent : owner.asking_price;
+    const per = lead.budget_kind === 'per_sqm';
+    const price = has(total) && +total > 0 && (!per || +owner.built_sqm > 0) ? (per ? total / owner.built_sqm : total) : null;
+    const usd = lead.budget_currency === 'USD' ? ` (לפי $1 = ₪${USD_RATE})` : '';
+    if (price == null) { missing = true; chips.push({ t: owner.deal_kind === 'rent' ? 'חסרה שכירות מבוקשת' : 'חסר מחיר', k: 'warn' }); }
+    else if (price <= budget * 1.0001) { score += 30; chips.push({ t: 'בתקציב' + usd, k: 'ok' }); }
+    else if (price <= budget * 1.15) { score += 15; near++; chips.push({ t: `מעל התקציב ב-${Math.max(1, Math.ceil((price / budget - 1) * 100))}%${usd}`, k: 'near' }); }
+    else return null;
+  }
   if (near > 1) return null;
   let level = score >= 80 ? 'high' : score >= 60 ? 'good' : 'possible';
   if (missing && level === 'high') level = 'good';
@@ -1806,8 +1985,8 @@ const chipsHTML = (m) => `<span class="chips">${m.chips.map(c => `<span class="m
 function matchItem(m, side, withLead = false) {
   const other = side === 'owner' ? m.owner : m.lead;
   const title = side === 'owner'
-    ? `${withLead ? (m.lead.contact?.name || '') + ' ← ' : ''}${optText(other.purpose_id)} · ${fmt.size(other.built_sqm, 'sqm')} · ${other.address || cityOf(other)}`
-    : `${other.contact?.name || ''} · ${optText(other.purpose_id)} · ${fmt.size(other.size_value, other.size_unit)}`;
+    ? `${withLead ? (m.lead.contact?.name || '') + ' ← ' : ''}${[optText(other.purpose_id), has(other.built_sqm) ? fmt.size(other.built_sqm, 'sqm') : '', other.address || cityOf(other)].filter(Boolean).join(' · ')}`
+    : [other.contact?.name, optText(other.purpose_id), leadSize(other)].filter(Boolean).join(' · ');
   // on the dashboard (withLead) the pair opens the lead – the person to call
   return `<li class="match ${m.near ? 'is-near' : 'lvl-' + m.level}"><a href="${withLead ? `#/m/lead/${m.lead.id}` : `#/m/${side}/${other.id}`}">
     <span class="match-lvl">${m.near ? 'כמעט מתאים' : LEVELS[m.level]}</span>
@@ -2014,7 +2193,7 @@ function matchesView(query = '') {
   const groups = new Map();
   for (const m of list) { if (!groups.has(m.lead.id)) groups.set(m.lead.id, []); groups.get(m.lead.id).push(m); }
   const body = [...groups.values()].map(g => { const l = g[0].lead; return `<li class="ml-group"><a class="ml-lead" href="#/m/lead/${l.id}">${esc(l.contact?.name)}
-    <small>${esc(optText(l.need_id))} · ${esc(optText(l.purpose_id))} · ${fmt.size(l.size_value, l.size_unit)}</small></a>
+    <small>${[optText(l.need_id), optText(l.purpose_id), leadSize(l)].filter(Boolean).map(esc).join(' · ')}</small></a>
     <ul class="match-list">${g.map(m => matchItem(m, 'owner')).join('')}</ul></li>`; }).join('');
   const mount = () => { $('#mf-city').onchange = (e) => go(href({ a: e.target.value })); };
   return { html: `${topbar('התאמות', '#/', 'חזרה לדשבורד')}<div class="content">

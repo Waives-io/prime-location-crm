@@ -20,6 +20,7 @@ for (const [w, h, tag] of [[1440, 900, 'desk'], [390, 844, 'phone']]) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, locale: 'he-IL' });
   page.on('pageerror', e => errors.push(`${tag}: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });
+  await (typeof ctx !== 'undefined' ? ctx : page).route(/govmap.gov.il|proj4js/, (r) => r.abort());
   await page.route('https://tile.openstreetmap.org/**', r => r.fulfill({ status: 204 }));
   await page.goto(BASE); await page.waitForSelector('#login');
   await page.screenshot({ path: SHOTS + `v3-${tag}-login.png` });

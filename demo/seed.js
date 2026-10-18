@@ -125,11 +125,27 @@ window.PL_DEMO_SEED = (todayISO) => {
     { id: uid('f0000000'), module: 'owner', key: 'f_pstatus', label: 'סטטוס נכס', type: 'list', options: ['פעיל', 'פנוי', 'מושכר', 'בתהליך שיווק'], sort: 10, section: 'property', created_at: ts(-200) },
     { id: uid('f0000000'), module: 'owner', key: 'f_occ', label: 'תפוסה %', type: 'number', options: [], sort: 20, section: 'property', created_at: ts(-200) },
     { id: uid('f0000000'), module: 'owner', key: 'f_email', label: 'אימייל איש קשר', type: 'text', options: [], sort: 30, section: 'contact', created_at: ts(-200) },
+    { id: uid('f0000000'), module: 'lead', key: 'f_old', label: 'שדה ישן', type: 'text', options: [], sort: 90, section: 'money', hidden: true, created_at: ts(-200) },
   ];
   const SOURCES = fields[1].options;
   const latin = ['yossi', 'merav', 'david', 'ronit', 'avi', 'noa', 'moshe', 'lior', 'amit', 'shiran', 'oren', 'chen', 'galit', 'refael', 'yael', 'itay', 'sigal', 'barak', 'tal', 'alon', 'maya', 'shimon', 'rotem', 'dana', 'nir', 'efrat', 'chaim', 'orit', 'kobi', 'hadas'];
   const at2 = (off, h, m = 0) => { const d = day(off); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const ageDays = (iso) => Math.round((today - new Date(iso)) / 864e5);
+  // round 2+3 shape: size range, brokers (+ licence), companies (+ ח.פ.), optional fields left empty on some records
+  const contactOf = (d) => contacts.find(c => c.id === d.contact_id);
+  lead.forEach((d, i) => {
+    const sz = d.size_value;
+    d.size_min = i % 3 === 0 ? Math.round(sz * 0.8) : sz;
+    d.size_max = i % 3 === 0 ? Math.round(sz * 1.25) : sz;
+    if (d.size_unit === 'dunam') { d.size_min = i % 3 === 0 ? Math.max(1, sz - 1) : sz; d.size_max = i % 3 === 0 ? sz + 1 : sz; }
+    const c = contactOf(d);
+    if (c.entity_type === 'company') c.company_number = String(514000000 + i * 7919).slice(0, 9);
+    if ([7, 25].includes(i)) { c.entity_type = 'broker'; c.broker_license = String(3141500 + i); c.company_name = null; c.company_number = null; }
+  });
+  // a few leads with optional fields left empty, as Leah may save them now
+  Object.assign(lead[16], { needed_by: null });                     // סיגל אדרי – no deadline
+  Object.assign(lead[29], { budget_value: null, budget_kind: null }); // הדס ויצמן – no budget yet
+  Object.assign(lead[27], { size_value: null, size_min: null, size_max: null, height_m: null }); // אורית מלכה – no size
   lead.forEach((d, i) => {
     const stage = d.status !== 'active' || ageDays(d.updated_at) >= 30 ? 'לא פעיל' : ageDays(d.created_at) <= 7 ? 'חדש' : ['חם', 'בתהליך', 'בתהליך', 'חם', 'בתהליך'][i % 5];
     d.custom = { f_stage: stage, f_source: SOURCES[i % SOURCES.length], f_email: `${latin[i]}@${i % 3 ? 'gmail.com' : 'company.co.il'}` };
@@ -150,6 +166,10 @@ window.PL_DEMO_SEED = (todayISO) => {
     d.cover = `assets/photos/u-${kind}-${used[kind]}.jpg`;           // demo picture when the deal has no photo of its own
     const pstatus = d.status !== 'active' || (d.deal_kind === 'rent' && d.is_rented) ? 'מושכר' : ['פנוי', 'פעיל', 'בתהליך שיווק', 'פנוי', 'פעיל'][i % 5];
     const occ = pstatus === 'מושכר' ? 100 : pstatus === 'פנוי' ? 0 : [95, 75, 40, 88, 60][i % 5];
+    if (i % 4 === 0) d.notes = ['גמיש במחיר לשוכר לטווח ארוך', 'אפשר לחלק לשתי יחידות', 'הבעלים מעדיף עסקה עד סוף השנה'][i % 3];
+    if (d.deal_kind === 'sale' && i % 5 === 2) { d.is_rented = true; d.monthly_rent = Math.round(d.asking_price * 0.065 / 12 / 100) * 100;
+      d.yield_pct = Math.round(d.monthly_rent * 12 / d.asking_price * 10000) / 100; }   // sold with a tenant (round 2: rent + yield for sale too)
+    const oc = contactOf(d); if (oc.entity_type === 'company') oc.company_number = String(515000000 + i * 6007).slice(0, 9);
     d.custom = { f_pstatus: pstatus, f_occ: occ, f_email: `${['info', 'office', 'nadlan', 'invest'][i % 4]}@${['dahan', 'gross', 'shemesh', 'yifrach', 'karmi'][i % 5]}.co.il` };
     d.log = [];
     d.tasks = d.status !== 'active' ? [] : [

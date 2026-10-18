@@ -22,7 +22,8 @@ const BASE = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: 'he-IL' });
 await ctx.route(/supabase/, (r) => { throw new Error('demo must never call Supabase: ' + r.request().url()); });
-await ctx.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
+await (typeof ctx !== 'undefined' ? ctx : page).route(/govmap.gov.il|proj4js/, (r) => r.abort());
+  await ctx.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
 await ctx.route('https://nominatim.openstreetmap.org/**', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ display_name: 'אזור התעשייה, קריית גת', address: { industrial: 'אזור התעשייה', city: 'קריית גת' } }) }));
 const page = await ctx.newPage();
 const errors = [];
@@ -33,6 +34,7 @@ let pass = 0;
 const ok = (n) => { pass++; console.log('  ✓', n); };
 const shot = async (name, full = false) => { if (shots) { await mkdir(SHOTS, { recursive: true }); await page.waitForTimeout(400); await page.screenshot({ path: SHOTS + 'demo-' + name + '.png', fullPage: full }); } };
 const text = (sel) => page.locator(sel).innerText();
+const fill = async (sel, v) => { await page.fill(sel, v); await page.locator(sel).blur(); };
 const keys = () => page.evaluate(() => Object.keys(localStorage).sort());
 
 try {
@@ -206,6 +208,54 @@ try {
   await page.click('#tune-panel [data-t=reset]');
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.mod-kpis');
   ok('colour tool: only with ?tune; a light card colour switches the text to dark; "ברירת מחדל" restores');
+
+  /* ── Leah's rounds 2 + 3 in the demo ── */
+  // owners: no broker choice (leads have it)
+  await page.goto(BASE + '#/m/owner/new'); await page.waitForSelector('#deal-form');
+  assert.equal(await page.locator('label:has(> input[name=entity_type][value=broker])').isVisible(), false);
+  await page.goto(BASE + '#/m/lead/new'); await page.waitForSelector('#deal-form');
+  assert.equal(await page.locator('label:has(> input[name=entity_type][value=broker])').isVisible(), true);
+  ok('round 2: owners show only פרטי / חברה; leads also offer מתווך');
+  // a lead with only phone + name: saves, and nothing on the screens shows NaN / undefined
+  await fill('#phone', '052-5559911'); await fill('#name', 'בדיקה ריקה');
+  await page.click('#save'); await page.waitForSelector('.card-head');
+  assert.ok(!/NaN|undefined|null/.test(await page.locator('.content').innerText()));
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('.lead-table'); await page.selectOption('#l-quick', 'all'); await page.fill('#lq', 'בדיקה ריקה');
+  await page.locator('#l-rows tr[data-id]').first().click();
+  assert.ok(!/NaN|undefined/.test(await page.locator('.content.mod').innerText()));
+  await page.fill('#lq', ''); assert.ok(!/NaN|undefined/.test(await page.locator('.mod-kpis').innerText()));
+  await page.goto(BASE + '#/matches'); await page.waitForSelector('.match-filters');
+  assert.ok(!/NaN|undefined/.test(await page.locator('.content').innerText()));
+  ok('round 2: a lead with only phone + name saves; table, panel, metrics and matches show no NaN / undefined');
+  // size range: a 900–1,300 m² storage renter matches a 1,300 m² warehouse ("בטווח השטח")
+  await page.goto(BASE + '#/m/lead/new'); await page.waitForSelector('#deal-form');
+  await fill('#phone', '052-5559912'); await fill('#name', 'טווח שטח');
+  const needRent = await page.evaluate(() => S.data.options.find(o => o.list_key === 'lead_need' && o.value === 'לשכור').id);
+  const purStore = await page.evaluate(() => S.data.options.find(o => o.list_key === 'lead_purpose' && o.value === 'מחסן').id);
+  await page.selectOption('#need_id', needRent); await page.selectOption('#purpose_id', purStore);
+  await fill('#size_min', '900'); await fill('#size_max', '1300');
+  await page.click('#save'); await page.waitForSelector('.card-head');
+  assert.match(await page.locator('.dl').innerText(), /900–1,300 מ״ר/);
+  assert.match(await page.locator('.card-matches').innerText(), /בטווח השטח/);
+  ok('round 2: size range saved ("900–1,300 מ״ר" on the card) and matched by range ("בטווח השטח")');
+  // "הסרת השדה": an added field disappears from the form, its saved values stay
+  await page.goto(BASE + '#/m/lead/new'); await page.waitForSelector('#deal-form');
+  await page.locator('.add-field[data-section="money"]').click(); await fill('#nf_label', 'שדה לבדיקה'); await page.click('#nf_save');
+  await page.waitForSelector('[data-field^="cf_"] label:has-text("שדה לבדיקה")');
+  await page.locator('[data-field^="cf_"]:has(label:has-text("שדה לבדיקה")) .cf-remove').click();
+  await page.click('#dlg [data-a=yes]'); await page.waitForSelector('#toast.show:has-text("הוסר")');
+  assert.equal(await page.locator('label:has-text("שדה לבדיקה")').count(), 0);
+  assert.equal(await page.evaluate(() => S.data.fields.find(f => f.label === 'שדה לבדיקה').hidden), true);
+  await page.reload(); await page.waitForSelector('#deal-form');
+  assert.equal(await page.locator('label:has-text("שדה לבדיקה")').count(), 0);
+  ok('round 3: "הסרת השדה" hides an added field (kept hidden after a reload)');
+  // owner card: "הערכת מחיר" after the areas, owner notes shown
+  const withNotes = await page.evaluate(() => S.data.owner.find(o => o.notes && o.status === 'active').id);
+  await page.goto(BASE + '#/m/owner/' + withNotes); await page.waitForSelector('.card-head');
+  const dl = await page.locator('.dl').innerText();
+  assert.ok(dl.indexOf('הערכת מחיר') > dl.indexOf('שטח מגרש'));
+  assert.match(dl, /הערות/);
+  ok('round 3: owner card shows "הערכת מחיר" after the areas and the owner notes');
 
   /* ── persistence, reset, storage isolation ── */
   await page.goto(BASE + '#/m/lead'); await page.reload(); await page.waitForSelector('.lead-table');

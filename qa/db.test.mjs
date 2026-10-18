@@ -8,6 +8,8 @@ const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 
 const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.meta.url), 'utf8').replace('LEAH_EMAIL@example.com', 'leah2@example.com');
 const migration3 = readFileSync(new URL('../supabase/003_dashboard.sql', import.meta.url), 'utf8');
 const photosSql = readFileSync(new URL('../supabase/004_photos.sql', import.meta.url), 'utf8');
+const round2Sql = readFileSync(new URL('../supabase/005_round2.sql', import.meta.url), 'utf8');
+const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -36,6 +38,9 @@ await db.exec(migration);
 await db.exec(migration); // idempotent re-run
 await db.exec(photosSql);
 await db.exec(photosSql); // idempotent re-run
+await db.exec(round2Sql);
+await db.exec(round2Sql); // idempotent re-run
+await db.exec(removeSql); await db.exec(removeSql);
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -144,10 +149,14 @@ await as('authenticated', LEAH, async () => {
   const od = (await q('select yield_pct::float y, ai_price_per_sqm a from owner_deals where id=$1', [ro.id]))[0];
   assert.equal(od.y, 6.4); assert.equal(od.a, null);
   ok('owner rent + rented → yield 6.4%, no estimate stored for rent');
-  const rs = (await q('select save_owner_deal($1::jsonb) r', [{ ...own, deal_kind: 'sale', monthly_rent: 1 }]))[0].r;
+  const rs = (await q('select save_owner_deal($1::jsonb) r', [{ ...own, deal_kind: 'sale', is_rented: false, monthly_rent: 1 }]))[0].r;
   const sd = (await q('select is_rented, monthly_rent, yield_pct, ai_price_per_sqm::int a from owner_deals where id=$1', [rs.id]))[0];
-  assert.deepEqual(sd, { is_rented: null, monthly_rent: null, yield_pct: null, a: 5000 });
-  ok('owner sale → rent fields cleared, estimate stored');
+  assert.deepEqual(sd, { is_rented: false, monthly_rent: null, yield_pct: null, a: 5000 });
+  ok('owner sale, not rented → no rent, estimate stored');
+  const rs2 = (await q('select save_owner_deal($1::jsonb) r', [{ ...own, contact: { ...own.contact, phone: '0527770004' }, deal_kind: 'sale', is_rented: true, monthly_rent: 16000 }]))[0].r;
+  const sd2 = (await q('select is_rented, monthly_rent::int m, yield_pct::float y from owner_deals where id=$1', [rs2.id]))[0];
+  assert.deepEqual(sd2, { is_rented: true, m: 16000, y: 6.4 });
+  ok('005: sale + rented → monthly rent kept and yield computed');
 
   const o1 = (await q(`select (add_option('lead_need','לחכור')).*`))[0];
   const o2 = (await q(`select (add_option('lead_need','לחכור')).*`))[0];
@@ -226,7 +235,7 @@ await as('authenticated', LEAH, async () => {
   assert.equal((await q(`select count(*)::int n from storage.objects where bucket_id='deal-photos'`))[0].n, 1);
   ok('004: member can upload and see photos in the private bucket');
   await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, JSON.stringify([{ ...ph(1), local: '"><img src=x onerror=alert(1)>', w: '1600' }])]);
-  assert.deepEqual((await q('select photos from lead_deals where id=$1', [did]))[0].photos, [{ path: ph(1).path, thumb: ph(1).thumb, w: 1600, h: 1200 }]);
+  assert.deepEqual((await q('select photos from lead_deals where id=$1', [did]))[0].photos, [{ kind: 'image', path: ph(1).path, thumb: ph(1).thumb, w: 1600, h: 1200 }]);
   ok('004: only path/thumb/w/h are stored (extra fields like an HTML payload are dropped)');
   assert.equal((await q('delete from storage.objects where name=$1 returning id', [ph(1).path])).length, 0);
   await q('select set_deal_photos($1,$2,$3::jsonb)', ['lead', did, '[]']);
@@ -247,4 +256,106 @@ await as('anon', null, async () => {
 });
 ok('004: anon and logged-in non-members cannot see, upload, delete photos or call set_deal_photos');
 
+// ───────── 005 round 2 ─────────
+await as('authenticated', LEAH, async () => {
+  const r = (await q('select save_lead_deal($1::jsonb) r', [{ contact: { phone: '0529990001', name: 'רק שם וטלפון', entity_type: 'private' } }]))[0].r;
+  const l = (await q('select need_id, size_min, lat, needed_by, size_unit from lead_deals where id=$1', [r.id]))[0];
+  assert.deepEqual(l, { need_id: null, size_min: null, lat: null, needed_by: null, size_unit: 'sqm' });
+  const o = (await q('select save_owner_deal($1::jsonb) r', [{ contact: { phone: '0529990002', name: 'בעלים בלבד', entity_type: 'private' } }]))[0].r;
+  const od = (await q('select purpose_id, deal_kind, asking_price, yield_pct from owner_deals where id=$1', [o.id]))[0];
+  assert.deepEqual(od, { purpose_id: null, deal_kind: null, asking_price: null, yield_pct: null });
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: { phone: '0529990003', name: '  ', entity_type: 'private' } }]), /check constraint/);
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: { phone: '123', name: 'x', entity_type: 'private' } }]), /10 ספרות/);
+  ok('005: a deal saves with phone + name only (lead and owner); phone and name still required');
+
+  const b = (await q('select save_lead_deal($1::jsonb) r', [{ contact: { phone: '0529990004', name: 'דני מתווך', entity_type: 'broker', broker_license: ' 12345 ' } }]))[0].r;
+  assert.deepEqual((await q('select entity_type, broker_license, company_name from contacts where id=$1', [b.contact_id]))[0], { entity_type: 'broker', broker_license: '12345', company_name: null });
+  const cpy = (await q('select save_lead_deal($1::jsonb) r', [{ contact: { phone: '0529990005', name: 'רוני', entity_type: 'company', company_name: 'חברה בע"מ', company_number: '515555555' } }]))[0].r;
+  await q('select save_lead_deal($1::jsonb)', [{ contact: { phone: '0529990005', name: 'רוני', entity_type: 'company', company_name: 'חברה בע"מ' } }]); // older client: no company_number key
+  assert.equal((await q('select company_number from contacts where id=$1', [cpy.contact_id]))[0].company_number, '515555555');
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: { phone: '0529990006', name: 'x', entity_type: 'company', company_name: '' } }]), /check constraint/);
+  ok('005: broker with optional licence; company name required, ח.פ. optional and kept when an older app saves');
+
+  const rid = '55555555-5555-4555-8555-555555555555';
+  await q('select save_lead_deal($1::jsonb)', [{ id: rid, contact: { phone: '0529990007', name: 'טווח', entity_type: 'private' }, size_min: 500, size_max: 800, size_unit: 'sqm' }]);
+  await q('select save_lead_deal($1::jsonb)', [{ id: rid, contact: { phone: '0529990007', name: 'טווח', entity_type: 'private' }, size_value: 500, size_unit: 'sqm' }]); // older client
+  assert.deepEqual((await q('select size_min::int a, size_max::int b, size_value::int v from lead_deals where id=$1', [rid]))[0], { a: 500, b: 800, v: 500 });
+  await q('select save_lead_deal($1::jsonb)', [{ id: rid, contact: { phone: '0529990007', name: 'טווח', entity_type: 'private' }, size_min: 2, size_max: null, size_unit: 'dunam' }]);
+  assert.deepEqual((await q('select size_min_sqm::int a, size_max_sqm b from lead_deals where id=$1', [rid]))[0], { a: 2000, b: null });
+  for (const bad of [{ size_min: -1 }, { size_min: 0 }, { size_min: 900, size_max: 800 }]) {
+    await fails(() => q('select save_lead_deal($1::jsonb)', [{ id: rid, contact: { phone: '0529990007', name: 'טווח', entity_type: 'private' }, ...bad }]), /check constraint/);
+  }
+  const old = (await q(`select size_min::int a, size_max::int b from lead_deals where id='d1000000-0000-4000-8000-000000000004'`))[0];
+  assert.deepEqual(old, { a: 2, b: 2 });
+  ok('005: size range (one side is enough, dunam → m²); an older app never collapses a range; no negative / zero / reversed; old rows backfilled');
+
+  await q('select save_owner_deal($1::jsonb)', [{ id: o.id, contact: { phone: '0529990002', name: 'בעלים בלבד', entity_type: 'private' }, notes: 'הערה' }]);
+  await q('select save_owner_deal($1::jsonb)', [{ id: o.id, contact: { phone: '0529990002', name: 'בעלים בלבד', entity_type: 'private' } }]); // older client
+  assert.equal((await q('select notes from owner_deals where id=$1', [o.id]))[0].notes, 'הערה');
+  ok('005: owner notes; kept when an older app saves');
+
+  const vid = { kind: 'video', path: `${o.id}/0000000a-aaaa-4aaa-8aaa-aaaaaaaaaaaa.mp4`, thumb: `${o.id}/0000000a-aaaa-4aaa-8aaa-aaaaaaaaaaaa_t.jpg`, w: 1920, h: 1080 };
+  const img = { path: `${o.id}/0000000b-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`, thumb: `${o.id}/0000000b-aaaa-4aaa-8aaa-aaaaaaaaaaaa_t.jpg`, w: 10, h: 10 };
+  await q('select set_deal_photos($1,$2,$3::jsonb)', ['owner', o.id, JSON.stringify([vid, img])]);
+  assert.deepEqual((await q('select photos from owner_deals where id=$1', [o.id]))[0].photos.map(x => x.kind), ['video', 'image']);
+  await fails(() => q('select set_deal_photos($1,$2,$3::jsonb)', ['owner', o.id, JSON.stringify([{ ...img, kind: 'video' }])]), /נתיב/);
+  ok('005: media items carry a kind; video paths accepted by the RPC (uploads stay image-only until the bucket allows video)');
+});
+
+// ───────── 005: older app versions never destroy round-2 data ─────────
+await as('authenticated', LEAH, async () => {
+  const C = (phone, extra = {}) => ({ phone, name: 'בדיקת גרסה', entity_type: 'private', ...extra });
+  const oid1 = '66666666-6666-4666-8666-666666666661';
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, id: oid1, contact: { v: 2, ...C('0528880001') }, size_min: 500, size_max: null, size_unit: 'sqm' }]);
+  await q('select save_lead_deal($1::jsonb)', [{ id: oid1, contact: C('0528880001'), size_value: 500, size_unit: 'sqm' }]); // older app
+  assert.deepEqual((await q('select size_min::int a, size_max b from lead_deals where id=$1', [oid1]))[0], { a: 500, b: null });
+  ok('005: an older app keeps a one-sided range ("מ־500") as it is');
+
+  const oid2 = '66666666-6666-4666-8666-666666666662';
+  await q('select save_owner_deal($1::jsonb)', [{ v: 2, id: oid2, contact: { v: 2, ...C('0528880002') }, deal_kind: 'sale', asking_price: 3000000, is_rented: true, monthly_rent: 15000 }]);
+  await q('select save_owner_deal($1::jsonb)', [{ id: oid2, contact: C('0528880002'), deal_kind: 'sale', asking_price: 3000000, is_rented: null, monthly_rent: null }]); // older app
+  assert.deepEqual((await q('select is_rented, monthly_rent::int m, yield_pct::float y from owner_deals where id=$1', [oid2]))[0], { is_rented: true, m: 15000, y: 6 });
+  await q('select save_owner_deal($1::jsonb)', [{ v: 2, id: oid2, contact: { v: 2, ...C('0528880002') }, deal_kind: 'sale', asking_price: 3000000, is_rented: false }]);
+  assert.deepEqual((await q('select is_rented, monthly_rent from owner_deals where id=$1', [oid2]))[0], { is_rented: false, monthly_rent: null });
+  ok('005: an older app keeps rent + yield of a sale; the new app can still change them');
+
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, contact: { v: 2, ...C('0528880003', { entity_type: 'broker', broker_license: '777' }) } }]);
+  await q('select save_lead_deal($1::jsonb)', [{ contact: C('0528880003', { entity_type: '' }) }]); // older app: no broker choice
+  assert.deepEqual((await q(`select entity_type, broker_license from contacts where phone='052-8880003'`))[0], { entity_type: 'broker', broker_license: '777' });
+  await q('select save_lead_deal($1::jsonb)', [{ v: 2, contact: { v: 2, ...C('0528880003') } }]); // new app: broker → private on purpose
+  assert.deepEqual((await q(`select entity_type, broker_license from contacts where phone='052-8880003'`))[0], { entity_type: 'private', broker_license: null });
+  ok('005: an older app keeps a broker a broker (and the licence); the new app can still change it');
+});
+
+// ───────── 005 on a database whose constraints have other names ─────────
+{
+  const db2 = new PGlite();
+  await db2.exec(`
+    create schema auth; create table auth.users (id uuid primary key, email text);
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create role anon nologin; create role authenticated nologin;
+    create schema storage;
+    create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);`);
+  await db2.exec(schema); await db2.exec(migration); await db2.exec(photosSql);
+  const cons = (await db2.query(`select conname, conrelid::regclass::text t from pg_constraint where contype='c' and conrelid in ('public.contacts'::regclass, 'public.owner_deals'::regclass)`)).rows;
+  let k = 0;
+  for (const c of cons) await db2.exec(`alter table ${c.t} rename constraint "${c.conname}" to "renamed_${k++}"`);
+  await db2.exec(round2Sql);
+  await db2.exec(`insert into public.contacts (phone, name, entity_type) values ('050-7770001', 'מתווך', 'broker')`);
+  await assert.rejects(db2.exec(`insert into public.contacts (phone, name, entity_type) values ('050-7770002', 'x', 'company')`), /check constraint/);
+  await db2.exec(`insert into public.owner_deals (contact_id, deal_kind, is_rented, monthly_rent) select id, 'sale', true, 9000 from public.contacts where phone='050-7770001'`);
+  await assert.rejects(db2.exec(`insert into public.owner_deals (contact_id, is_rented, monthly_rent) select id, false, 9000 from public.contacts where phone='050-7770001'`), /check constraint/);
+  ok('005 on a copy where every check constraint has another name: old rules replaced, new rules active');
+}
+
+await as('authenticated', LEAH, async () => {
+  const f = (await q("insert into custom_fields (module,label,type) values ('owner','ח.פ','text') returning id"))[0];
+  await q('update custom_fields set hidden = true where id=$1', [f.id]);
+  assert.equal((await q('select hidden from custom_fields where id=$1', [f.id]))[0].hidden, true);
+});
+await as('authenticated', OTHER, async () => {
+  assert.equal((await q("update custom_fields set hidden = false returning id")).length, 0);
+});
+ok('006: a member can remove (hide) an added field; a non-member cannot touch fields');
 console.log(`\nDB tests passed: ${pass}`);

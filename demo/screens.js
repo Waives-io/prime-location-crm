@@ -44,7 +44,7 @@
   const initials = (name) => String(name || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('');
   const money = (n, cur) => fmt.ltr(fmt.money(n, cur));
   const short = (n) => n >= 1e6 ? `₪${fmt.num(Math.round(n / 1e5) / 10)}M` : `₪${fmt.num(Math.round(n))}`;
-  const budgetText = (d) => d.budget_kind === 'per_sqm' ? `${fmt.money(d.budget_value, d.budget_currency)} למ״ר` : `${d.budget_currency === 'USD' ? '$' : '₪'}${fmt.num(d.budget_value >= 1e6 ? Math.round(d.budget_value / 1e5) / 10 : d.budget_value)}${d.budget_value >= 1e6 ? 'M' : ''}`;
+  const budgetText = (d) => !has(d.budget_value) ? '—' : d.budget_kind === 'per_sqm' ? `${fmt.money(d.budget_value, d.budget_currency)} למ״ר` : `${d.budget_currency === 'USD' ? '$' : '₪'}${fmt.num(d.budget_value >= 1e6 ? Math.round(d.budget_value / 1e5) / 10 : d.budget_value)}${d.budget_value >= 1e6 ? 'M' : ''}`;
   const lastContact = (d) => [d.updated_at, ...(d.log || []).map(n => n.at)].filter(Boolean).sort().at(-1);
   const when = (iso) => {
     const n = daysFrom(iso), t = new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
@@ -196,7 +196,7 @@
     return `<div class="dp" data-id="${d.id}">
       <div class="dp-head"><h2>פרטי מתעניין</h2><button type="button" class="icon-btn" data-dp="close" aria-label="סגירת הפרטים">${I('x')}</button></div>
       <div class="who"><span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span>
-        <div><strong>${esc(c.name)}</strong><small>${c.entity_type === 'company' ? esc(c.company_name) : 'לקוח פרטי'}</small></div>${stageChip(cf(d, 'f_stage'))}</div>
+        <div><strong>${esc(c.name)}</strong><small>${c.entity_type === 'company' ? esc(c.company_name) : c.entity_type === 'broker' ? `מתווך${c.broker_license ? ' · רישיון ' + esc(c.broker_license) : ''}` : 'לקוח פרטי'}</small></div>${stageChip(cf(d, 'f_stage'))}</div>
       <ul class="contact-lines">
         <li>${I('phone', 'sm')}<a href="${Phone.tel(c.phone)}">${fmt.ltr(c.phone)}</a><a class="wa" href="${Phone.wa(c.phone)}" target="_blank" rel="noopener">${I('chat', 'sm')} שלח הודעה</a></li>
         ${cf(d, 'f_email') ? `<li>${I('mail', 'sm')}<a href="mailto:${esc(cf(d, 'f_email'))}">${fmt.ltr(cf(d, 'f_email'))}</a></li>` : ''}
@@ -204,12 +204,12 @@
       </ul>
       ${cf(d, 'f_source') ? `<p class="source"><b>מקור הגעה:</b> ${esc(cf(d, 'f_source'))}</p>` : ''}
       <section class="dp-sec prefs"><div class="dp-sec-head"><h3>העדפות וחיפוש</h3>${I('building', 'muted')}</div><dl>
-        <dt>צורך</dt><dd>${esc(optText(d.need_id))}</dd>
-        <dt>סוג נכס</dt><dd>${esc(optText(d.purpose_id))}</dd>
-        <dt>אזור</dt><dd>${esc(cityOf(d))} · רדיוס ${fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ')}</dd>
+        <dt>צורך</dt><dd>${esc(optText(d.need_id)) || '—'}</dd>
+        <dt>סוג נכס</dt><dd>${esc(optText(d.purpose_id)) || '—'}</dd>
+        <dt>אזור</dt><dd>${has(d.lat) ? `${esc(cityOf(d))}${has(d.radius_m) ? ` · רדיוס ${fmt.bi(fmt.num(d.radius_m / 1000) + ' ק״מ')}` : ''}` : '—'}</dd>
         <dt>תקציב</dt><dd>${fmt.ltr(budgetText(d))}</dd>
-        <dt>שטח מבוקש</dt><dd>${fmt.bi(fmt.size(d.size_value, d.size_unit))}</dd>
-        <dt>מועד כניסה</dt><dd>${soon ? dateBadge(d.needed_by, dueTone(d), dueWord(daysFrom(d.needed_by))) : fmt.ltr(fmt.date(d.needed_by))}</dd>
+        <dt>שטח מבוקש</dt><dd>${leadSize(d) ? fmt.bi(leadSize(d)) : '—'}</dd>
+        <dt>דדליין</dt><dd>${soon ? dateBadge(d.needed_by, dueTone(d), dueWord(daysFrom(d.needed_by))) : d.needed_by ? fmt.ltr(fmt.date(d.needed_by)) : '—'}</dd>
         ${d.notes ? `<dt>הערות</dt><dd>${esc(d.notes)}</dd>` : ''}
       </dl></section>
       <section class="dp-sec"><h3>פעולות מהירות</h3><div class="quick">
@@ -273,7 +273,7 @@
         tb.innerHTML = slice.length ? slice.map(d => { const c = d.contact || {}, bm = bestMatch(d), due = d.status === 'active' && d.needed_by && daysFrom(d.needed_by) <= 7;
           return `<tr data-id="${d.id}" tabindex="0" ${s.sel === d.id ? 'aria-selected="true"' : ''}>
             <th scope="row"><span class="avatar sm" aria-hidden="true">${esc(initials(c.name))}</span><span class="nm">${esc(c.name)}</span>${due ? dateBadge(d.needed_by, dueTone(d), dueWord(daysFrom(d.needed_by))) : ''}</th>
-            <td>${c.entity_type === 'company' ? 'חברה' : 'לקוח פרטי'}</td><td>${esc(cityOf(d))}</td><td>${fmt.ltr(budgetText(d))}</td>
+            <td>${c.entity_type === 'company' ? 'חברה' : c.entity_type === 'broker' ? 'מתווך' : 'לקוח פרטי'}</td><td>${esc(cityOf(d))}</td><td>${fmt.ltr(budgetText(d))}</td>
             <td>${esc(MATCH_GROUPS[optGroup(d.purpose_id)] || optText(d.purpose_id))}</td>
             <td>${bm ? `<span class="score lvl-${bm.level}">${pct(bm.score)}</span>` : '<span class="score none">—</span>'}</td>
             <td>${stageChip(cf(d, 'f_stage'))}</td><td>${esc(cf(d, 'f_source'))}</td><td class="when">${lastContact(d) ? when(lastContact(d)) : ''}</td>
@@ -304,9 +304,9 @@
   /* ═════════ נכסים ═════════ */
   const SIZES = { s1: 'עד 200 מ״ר', s2: '200–1,000 מ״ר', s3: '1,000–3,000 מ״ר', s4: 'מעל 3,000 מ״ר' };
   const PRICES = { rent: 'להשכרה', s5: 'למכירה עד ₪5M', s20: 'למכירה ₪5M–₪20M', smax: 'למכירה מעל ₪20M' };
-  const priceText = (d) => d.deal_kind === 'rent'
-    ? (d.asking_rent ? `${fmt.money(Math.round(d.asking_rent / d.built_sqm))} למ״ר` : 'שכירות לפי בקשה')
-    : `${fmt.money(Math.round(d.asking_price / d.built_sqm))} למ״ר`;
+  const priceText = (d) => !(+d.built_sqm > 0) ? '—' : d.deal_kind === 'rent'
+    ? (+d.asking_rent > 0 ? `${fmt.money(Math.round(d.asking_rent / d.built_sqm))} למ״ר` : 'שכירות לפי בקשה')
+    : +d.asking_price > 0 ? `${fmt.money(Math.round(d.asking_price / d.built_sqm))} למ״ר` : '—';
   function propRows() {
     const s = st.owner, q = s.q.trim().toLowerCase();
     const rows = deals('owner').filter(d => {
@@ -316,13 +316,13 @@
     }).filter(d => (!s.city || cityOf(d) === s.city) && (!s.g || optGroup(d.purpose_id) === s.g)
       && (!s.size || ({ s1: d.built_sqm <= 200, s2: d.built_sqm > 200 && d.built_sqm <= 1000, s3: d.built_sqm > 1000 && d.built_sqm <= 3000, s4: d.built_sqm > 3000 })[s.size])
       && (!s.price || (s.price === 'rent' ? d.deal_kind === 'rent' : d.deal_kind === 'sale' && ({ s5: d.asking_price <= 5e6, s20: d.asking_price > 5e6 && d.asking_price <= 2e7, smax: d.asking_price > 2e7 })[s.price])));
-    const key = { updated: (d) => lastTouch(d), size: (d) => String(d.built_sqm).padStart(8, '0'), price: (d) => String(Math.round(d.asking_price)).padStart(12, '0'), occ: (d) => String(cf(d, 'f_occ') || 0).padStart(3, '0') }[s.sort];
+    const key = { updated: (d) => lastTouch(d), size: (d) => String(+d.built_sqm || 0).padStart(8, '0'), price: (d) => String(Math.round(+d.asking_price || 0)).padStart(12, '0'), occ: (d) => String(cf(d, 'f_occ') || 0).padStart(3, '0') }[s.sort];
     return rows.sort((a, b) => String(key(b)).localeCompare(String(key(a))));
   }
-  const tags = (d) => [MATCH_GROUPS[optGroup(d.purpose_id)] || optText(d.purpose_id), d.deal_kind === 'rent' ? 'להשכרה' : 'למכירה', d.is_rented ? `מושכר · תשואה ${fmt.pct(d.yield_pct)}` : '', d.plot_sqm > d.built_sqm * 1.3 ? 'חצר תפעולית' : '']
+  const tags = (d) => [MATCH_GROUPS[optGroup(d.purpose_id)] || optText(d.purpose_id), d.deal_kind === 'rent' ? 'להשכרה' : d.deal_kind === 'sale' ? 'למכירה' : '', d.is_rented ? (has(d.yield_pct) ? `מושכר · תשואה ${fmt.pct(d.yield_pct)}` : 'מושכר') : '', d.plot_sqm > d.built_sqm * 1.3 ? 'חצר תפעולית' : '']
     .filter(Boolean).map(t => `<span class="tag">${esc(t)}</span>`).join('');
   const stats = (d) => { const occ = +cf(d, 'f_occ') || 0;
-    return `<div class="pstats"><div><span>שטח</span><b>${fmt.bi(fmt.size(d.built_sqm, 'sqm'))}</b></div>
+    return `<div class="pstats"><div><span>שטח</span><b>${has(d.built_sqm) ? fmt.bi(fmt.size(d.built_sqm, 'sqm')) : '—'}</b></div>
       <div><span>מחיר</span><b>${fmt.ltr(priceText(d))}</b></div>
       <div><span>תפוסה</span><b>${pct(occ)}</b><i class="occ" aria-hidden="true"><i style="width:${occ}%"></i></i></div></div>`; };
   const updated = (d) => { const n = -daysFrom(lastTouch(d)); return n <= 0 ? 'עודכן היום' : n === 1 ? 'עודכן אתמול' : `עודכן לפני ${n} ימים`; };
@@ -334,6 +334,7 @@
       <p class="addr">${I('pin', 'sm')} ${esc(d.address)}</p>
       ${stats(d)}<div class="tags">${tags(d)}</div>
       ${d.description ? `<p class="desc">${esc(d.description)}</p>` : ''}
+      ${d.notes ? `<p class="desc"><b>הערות:</b> ${esc(d.notes)}</p>` : ''}
       <section class="dp-sec"><div class="dp-sec-head"><h3>פרטי בעלות / איש קשר</h3>${I('users', 'muted')}</div>
         <div class="owner-box"><strong>${esc(c.name)}</strong>${c.company_name ? `<small>${esc(c.company_name)}</small>` : ''}
           <span class="ob-line">${I('phone', 'sm')}<a href="${Phone.tel(c.phone)}">${fmt.ltr(c.phone)}</a></span>
@@ -394,7 +395,7 @@
                 ${stats(d)}<div class="tags">${tags(d)}</div><div class="pc-foot-row"><p class="pc-foot">${updated(d)}</p>${rowAct(d)}</div></div></article>`
           : `<article class="prow" data-id="${d.id}" tabindex="0" ${s.sel === d.id ? 'aria-selected="true"' : ''}>${img(d, 'row-thumb')}
               <div><h3>${esc(optText(d.purpose_id))}, ${esc(cityOf(d))}</h3><p class="addr">${esc(d.address)}</p></div>
-              ${pChip(cf(d, 'f_pstatus'))}<span>${fmt.bi(fmt.size(d.built_sqm, 'sqm'))}</span><span>${fmt.ltr(priceText(d))}</span><span>${pct(+cf(d, 'f_occ') || 0)}</span><span class="pc-foot">${updated(d)}</span>${rowAct(d)}</article>`).join('')
+              ${pChip(cf(d, 'f_pstatus'))}<span>${has(d.built_sqm) ? fmt.bi(fmt.size(d.built_sqm, 'sqm')) : '—'}</span><span>${fmt.ltr(priceText(d))}</span><span>${pct(+cf(d, 'f_occ') || 0)}</span><span class="pc-foot">${updated(d)}</span>${rowAct(d)}</article>`).join('')
           : `<p class="state">${s.q ? `לא נמצאו נכסים ל־"${esc(s.q)}"` : 'אין נכסים בסינון הזה.'}</p>`;
         Photos.hydrate(box);
         const d = s.sel && findDeal('owner', s.sel), pane = $('#p-panel');

@@ -27,7 +27,8 @@ for (const f of files) {
   const name = (css.match(/\/\*\s*([^*]+?)\s*\*\//) || [, f])[1].replace(/\s+/g, ' ');
   for (const [w, h, tag] of [[390, 1500, 'phone'], [1366, 900, 'desktop']]) {
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2, locale: 'he-IL' });
-    await page.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
+    await (typeof ctx !== 'undefined' ? ctx : page).route(/govmap.gov.il|proj4js/, (r) => r.abort());
+  await page.route('https://tile.openstreetmap.org/**', (r) => r.fulfill({ status: 204 }));
     await page.goto(BASE);
     await page.click('#login button[type=submit]'); await page.waitForSelector('#dash-kpis');
     await page.addStyleTag({ content: css });

@@ -59,7 +59,8 @@
     let row = db.contacts.find(x => x.phone === phone);
     if (!row) { row = { id: id(), phone, created_at: now() }; db.contacts.push(row); }
     // same rules as upsert_contact (005): private / company (+ ח.פ.) / broker (+ licence); an older payload never erases them
-    const t = c.entity_type || 'private';
+    // an older app (no "v") does not know brokers: it never downgrades one (as upsert_contact in 005)
+    const t = !('v' in c) && row.entity_type === 'broker' ? 'broker' : c.entity_type || 'private';
     Object.assign(row, { name: c.name.trim(), entity_type: t, company_name: t === 'company' ? c.company_name.trim() : null,
       company_number: t === 'company' ? (('company_number' in c) ? c.company_number : row.company_number) || null : null,
       broker_license: t === 'broker' ? (('broker_license' in c) ? c.broker_license : row.broker_license) || null : null });
@@ -105,12 +106,15 @@
       await delay();
       const snapshot = clone(db.contacts);
       try {
+        const { contact: _c, ...vals } = p;
+        if (vals.size_min != null && vals.size_max != null && vals.size_min > vals.size_max) throw new Error('size range');
+        for (const k of ['size_min', 'size_max', 'size_value', 'height_m', 'budget_value', 'radius_m', 'built_sqm', 'plot_sqm', 'asking_price', 'monthly_rent', 'asking_rent'])
+          if (vals[k] != null && vals[k] !== '' && !(+vals[k] > 0)) throw new Error(`${k} must be > 0`);
         const contact_id = upsertContact(p.contact);
         const table = db[module];
         let row = table.find(r => r.id === p.id);
         const { contact, ...fields } = p;
         if (!row) { row = { id: p.id, status: 'active', closed_at: null, created_at: now() }; table.push(row); }
-        if (fields.size_min != null && fields.size_max != null && fields.size_min > fields.size_max) throw new Error('size range');
         Object.assign(row, fields, { contact_id, updated_at: now() });
         if (module === 'owner') row.yield_pct = row.monthly_rent && row.asking_price ? Math.round(row.monthly_rent * 12 / row.asking_price * 10000) / 100 : null;
         save();

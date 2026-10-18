@@ -1925,8 +1925,11 @@ function matchPair(lead, owner) {
   if (g && owner.purpose_id && g !== og) return null;
   const chips = []; let near = 0, score = 0;
   // location (no point on either side → no limit)
-  if (has(lead.lat) && has(lead.lng) && has(owner.lat) && has(owner.lng)) {
-    const km = distKm([lead.lat, lead.lng], [owner.lat, owner.lng]), r = (+lead.radius_m || 5000) / 1000;
+  let missing = false;
+  const leadPoint = has(lead.lat) && has(lead.lng) && +lead.radius_m > 0, ownerPoint = has(owner.lat) && has(owner.lng);
+  if (leadPoint && !ownerPoint) { score += 20; missing = true; chips.push({ t: 'מיקום הנכס לא צוין', k: 'warn' }); }
+  else if (leadPoint) {
+    const km = distKm([lead.lat, lead.lng], [owner.lat, owner.lng]), r = lead.radius_m / 1000;
     const kmText = fmt.num(Math.round(km * 10) / 10);
     if (km <= r) { score += 40; chips.push({ t: km < 0.5 ? 'בתוך האזור' : `${kmText} ק״מ מהמרכז`, k: 'ok' }); }
     else if (km <= r * 1.5) { score += 20; near++; chips.push({ t: `${kmText} ק״מ – מחוץ לרדיוס`, k: 'near' }); }
@@ -1938,7 +1941,7 @@ function matchPair(lead, owner) {
   const hi = has(lead.size_max) ? lead.size_max * f : has(lead.size_value) ? lead.size_value * f : null;
   const have = g === 'land' || og === 'land' ? owner.plot_sqm : owner.built_sqm;
   if (lo == null && hi == null) { score += 30; chips.push({ t: 'בלי הגבלת שטח', k: 'ok' }); }
-  else if (!has(have) || !(+have > 0)) { score += 15; chips.push({ t: 'שטח הנכס לא צוין', k: 'warn' }); }
+  else if (!has(have) || !(+have > 0)) { score += 15; missing = true; chips.push({ t: 'שטח הנכס לא צוין', k: 'warn' }); }
   else {
     // a single number keeps the old tolerance (−10%…+30%); a range must contain the property
     const single = lo != null && hi != null && lo === hi;
@@ -1953,7 +1956,6 @@ function matchPair(lead, owner) {
     else return null;
   }
   // budget, in ₪ (USD at a fixed rate); no budget → no limit
-  let missing = false;
   if (!has(lead.budget_value) || !(+lead.budget_value > 0)) { score += 30; chips.push({ t: 'בלי הגבלת תקציב', k: 'ok' }); }
   else {
     const budget = lead.budget_value * (lead.budget_currency === 'USD' ? USD_RATE : 1);
@@ -2058,7 +2060,7 @@ function metrics() {
 
 // one row for a record in any dashboard list: name, what it is, and a date badge on the left
 function recRow(m, d, badge = '') {
-  const what = m === 'lead' ? `${optText(d.need_id)} · ${optText(d.purpose_id)}` : `${d.deal_kind === 'rent' ? 'השכרה' : 'מכירה'} · ${optText(d.purpose_id)}`;
+  const what = (m === 'lead' ? [optText(d.need_id), optText(d.purpose_id)] : [d.deal_kind === 'rent' ? 'השכרה' : d.deal_kind === 'sale' ? 'מכירה' : '', optText(d.purpose_id)]).filter(Boolean).join(' · ');
   return `<li class="rec"><a href="#/m/${m}/${d.id}"><span class="rec-main"><span class="rec-name">${esc(d.contact?.name || '')}</span>
     <span class="rec-sub">${MOD_ONE[m]} · ${esc(what)} · ${esc(cityOf(d))}</span></span>${badge}</a></li>`;
 }
@@ -2127,7 +2129,8 @@ function dashboardView() {
   const cell = new Map();
   for (const [m, d] of x.active) {
     const g = optGroup(d.purpose_id); if (!g) continue;
-    const a = cityOf(d), key = g + '|' + a, c = cell.get(key) || { g, a, lead: 0, owner: 0 };
+    const a = cityOf(d); if (!a) continue;
+    const key = g + '|' + a, c = cell.get(key) || { g, a, lead: 0, owner: 0 };
     c[m]++; cell.set(key, c);
   }
   const cells = [...cell.values()].sort((p, q) => Math.abs(q.lead - q.owner) - Math.abs(p.lead - p.owner) || (q.lead + q.owner) - (p.lead + p.owner));

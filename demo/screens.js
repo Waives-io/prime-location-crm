@@ -314,8 +314,8 @@
       if (s.pstatus === 'archive') return d.status !== 'active';
       return d.status === 'active' && (!s.pstatus || cf(d, 'f_pstatus') === s.pstatus) && (!s.fresh || inMonth(d.created_at));
     }).filter(d => (!s.city || cityOf(d) === s.city) && (!s.g || optGroup(d.purpose_id) === s.g)
-      && (!s.size || ({ s1: d.built_sqm <= 200, s2: d.built_sqm > 200 && d.built_sqm <= 1000, s3: d.built_sqm > 1000 && d.built_sqm <= 3000, s4: d.built_sqm > 3000 })[s.size])
-      && (!s.price || (s.price === 'rent' ? d.deal_kind === 'rent' : d.deal_kind === 'sale' && ({ s5: d.asking_price <= 5e6, s20: d.asking_price > 5e6 && d.asking_price <= 2e7, smax: d.asking_price > 2e7 })[s.price])));
+      && (!s.size || has(d.built_sqm) && ({ s1: d.built_sqm <= 200, s2: d.built_sqm > 200 && d.built_sqm <= 1000, s3: d.built_sqm > 1000 && d.built_sqm <= 3000, s4: d.built_sqm > 3000 })[s.size])
+      && (!s.price || (s.price === 'rent' ? d.deal_kind === 'rent' : d.deal_kind === 'sale' && has(d.asking_price) && ({ s5: d.asking_price <= 5e6, s20: d.asking_price > 5e6 && d.asking_price <= 2e7, smax: d.asking_price > 2e7 })[s.price])));
     const key = { updated: (d) => lastTouch(d), size: (d) => String(+d.built_sqm || 0).padStart(8, '0'), price: (d) => String(Math.round(+d.asking_price || 0)).padStart(12, '0'), occ: (d) => String(cf(d, 'f_occ') || 0).padStart(3, '0') }[s.sort];
     return rows.sort((a, b) => String(key(b)).localeCompare(String(key(a))));
   }

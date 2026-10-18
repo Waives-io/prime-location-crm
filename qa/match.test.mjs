@@ -120,4 +120,11 @@ t('empty optional fields = no limit (never 0 / NaN)', () => {
   const noSize = matchPair(lead(), owner({ built_sqm: null }));
   assert.ok(noSize && !JSON.stringify(noSize).includes('NaN'));
 });
+t('unknown property location / area is incomplete, never a "high" match; a lead without a radius has no distance limit', () => {
+  const noPoint = matchPair(lead(), owner({ lat: null, lng: null }));
+  assert.equal(noPoint.level, 'good'); assert.equal(noPoint.chips[0].t, 'מיקום הנכס לא צוין');
+  const noArea = matchPair(lead(), owner({ built_sqm: null }));
+  assert.notEqual(noArea.level, 'high');
+  assert.equal(matchPair(lead({ radius_m: null }), owner({ lat: KG[0] + km(40) })).chips[0].t, 'בלי הגבלת אזור');
+});
 console.log(`\nMatch tests passed: ${pass}`);

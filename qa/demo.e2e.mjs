@@ -288,10 +288,11 @@ try {
   ok('storage: demo keys all "nadlan-demo:v1:*"; the live app\'s key on the same origin is untouched');
 
   /* ── month change: untouched → fresh seed; changed → dates move forward ── */
+  // UTC date math: a clock change inside the 40 days must not move the anchor a day
   const rebase = await page.evaluate(async (dirty) => {
     const k = 'nadlan-demo:v1:data', db = JSON.parse(localStorage.getItem(k));
     const before = db.lead[0].needed_by;
-    const d = new Date(db.anchor); d.setDate(d.getDate() - 40); db.anchor = d.toISOString().slice(0, 10);
+    const d = new Date(db.anchor); d.setUTCDate(d.getUTCDate() - 40); db.anchor = d.toISOString().slice(0, 10);
     db.dirty = true; db.lead[0].notes = 'נערך';
     localStorage.setItem(k, JSON.stringify(db));
     return before;
@@ -331,6 +332,16 @@ try {
   assert.ok(await page.evaluate(() => (scrollTo(-3000, 0), scrollX === 0) && (scrollTo(3000, 0), scrollX === 0) && ![...document.querySelectorAll('body *')].some(el => { const r = el.getBoundingClientRect(); return r.width && !el.closest('.table-wrap') && (r.left < -1 || r.right > innerWidth + 1); })), 'no horizontal page scroll on a phone (properties)');
   await shot('07-phone-props', true);
   ok('phone: tabs at the top, "+ חדש" at the bottom, no horizontal scroll on מתעניינים / נכסים');
+  // a real phone browser widens the page to fit anything that escapes a scroll box (e.g. absolute labels in the table)
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'he-IL' });
+  const pp = await phone.newPage();
+  await pp.goto(BASE); await pp.click('#login button[type=submit]'); await pp.waitForSelector('.lead-table');
+  for (const route of ['#/m/lead', '#/m/owner', '#/matches']) {
+    await pp.goto(BASE + route); await pp.waitForTimeout(400);
+    assert.deepEqual(await pp.evaluate(() => [innerWidth, document.documentElement.scrollWidth]), [390, 390], 'phone page width on ' + route);
+  }
+  await phone.close();
+  ok('mobile browser: the page stays phone-wide on מתעניינים / נכסים / התאמות');
 
   assert.deepEqual(errors, []);
   ok('no JS errors in the console');

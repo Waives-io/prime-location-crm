@@ -7,7 +7,7 @@ Paste everything below the line into the demo session (worktree `WAIVES Projects
 Bring all the changes made to Leah's app (branch `main`) since the demo last took main (`3b1473a`) into the demo, then deploy the demo and check it on the live URL.
 
 ## Where things are
-- Leah's app: branch `main`. Changes to take: commits `3470838` to `0008cc8`. See them with `git log --oneline 3b1473a..main`.
+- Leah's app: branch `main`. Changes to take: commits `3470838` to `bed5d4a`. See them with `git log --oneline 3b1473a..main`.
 - Demo: branch `demo-dashboard` in this worktree. `demo-site/` is the clone of `Waives-io/nadlan-demo`. Live URL: https://waives-io.github.io/nadlan-demo/
 - Leah's plan for these rounds: `PLAN-round2.md` on main.
 
@@ -78,6 +78,14 @@ Bring all the changes made to Leah's app (branch `main`) since the demo last too
     - Lead ↔ property matching works with size **ranges**: a property matches when its size falls inside the lead's range.
     - Matching treats empty or null fields as "no limit", not as 0.
     - Check every dashboard number and badge with empty fields. No NaN and no "undefined".
+
+### Added on 2026-11-10 (main `bed5d4a`)
+19. **Several needs per lead:**
+    - "צורך" is now tap-on/off chips. Show it as "לקנות, להשקעה" in the card and the row.
+    - Data: `need_ids` (array) in the picked order. `need_id` = the first one. Use the helpers `needIds(d)` / `needText(d)`.
+    - Option usage counts every need.
+    - Demo matching and filters by need must accept any of the lead's needs.
+20. **Owners list:** a "שכפול" button on every row, next to close / restore, on its own line under the row. It opens the duplicate form at once.
 
 ## Process
 - **Merge:** merge `main` into `demo-dashboard`. Resolve conflicts by keeping the demo's look and taking main's behaviour.

@@ -9,6 +9,7 @@ const migration = readFileSync(new URL('../supabase/002_feedback.sql', import.me
 const photosSql = readFileSync(new URL('../supabase/004_photos.sql', import.meta.url), 'utf8');
 const round2Sql = readFileSync(new URL('../supabase/005_round2.sql', import.meta.url), 'utf8');
 const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', import.meta.url), 'utf8');
+const multiSql = readFileSync(new URL('../supabase/007_multi_need.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -40,6 +41,7 @@ await db.exec(photosSql); // idempotent re-run
 await db.exec(round2Sql);
 await db.exec(round2Sql); // idempotent re-run
 await db.exec(removeSql); await db.exec(removeSql);
+await db.exec(multiSql); await db.exec(multiSql);
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -335,4 +337,24 @@ await as('authenticated', OTHER, async () => {
   assert.equal((await q("update custom_fields set hidden = false returning id")).length, 0);
 });
 ok('006: a member can remove (hide) an added field; a non-member cannot touch fields');
+await as('authenticated', LEAH, async () => {
+  const opt = async (v) => (await q("select id from option_lists where list_key='lead_need' and value=$1", [v]))[0].id;
+  const [buy, inv, rent] = [await opt('לקנות'), await opt('להשקעה'), await opt('לשכור')];
+  assert.equal((await q('select count(*)::int n from lead_deals where need_id is not null and need_ids <> array[need_id]'))[0].n, 0);
+  const contact = { phone: '0528880001', name: 'כמה צרכים', entity_type: 'private' };
+  const id = (await q('select save_lead_deal($1::jsonb) r', [{ contact, need_ids: [buy, inv, buy] }]))[0].r.id;
+  let row = (await q('select need_id, need_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_id, row.need_ids], [buy, [buy, inv]]);
+  await q('select save_lead_deal($1::jsonb)', [{ id, contact, need_id: buy }]);    // older app, same first need: others kept
+  assert.deepEqual((await q('select need_ids from lead_deals where id=$1', [id]))[0].need_ids, [buy, inv]);
+  await q('select save_lead_deal($1::jsonb)', [{ id, contact, need_id: rent }]);   // older app, need changed
+  row = (await q('select need_id, need_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_id, row.need_ids], [rent, [rent]]);
+  await q('select save_lead_deal($1::jsonb)', [{ id, contact, need_ids: [] }]);
+  row = (await q('select need_id, need_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_id, row.need_ids], [null, []]);
+  const purpose = (await q("select id from option_lists where list_key='lead_purpose' limit 1"))[0].id;
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ id, contact, need_ids: [purpose] }]), /./);
+});
+ok('007: several needs saved in order without repeats; older app keeps or replaces them safely; wrong list rejected');
 console.log(`\nDB tests passed: ${pass}`);

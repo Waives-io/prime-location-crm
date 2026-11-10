@@ -179,13 +179,15 @@ try {
   await fill('#size_min', '2'); await fill('#size_max', '3');
   assert.equal(await text('#size_min-err'), '');
   ok('size range: from / to, reversed range explained inline');
-  await page.selectOption('#need_id', '__new');
-  await page.fill('#need_id-new input', 'לחכור');
-  await page.click('#need_id-new button:has-text("הוספה")');
-  await page.waitForFunction(() => document.querySelector('#need_id').selectedOptions[0]?.textContent === 'לחכור');
+  await page.click('#need_ids label:has-text("לקנות")'); await page.click('#need_ids label:has-text("להשקעה")');
+  await page.click('[data-field=need_ids] .chip-new');
+  await page.fill('#need_ids-new input', 'לחכור');
+  await page.click('#need_ids-new button:has-text("הוספה")');
+  await page.waitForFunction(() => [...document.querySelectorAll('#need_ids input:checked')].length === 3);
+  assert.deepEqual(await page.locator('#need_ids label:has(input:checked)').allInnerTexts(), ['לקנות', 'להשקעה', 'לחכור']);
   assert.equal(await page.inputValue('#name'), 'מירב כהן');
   assert.equal(await page.inputValue('#size_min'), '2');
-  ok('"+ חדש" adds "לחכור", selects it, keeps everything typed');
+  ok('"צורך" takes several choices; "+ חדש" adds "לחכור", ticks it, keeps everything typed');
 
   await page.click('[data-field=purpose_id] .opt-edit');
   const rowOf = (v) => page.locator('.opt-rows li').filter({ has: page.locator(`input[value="${v}"]`) });
@@ -247,7 +249,9 @@ try {
   ok('save fails → data kept, retry succeeds with the same deal id (no duplicate)');
 
   /* card */
-  assert.match(await text('.dl'), /לחכור/);
+  assert.match(await text('.dl'), /לקנות, להשקעה, לחכור/);
+  const sent = await page.evaluate(() => PL_TEST_DB.calls.at(-1).p);
+  assert.equal(sent.need_ids.length, 3); assert.equal(sent.need_id, sent.need_ids[0]);
   assert.match(await text('.dl'), /2–3 דונם/);
   assert.match(await text('.dl'), /דדליין/);
   assert.equal(await page.locator('#card-photos').count(), 0);
@@ -265,6 +269,8 @@ try {
   assert.equal(await text('.topbar h1'), 'שכפול עסקה');
   assert.equal(await page.inputValue('#name'), 'מירב כהן');
   assert.equal(await page.inputValue('#height_m'), '7');
+  assert.equal(await page.locator('#need_ids input:checked').count(), 3);
+  await page.click('#need_ids label:has-text("לקנות")'); await page.click('#need_ids label:has-text("לקנות")'); // off + on → now picked last
   const today = await page.evaluate(() => todayISO());
   assert.equal(await page.inputValue('#lead_date'), today);
   /* add custom field inside the form */
@@ -276,6 +282,7 @@ try {
   await page.click('#save');
   await page.waitForSelector('.card-head');
   assert.match(await text('.dl'), /קומה\s*3/);
+  assert.match(await text('.dl'), /להשקעה, לחכור, לקנות/); // needs keep the order they were picked in
   const dtOrder = await page.locator('.dl dt').allInnerTexts();
   assert.ok(dtOrder.indexOf('קומה') > dtOrder.indexOf('גובה נדרש') && dtOrder.indexOf('קומה') < dtOrder.indexOf('כתובת / אזור'), dtOrder.join(','));
   ok('duplicate: prefilled form, today\'s date; "+ שדה חדש" inside "הנכס" appears there in the form and on the card');
@@ -468,6 +475,24 @@ try {
   await fill('#height_m', '8'); await page.click('#save'); await page.waitForSelector('.card-head');
   assert.equal(await page.evaluate((w) => PL_TEST_DB._db.lead.find(x => x.id === w.id).custom[w.key], withFloor), 3);
   ok('"הסרת השדה" removes an added field from the form (saved values stay)');
+  await page.goto(BASE + '#/');
+
+  /* owners: duplicate straight from the row */
+  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows li.deal-row');
+  const ownerRow = page.locator('#rows li.deal-row').first();
+  const oName = await ownerRow.locator('.name').innerText();
+  const metaBox = await ownerRow.locator('a > .meta').last().boundingBox(), actsBox = await ownerRow.locator('.row-acts').boundingBox();
+  const apart = (m, k) => m.y + m.height <= k.y + 1 || k.y + k.height <= m.y + 1 || m.x + m.width <= k.x + 1 || k.x + k.width <= m.x + 1;
+  assert.ok(apart(metaBox, actsBox), 'row text under the buttons');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await shot('11-owner-rows', true);
+  await ownerRow.locator('[data-a=dup]').click();
+  await page.waitForSelector('#deal-form');
+  assert.equal(await text('.topbar h1'), 'שכפול עסקה');
+  assert.equal(await page.inputValue('#name'), oName);
+  ok('owners list: "שכפול" on each row opens a copy of that property right away');
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows li.deal-row');
+  assert.equal(await page.locator('#rows [data-a=dup]').count(), 0); // leads: duplicate stays in the card only
   await page.goto(BASE + '#/');
 
   /* phone normalization unit cases */

@@ -310,6 +310,20 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
 .lightbox video{display:block;width:100%;max-height:70vh;background:#111;border-radius:10px}
 /* functional: deal photos */
 .photo-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.field .chips label{display:inline-flex;align-items:center;min-height:44px;margin:0;padding:0 16px;border:2px solid var(--ink);border-radius:999px;background:var(--surface);font-weight:700;cursor:pointer}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+.field .chips label:has(input:checked){background:var(--yellow);box-shadow:2px 2px 0 var(--ink)}
+.field .chips label:has(input:checked)::before{content:'✓';margin-inline-end:6px}
+.chips label:has(input:focus-visible){outline:3px solid var(--ink);outline-offset:2px}
+.chip-links{display:flex;gap:18px;margin-top:8px}
+.row-acts{position:absolute;inset-inline-end:10px;top:47px;display:flex;gap:6px}
+.row-acts .row-act{position:static}
+/* owners: "שכפול" + close sit on their own line under the row, so a tap on the row text never hits them */
+.row-acts:has([data-a=dup]){position:static;justify-content:flex-end;padding:0 10px 12px}
+.deal-row:has([data-a=dup]){border-bottom:1px solid var(--line)}
+.deal-row:has([data-a=dup])>a{border-bottom:0}
+.deal-row:has([data-a=dup])>a>.meta:last-child{min-height:0;padding-inline-end:0}
 .field label.btn.photo-add{display:flex;margin-bottom:0}
 .photo-grid:empty{display:none}
 .ph{position:relative;margin:0;width:96px;height:96px;border-radius:10px;overflow:hidden;background:var(--surface)}
@@ -474,6 +488,9 @@ const S = {
 // hidden ("removed") values stay readable on old deals, and selectable only on a deal that already uses them
 const opts = (key, keepId) => (S.data?.options || []).filter(o => o.list_key === key && (!o.hidden || o.id === keepId));
 const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value || '';
+// a lead's needs: need_ids (several, 007); rows saved before 007 have only need_id
+const needIds = (d) => d?.need_ids?.length ? d.need_ids : d?.need_id ? [d.need_id] : [];
+const needText = (d) => needIds(d).map(optText).filter(Boolean).join(', ');
 const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module && !f.hidden);
 const SECTIONS = ['contact', 'property', 'location', 'money'];
 const sectionOf = (f) => SECTIONS.includes(f.section) ? f.section : 'money';
@@ -749,7 +766,7 @@ function dealSearchText(d) {
   return [c.name, c.company_name, c.company_number, c.broker_license, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
 }
 function rowSummary(module, d) {
-  if (module === 'lead') return [optText(d.need_id), optText(d.purpose_id), leadSize(d)];
+  if (module === 'lead') return [needText(d), optText(d.purpose_id), leadSize(d)];
   return [d.deal_kind === 'rent' ? 'השכרה' : d.deal_kind === 'sale' ? 'מכירה' : '', optText(d.purpose_id), fmt.size(d.built_sqm, 'sqm')];
 }
 const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
@@ -784,14 +801,16 @@ function listView(module) {
         <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
         <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a>
-        ${d.status === 'active' ? '<button type="button" class="btn row-act" data-a="close">סגירת עסקה</button>'
-          : '<button type="button" class="btn row-act" data-a="restore">החזרה לפעילות</button>'}</li>`).join('');
+        <div class="row-acts">${module === 'owner' ? `<button type="button" class="btn row-act" data-a="dup">שכפול</button>` : ''}${d.status === 'active'
+          ? '<button type="button" class="btn row-act" data-a="close">סגירת עסקה</button>'
+          : '<button type="button" class="btn row-act" data-a="restore">החזרה לפעילות</button>'}</div></li>`).join('');
       Photos.hydrate(ul);
     };
     // quick daily sweep: close / restore straight from the list, without leaving it or jumping to the top
     $('#rows').onclick = async (e) => {
-      const b = e.target.closest('.row-act'); if (!b) return;
+      const b = e.target.closest('button.row-act'); if (!b) return;
       const d = findDeal(module, b.closest('li').dataset.id); if (!d) return;
+      if (b.dataset.a === 'dup') { location.hash = `#/m/${module}/new/dup/${d.id}`; return; }
       if (b.dataset.a === 'close') return closeDialog(module, d, draw);
       b.disabled = true;
       try { await setStatusWithUndo(module, d, 'active', 'העסקה הוחזרה לפעילות', draw); }
@@ -824,7 +843,7 @@ function cardView(module, id) {
   sec = 'property';
   if (module === 'lead') {
     add('תאריך פנייה', fmt.ltr(fmt.date(d.lead_date)));
-    add('צורך', esc(optText(d.need_id)));
+    add('צורך', esc(needText(d)));
     add('ייעוד', esc(optText(d.purpose_id)));
     add('גודל', leadSize(d) ? fmt.bi(leadSize(d)) : '');
     add('גובה נדרש', has(d.height_m) ? fmt.bi(fmt.num(d.height_m) + ' מ׳') : '');
@@ -929,7 +948,7 @@ function closeDialog(module, d, after = render) {
 
 /* ════════════ option list editor ════════════ */
 const LIST_TITLES = { lead_need: 'צורך', lead_purpose: 'ייעוד – מתעניינים', owner_purpose: 'ייעוד – בעלים' };
-const optionUsage = (id) => ['lead', 'owner'].reduce((n, m) => n + deals(m).filter(d => d.need_id === id || d.purpose_id === id).length, 0);
+const optionUsage = (id) => ['lead', 'owner'].reduce((n, m) => n + deals(m).filter(d => needIds(d).includes(id) || d.purpose_id === id).length, 0);
 function optionsDialog(listKey, onDone) {
   const dlg = $('#dlg');
   const draw = () => {
@@ -1069,7 +1088,7 @@ const Geo = {
 /* ════════════ form ════════════ */
 function field(id, label, control, { required = false, hint = '', cls = '' } = {}) {
   return `<div class="field ${cls}" data-field="${id}">
-    <label for="${id}" ${control.startsWith('<div class="seg') ? `id="${id}-lbl"` : ''}>${label}${required ? ' <span class="req" aria-hidden="true">*</span>' : ''}</label>
+    <label for="${id}" ${/^<div class="(seg|chips)/.test(control) ? `id="${id}-lbl"` : ''}>${label}${required ? ' <span class="req" aria-hidden="true">*</span>' : ''}</label>
     ${control}${hint ? `<p class="hint">${hint}</p>` : ''}<p class="err" id="${id}-err" aria-live="polite"></p></div>`;
 }
 const textInput = (id, v = '', a = '') => `<input class="input" id="${id}" name="${id}" value="${esc(v)}" ${a}>`;
@@ -1082,6 +1101,13 @@ const optOptions = (listKey, val) => `<option value="">בחירה…</option>${o
   `<option value="${o.id}" ${o.id === val ? 'selected' : ''}>${esc(o.value)}</option>`).join('')}<option value="__new">+ חדש</option>`;
 const optSelect = (id, listKey, val) => `<select class="input" id="${id}" name="${id}" data-list="${listKey}">${optOptions(listKey, val)}</select>
   <button type="button" class="link opt-edit" data-list="${listKey}">עריכת הרשימה</button>
+  <div class="add-inline" id="${id}-new" hidden><input class="input" aria-label="ערך חדש" placeholder="ערך חדש"><button type="button" class="btn">הוספה</button><button type="button" class="link">ביטול</button></div>`;
+
+// several choices from an option list: chips you tap on/off, "+ חדש" and "עריכת הרשימה" like a dropdown
+const chipLabels = (id, listKey, vals) => (S.data?.options || []).filter(o => o.list_key === listKey && (!o.hidden || vals.includes(o.id)))
+  .map(o => `<label><input type="checkbox" name="${id}" value="${o.id}" ${vals.includes(o.id) ? 'checked' : ''}><span>${esc(o.value)}</span></label>`).join('');
+const optChecks = (id, listKey, vals = []) => `<div class="chips" id="${id}" role="group" aria-labelledby="${id}-lbl" data-multi="${listKey}">${chipLabels(id, listKey, vals)}</div>
+  <div class="chip-links"><button type="button" class="link chip-new" data-for="${id}">+ חדש</button><button type="button" class="link opt-edit" data-list="${listKey}">עריכת הרשימה</button></div>
   <div class="add-inline" id="${id}-new" hidden><input class="input" aria-label="ערך חדש" placeholder="ערך חדש"><button type="button" class="btn">הוספה</button><button type="button" class="link">ביטול</button></div>`;
 
 function customControl(f, v) {
@@ -1113,7 +1139,7 @@ function formView(r) {
 
   const leadProperty = `
     ${field('lead_date', 'תאריך פנייה', dateInput('lead_date', d.lead_date || todayISO()))}
-    ${field('need_id', 'צורך', optSelect('need_id', LISTS.need, d.need_id))}
+    ${field('need_ids', 'צורך <small>(אפשר לבחור כמה)</small>', optChecks('need_ids', LISTS.need, needIds(d)))}
     ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.lead_purpose, d.purpose_id))}
     ${field('size_min', 'גודל', `<div class="row size-range">${numInput('size_min', d.size_min ?? d.size_value, '', 'placeholder="מ־" aria-label="גודל מ־"')}${numInput('size_max', d.size_max ?? d.size_value, '', 'placeholder="עד" aria-label="גודל עד"')}${seg('size_unit', [['sqm', 'מ״ר'], ['dunam', 'דונם']], d.size_unit || 'sqm')}</div>`,
       { hint: 'אפשר למלא רק "מ־" או רק "עד"' })}
@@ -1328,10 +1354,42 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     cancelBtn.onclick = () => { sel.value = prev; box.hidden = true; sel.focus(); };
   });
 
-  /* "עריכת הרשימה": rename / remove (hide) values */
-  const refreshSelects = (listKey) => $$(`select[data-list="${listKey}"]`, form).forEach(sel => {
-    const cur = sel.value === '__new' ? '' : sel.value; sel.innerHTML = optOptions(listKey, cur); sel.value = cur;
+  /* several needs keep the order they were picked in (need_id = the first, for older app versions) */
+  const needOrder = [...needIds(src)];
+  $('#need_ids', form)?.addEventListener('change', (e) => {
+    const v = e.target.value, i = needOrder.indexOf(v);
+    if (e.target.checked && i < 0) needOrder.push(v); else if (!e.target.checked && i >= 0) needOrder.splice(i, 1);
   });
+
+  /* "+ חדש" for several-choice chips: adds the value and ticks it */
+  $$('.chip-new', form).forEach(b => {
+    const group = $('#' + b.dataset.for), box = $(`#${b.dataset.for}-new`), inp = $('input', box), [addBtn, cancelBtn] = $$('button', box);
+    b.onclick = () => { box.hidden = false; inp.value = ''; inp.focus(); };
+    const add = async () => {
+      const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+      addBtn.disabled = true;
+      try {
+        const row = await DB.addOption(group.dataset.multi, v);
+        if (!S.data.options.some(o => o.id === row.id)) S.data.options.push(row);
+        if (!group.querySelector(`input[value="${row.id}"]`)) group.insertAdjacentHTML('beforeend', `<label><input type="checkbox" name="${group.id}" value="${row.id}"><span>${esc(row.value)}</span></label>`);
+        group.querySelector(`input[value="${row.id}"]`).checked = true;
+        if (group.id === 'need_ids' && !needOrder.includes(row.id)) needOrder.push(row.id);
+        box.hidden = true; Dirty.on = true; sync(); toast(`"${row.value}" נוסף לרשימה`);
+      } catch (ex) { console.error(ex); toast('ההוספה נכשלה. נסי שוב.'); }
+      addBtn.disabled = false;
+    };
+    addBtn.onclick = add;
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    cancelBtn.onclick = () => { box.hidden = true; b.focus(); };
+  });
+
+  /* "עריכת הרשימה": rename / remove (hide) values */
+  const refreshSelects = (listKey) => {
+    $$(`select[data-list="${listKey}"]`, form).forEach(sel => {
+      const cur = sel.value === '__new' ? '' : sel.value; sel.innerHTML = optOptions(listKey, cur); sel.value = cur;
+    });
+    $$(`.chips[data-multi="${listKey}"]`, form).forEach(g => { g.innerHTML = chipLabels(g.id, listKey, $$('input:checked', g).map(i => i.value)); });
+  };
   $$('.opt-edit', form).forEach(b => b.onclick = () => optionsDialog(b.dataset.list, () => refreshSelects(b.dataset.list)));
 
   /* map */
@@ -1555,7 +1613,9 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     let p;
     if (isLead) {
       const smin = parseNum(val('size_min')), smax = parseNum(val('size_max'));
-      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_id: optId('need_id'), purpose_id: optId('purpose_id'),
+      const ticked = $$('#need_ids input:checked', form).map(i => i.value);
+      const needsPicked = [...needOrder.filter(v => ticked.includes(v)), ...ticked.filter(v => !needOrder.includes(v))];
+      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_ids: needsPicked, need_id: needsPicked[0] || null, purpose_id: optId('purpose_id'),
         size_min: smin, size_max: smax, size_value: smin ?? smax, size_unit: radio('size_unit') || 'sqm',
         lat: pin.lat, lng: pin.lng, radius_m: pin.lat != null ? +radiusEl.value : null,
         height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,

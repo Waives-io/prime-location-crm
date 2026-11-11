@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="he" dir="rtl" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="google" content="notranslate">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#FFD400">
+<title>פריים לוקיישן · הזמנת שירותי תיווך</title>
+<link rel="icon" href="icons/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --yellow:#FFD400; --ink:#1A1A1A; --charcoal:#3C3C3B; --muted:#5A5A58;
+  --bg:#FFFFFF; --surface:#F6F6F4; --line:#E6E6E2; --error:#B3261E; --ok:#1E6B3A;
+  --radius:16px; --tap:48px; --font:'Heebo',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55}
+body{min-height:100dvh}
+button,input,textarea{font:inherit;color:inherit}
+[hidden]{display:none!important}
+bdi{unicode-bidi:isolate}
+.num{font-variant-numeric:tabular-nums}
+a{color:inherit}
+
+.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+.top::before{content:"";display:block;height:6px;background:var(--yellow)}
+.top-in{display:flex;align-items:center;gap:12px;max-width:720px;margin-inline:auto;padding:10px 16px}
+.top-in img{height:40px;width:auto;display:block}
+.broker{flex:1;min-width:0;line-height:1.25}
+.broker strong{display:block;font-size:1rem}
+.broker small{color:var(--muted);font-size:.85rem}
+.call{display:inline-flex;align-items:center;justify-content:center;width:var(--tap);height:var(--tap);border-radius:50%;border:2px solid var(--ink);background:var(--yellow);text-decoration:none}
+.call svg{width:22px;height:22px}
+
+main{max-width:720px;margin-inline:auto;padding:20px 16px 132px}
+h1{font-size:1.45rem;line-height:1.25;font-weight:800;margin:6px 0 4px}
+.agr-no{color:var(--muted);margin:0 0 18px}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--bg);margin:0 0 18px}
+.card h2{font-size:1.05rem;margin:0 0 10px;font-weight:800;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--yellow);box-shadow:0 0 0 2px var(--ink)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-weight:700}
+.teaser-text{margin:12px 0 0;white-space:pre-line}
+.hidden-addr{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:12px 14px;border-radius:12px;background:var(--surface);font-weight:700}
+.hidden-addr svg{flex:0 0 auto;width:22px;height:22px;margin-top:2px}
+.agreement p{margin:0 0 12px}
+.agreement p:last-child{margin-bottom:0}
+
+.sticky{position:fixed;inset-inline:0;bottom:0;z-index:10;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+.sticky .btn{display:flex;width:100%;max-width:688px;margin-inline:auto}
+.btn{min-height:var(--tap);padding:0 22px;border-radius:999px;border:2px solid var(--ink);background:var(--bg);font-weight:800;font-size:1.02rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn.primary{background:var(--yellow)}
+.btn[disabled]{opacity:.65;cursor:progress}
+.btn:focus-visible,.link:focus-visible,input:focus-visible,.call:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.link{background:none;border:0;padding:0;min-height:var(--tap);font-weight:700;text-decoration:underline;cursor:pointer}
+.back{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);font-weight:700;background:none;border:0;cursor:pointer;padding:0}
+.back::before{content:"→"}
+
+.field{margin:0 0 16px}
+.field label{display:block;font-weight:700;margin:0 0 6px}
+.req{color:var(--error)}
+.input{width:100%;min-height:var(--tap);padding:10px 14px;border:2px solid #BDBDB8;border-radius:12px;background:#fff;font-size:1rem}
+.input:focus{border-color:var(--ink);outline:none}
+.invalid .input,.invalid .pad{border-color:var(--error)}
+.err{color:var(--error);font-size:.92rem;margin:6px 0 0;min-height:0}
+.err:empty{display:none}
+.field label.check,.check{display:flex;margin:0;gap:12px;align-items:flex-start;min-height:var(--tap);cursor:pointer;font-weight:700}
+.check input{width:24px;height:24px;margin:2px 0 0;accent-color:var(--ink);flex:0 0 auto}
+.pad-wrap{position:relative}
+.pad{display:block;width:100%;height:190px;border:2px dashed #9E9E99;border-radius:12px;background:#FFFEF6;touch-action:none;cursor:crosshair}
+.pad-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);pointer-events:none;font-weight:500}
+.pad-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+.done{text-align:center;padding-top:10px}
+.done .badge{width:64px;height:64px;border-radius:50%;background:var(--yellow);border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.done .badge svg{width:34px;height:34px}
+.addr{font-size:1.6rem;font-weight:800;line-height:1.3;margin:6px 0 16px}
+.nav-links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+.next{color:var(--muted);margin:18px 0 0}
+.state-msg{text-align:center;padding:40px 0}
+.spinner{width:22px;height:22px;border:3px solid currentColor;border-inline-end-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <img src="assets/logo.png" alt="פריים לוקיישן">
+  <div class="broker"><strong id="broker-name">ליאה ארז</strong><small>רשיון תיווך: <bdi class="num" id="broker-license">3156857</bdi></small></div>
+  <a class="call" id="call" href="#" hidden aria-label="חיוג לליאה"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></a>
+</div></header>
+<main id="app" aria-live="polite"><div class="state-msg"><span class="spinner" aria-hidden="true"></span> טוען…</div></main>
+<div class="sticky" id="sticky" hidden></div>
+
+<script>
+'use strict';
+const API = window.PL_SIGN_API || 'https://tbuhhxcgkxuovbdtebqv.supabase.co/functions/v1/signing-public';
+const ANON = 'sb_publishable_Ij-Epg5Zm1jcu9BOWckDow_OCa_QSTj';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const money = (n) => '₪ ' + Math.round(Number(n)).toLocaleString('en-US');
+const token = new URLSearchParams(location.search).get('t') || '';
+const app = $('#app'), sticky = $('#sticky');
+let D = null;
+
+function validId(raw) {
+  const s = String(raw || '').replace(/[\s-]/g, '');
+  if (!/^\d{5,9}$/.test(s)) return false;
+  const id = s.padStart(9, '0'); if (/^0+$/.test(id)) return false;
+  let sum = 0; for (let i = 0; i < 9; i++) { let n = +id[i] * ((i % 2) + 1); if (n > 9) n -= 9; sum += n; }
+  return sum % 10 === 0;
+}
+const waTo = (p) => 'https://wa.me/972' + String(p).replace(/\D/g, '').replace(/^0/, '');
+function setOffice(o) {
+  if (!o) return;
+  if (o.broker_name) $('#broker-name').textContent = o.broker_name;
+  if (o.broker_license) $('#broker-license').textContent = o.broker_license;
+  if (o.phone) { const c = $('#call'); c.href = 'tel:' + String(o.phone).replace(/\D/g, ''); c.hidden = false; }
+}
+async function api(method, body) {
+  const r = await fetch(method === 'GET' ? `${API}?t=${encodeURIComponent(token)}` : API, {
+    method, headers: { apikey: ANON, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  let data = {}; try { data = await r.json(); } catch {}
+  return data;
+}
+
+function showMessage(text, phone) {
+  sticky.hidden = true;
+  app.innerHTML = `<div class="state-msg"><h1>${text}</h1>
+    ${phone ? `<p><a class="btn primary" href="${waTo(phone)}" target="_blank" rel="noopener">שליחת הודעה לליאה בוואטסאפ</a></p>` : ''}</div>`;
+}
+
+function facts(t) {
+  const rows = [];
+  if (t.purpose) rows.push(['ייעוד', esc(t.purpose)]);
+  const size = [t.built_sqm ? `<bdi class="num">${num(t.built_sqm)}</bdi> מ״ר בנוי` : '', t.plot_sqm ? `<bdi class="num">${num(t.plot_sqm)}</bdi> מ״ר מגרש` : ''].filter(Boolean).join(' · ');
+  if (size) rows.push(['שטח', size]);
+  if (t.deal_kind === 'sale') rows.push(['מכירה', t.sale_price ? `<bdi class="num" dir="ltr">${money(t.sale_price)}</bdi>` : '—']);
+  if (t.deal_kind === 'rent') rows.push(['השכרה', t.monthly_rent ? `<bdi class="num" dir="ltr">${money(t.monthly_rent)}</bdi> לחודש` : '—']);
+  return rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+function step1() {
+  const t = D.teaser || {};
+  app.innerHTML = `<h1>${esc(D.title)}</h1>
+    <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
+    <section class="card" aria-labelledby="prop-h"><h2 id="prop-h">פרטי הנכס</h2>
+      <dl class="facts">${facts(t)}</dl>
+      ${t.teaser_text ? `<p class="teaser-text">${esc(t.teaser_text)}</p>` : ''}
+      <p class="hidden-addr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        הכתובת המלאה תוצג מיד לאחר החתימה</p>
+    </section>
+    <section class="card agreement" aria-labelledby="agr-h"><h2 id="agr-h">נוסח ההזמנה</h2>
+      ${String(D.body || '').split(/\n+/).map(p => `<p>${esc(p)}</p>`).join('')}</section>`;
+  sticky.innerHTML = '<button class="btn primary" id="to-sign" type="button">מעבר לחתימה</button>'; sticky.hidden = false;
+  $('#to-sign').onclick = step2;
+  window.scrollTo(0, 0);
+}
+
+function step2() {
+  app.innerHTML = `<button class="back" type="button" id="back">חזרה להסכם</button>
+    <h1>חתימה על ההזמנה</h1>
+    <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
+    <form id="sign-form" novalidate>
+      <div class="field" data-f="full_name"><label for="full_name">שם מלא <span class="req" aria-hidden="true">*</span></label>
+        <input class="input" id="full_name" autocomplete="name" required aria-describedby="full_name-err"><p class="err" id="full_name-err" aria-live="polite"></p></div>
+      <div class="field" data-f="id_number"><label for="id_number">תעודת זהות <span class="req" aria-hidden="true">*</span></label>
+        <input class="input num" id="id_number" inputmode="numeric" maxlength="9" dir="ltr" required aria-describedby="id_number-err"><p class="err" id="id_number-err" aria-live="polite"></p></div>
+      <div class="field" data-f="home_address"><label for="home_address">כתובת מגורים <span class="req" aria-hidden="true">*</span></label>
+        <input class="input" id="home_address" autocomplete="street-address" required aria-describedby="home_address-err"><p class="err" id="home_address-err" aria-live="polite"></p></div>
+      <div class="field" data-f="signature"><div class="pad-row"><label id="pad-lbl">חתימה <span class="req" aria-hidden="true">*</span></label>
+          <button class="link" type="button" id="clear">ניקוי חתימה</button></div>
+        <div class="pad-wrap"><canvas class="pad" id="pad" role="img" aria-labelledby="pad-lbl"></canvas><span class="pad-hint" id="pad-hint">חתמו כאן באצבע או בעכבר</span></div>
+        <p class="err" id="signature-err" aria-live="polite"></p></div>
+      <div class="field" data-f="consent"><label class="check"><input type="checkbox" id="consent"><span>קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך</span></label>
+        <p class="err" id="consent-err" aria-live="polite"></p></div>
+      <p class="err" id="form-err" aria-live="polite"></p>
+    </form>`;
+  sticky.innerHTML = '<button class="btn primary" id="submit" type="submit" form="sign-form">אישור וחתימה</button>'; sticky.hidden = false;
+  $('#back').onclick = step1;
+  const pad = signaturePad($('#pad'), () => { $('#pad-hint').hidden = pad.isEmpty() ? false : true; if (!pad.isEmpty()) setErr('signature', ''); });
+  $('#clear').onclick = () => { pad.clear(); $('#pad-hint').hidden = false; };
+  const val = (id) => $('#' + id).value.trim();
+  const checks = {
+    full_name: () => val('full_name').length >= 2 ? '' : 'נא למלא שם מלא',
+    id_number: () => !val('id_number') ? 'נא למלא מספר תעודת זהות' : validId(val('id_number')) ? '' : 'מספר תעודת הזהות אינו תקין. בדקו את 9 הספרות, כולל ספרת הביקורת',
+    home_address: () => val('home_address').length >= 3 ? '' : 'נא למלא כתובת מגורים',
+    signature: () => pad.isEmpty() ? 'נא לחתום במסגרת' : '',
+    consent: () => $('#consent').checked ? '' : 'יש לסמן את האישור כדי לחתום',
+  };
+  function setErr(f, m) { $(`#${f}-err`).textContent = m; $(`[data-f=${f}]`).classList.toggle('invalid', !!m); const i = $('#' + f); if (i && i.tagName === 'INPUT') i.setAttribute('aria-invalid', m ? 'true' : 'false'); }
+  ['full_name', 'id_number', 'home_address'].forEach(f => {
+    $('#' + f).addEventListener('blur', () => { if (val(f)) setErr(f, checks[f]()); });
+    $('#' + f).addEventListener('input', () => { if ($(`[data-f=${f}]`).classList.contains('invalid')) setErr(f, checks[f]()); });
+  });
+  $('#id_number').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 9); });
+  $('#consent').onchange = () => setErr('consent', checks.consent());
+  let busy = false;
+  $('#sign-form').onsubmit = async (e) => {
+    e.preventDefault(); if (busy) return;
+    $('#form-err').textContent = '';
+    const bad = Object.keys(checks).filter(f => { const m = checks[f](); setErr(f, m); return !!m; });
+    if (bad.length) {
+      const el = $(`[data-f=${bad[0]}]`); el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      ($('#' + bad[0]) || el.querySelector('input,canvas'))?.focus?.({ preventScroll: true }); return;
+    }
+    busy = true; const btn = $('#submit'); btn.disabled = true; btn.innerHTML = '<span class="spinner" aria-hidden="true"></span> שומר את החתימה…';
+    try {
+      const r = await api('POST', { token, full_name: val('full_name'), id_number: val('id_number'), home_address: val('home_address'),
+        consent: true, signature: pad.toPNG() });
+      if (r.state === 'signed') return done(r);
+      if (r.state === 'invalid') {
+        const map = { full_name: 'נא למלא שם מלא', id_number: 'מספר תעודת הזהות אינו תקין', home_address: 'נא למלא כתובת מגורים', signature: 'נא לחתום במסגרת', consent: 'יש לסמן את האישור כדי לחתום' };
+        const fs = Object.keys(r.errors || {}).filter(f => map[f]); fs.forEach(f => setErr(f, map[f]));
+        if (fs[0]) $(`[data-f=${fs[0]}]`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (r.state === 'expired' || r.state === 'cancelled') return showMessage('הקישור אינו בתוקף, נא לפנות לליאה', D.office?.phone);
+      else if (r.state === 'rate_limited') $('#form-err').textContent = 'היו יותר מדי ניסיונות. נסו שוב בעוד שעה.';
+      else $('#form-err').textContent = 'החתימה לא נשמרה. בדקו את החיבור לאינטרנט ונסו שוב.';
+    } catch (ex) { console.error(ex); $('#form-err').textContent = 'החתימה לא נשמרה. בדקו את החיבור לאינטרנט ונסו שוב.'; }
+    busy = false; btn.disabled = false; btn.textContent = 'אישור וחתימה';
+  };
+  window.scrollTo(0, 0);
+}
+
+function done(r) {
+  sticky.hidden = true; setOffice(r.office);
+  const a = r.address || '';
+  app.innerHTML = `<div class="done">
+    <div class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1>ההזמנה נחתמה בהצלחה</h1>
+    <p class="agr-no">מספר הסכם: <bdi class="num">${esc(r.agreement_no)}</bdi></p>
+    <section class="card" aria-labelledby="addr-h"><h2 id="addr-h">כתובת הנכס</h2>
+      <p class="addr" id="address">${esc(a) || '—'}</p>
+      ${a ? `<div class="nav-links">
+        <a class="btn" href="https://waze.com/ul?q=${encodeURIComponent(a)}&navigate=yes" target="_blank" rel="noopener">ניווט בוויז</a>
+        <a class="btn" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}" target="_blank" rel="noopener">פתיחה במפות</a></div>` : ''}
+    </section>
+    ${r.pdf_url ? `<a class="btn primary" id="pdf" href="${esc(r.pdf_url)}" target="_blank" rel="noopener">הורדת עותק חתום</a>` : ''}
+    <p class="next">ליאה תיצור איתך קשר לתיאום</p></div>`;
+  window.scrollTo(0, 0);
+}
+
+// signature pad: pointer events (finger, pen, mouse), smooth curves, sharp on high-DPI screens, never scrolls the page
+function signaturePad(canvas, onChange) {
+  const g = canvas.getContext('2d'); let strokes = [], cur = null, ink = 0, cssW = 0, cssH = 0;
+  const size = () => {
+    if (!canvas.isConnected) return window.removeEventListener('resize', size);
+    const r = canvas.getBoundingClientRect();
+    if (cssW && cssH && (r.width !== cssW || r.height !== cssH)) {   // rotate / resize: scale what was drawn
+      const sx = r.width / cssW, sy = r.height / cssH; strokes.forEach(s => s.forEach(p => { p.x *= sx; p.y *= sy; }));
+    }
+    cssW = r.width; cssH = r.height;
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#111'; g.lineWidth = 2.6; redraw();
+  };
+  const redraw = () => { g.clearRect(0, 0, canvas.width, canvas.height); strokes.forEach(draw); };
+  const draw = (s) => {
+    if (s.length === 1) { g.beginPath(); g.arc(s[0].x, s[0].y, 1.3, 0, Math.PI * 2); g.fillStyle = '#111'; g.fill(); return; }
+    g.beginPath(); g.moveTo(s[0].x, s[0].y);
+    for (let i = 1; i < s.length - 1; i++) { const mx = (s[i].x + s[i + 1].x) / 2, my = (s[i].y + s[i + 1].y) / 2; g.quadraticCurveTo(s[i].x, s[i].y, mx, my); }
+    g.lineTo(s[s.length - 1].x, s[s.length - 1].y); g.stroke();
+  };
+  const pt = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); cur = [pt(e)]; strokes.push(cur); redraw(); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!cur) return; e.preventDefault();
+    const p = pt(e), l = cur[cur.length - 1]; const d = Math.hypot(p.x - l.x, p.y - l.y);
+    if (d < 1.2) return; ink += d; cur.push(p); redraw();
+  });
+  const end = () => { if (cur) { cur = null; onChange(); } };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end); canvas.addEventListener('pointerleave', end);
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  window.addEventListener('resize', size); size();
+  return {
+    isEmpty: () => ink < 25,
+    clear() { strokes = []; ink = 0; redraw(); onChange(); },
+    toPNG() {   // white background, trimmed to the ink
+      const out = document.createElement('canvas'); out.width = canvas.width; out.height = canvas.height;
+      const o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, out.width, out.height); o.drawImage(canvas, 0, 0);
+      return out.toDataURL('image/png');
+    },
+  };
+}
+
+(async function start() {
+  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return showMessage('הקישור אינו תקין, נא לפנות לליאה');
+  try {
+    D = await api('GET');
+    setOffice(D.office);
+    if (D.state === 'open') return step1();
+    if (D.state === 'signed') return done(D);
+    if (D.state === 'expired' || D.state === 'cancelled') return showMessage('הקישור אינו בתוקף, נא לפנות לליאה', D.office?.phone);
+    return showMessage('הקישור אינו תקין, נא לפנות לליאה');
+  } catch (e) { console.error(e); showMessage('לא הצלחנו לטעון את ההזמנה. בדקו את החיבור לאינטרנט ונסו שוב.'); }
+})();
+</script>
+</body>
+</html>

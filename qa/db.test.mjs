@@ -1,6 +1,7 @@
 // Runs supabase/schema.sql on an in-memory Postgres (PGlite) with Supabase-like auth stubs,
 // then checks RLS, atomic saves, idempotent retry and phone normalization.
 import { PGlite } from '@electric-sql/pglite';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
@@ -11,16 +12,18 @@ const round2Sql = readFileSync(new URL('../supabase/005_round2.sql', import.meta
 const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', import.meta.url), 'utf8');
 const multiSql = readFileSync(new URL('../supabase/007_multi_need.sql', import.meta.url), 'utf8');
 const purposeSql = readFileSync(new URL('../supabase/008_multi_purpose.sql', import.meta.url), 'utf8');
+const signingSql = readFileSync(new URL('../supabase/009_signing.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
-const db = new PGlite();
+const db = new PGlite({ extensions: { pgcrypto } });
 await db.exec(`
   create schema auth;
   create table auth.users (id uuid primary key, email text);
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  create role anon nologin; create role authenticated nologin;
+  create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls; grant usage on schema public to service_role; alter default privileges in schema public grant all on tables to service_role; alter default privileges in schema public grant all on sequences to service_role;
+  create schema extensions;
   grant usage on schema public to anon, authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on functions to anon, authenticated;
@@ -44,6 +47,7 @@ await db.exec(round2Sql); // idempotent re-run
 await db.exec(removeSql); await db.exec(removeSql);
 await db.exec(multiSql); await db.exec(multiSql);
 await db.exec(purposeSql); await db.exec(purposeSql);
+await db.exec(signingSql); await db.exec(signingSql); // idempotent re-run
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -377,4 +381,115 @@ await as('authenticated', LEAH, async () => {
   await fails(() => q('select save_lead_deal($1::jsonb)', [{ id, contact, purpose_ids: [buy] }]), /./);
 });
 ok('008: several purposes per lead, in order, no repeats; needs untouched; older app safe; wrong list rejected');
+
+/* ── 009: brokerage-order signing ── */
+const owner1 = 'd2000000-0000-4000-8000-000000000001';
+const addr1 = (await q('select address from owner_deals where id=$1', [owner1]))[0].address;
+const tpl = (await q('select version, broker_name, broker_license, office_name, length(body) n from agreement_templates where is_active'));
+assert.equal(tpl.length, 1); assert.deepEqual([tpl[0].version, tpl[0].broker_name, tpl[0].broker_license, tpl[0].office_name], [1, 'ליאה ארז', '3156857', 'פריים לוקיישן']);
+assert.ok(tpl[0].n > 1500);
+ok('009: one active agreement text v1 (ליאה ארז, 3156857, פריים לוקיישן), idempotent re-run');
+const parts = (await q('select address_parts($1) p', ['הגפן 5, קריית גת']))[0].p;
+assert.ok(parts.includes('הגפן') && parts.includes('קריית גת') && !parts.some(x => /\d/.test(x)), String(parts));
+ok('009: address_parts("הגפן 5, קריית גת") → street and city, no house number');
+
+let req1, req2;
+await as('authenticated', LEAH, async () => {
+  const street = (await q('select address_parts($1) p', [addr1]))[0].p.find(x => !/\s/.test(x));
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner1, teaser_text: `נכס יפה ב${street}`, contact: { phone: '0541234000', name: 'א' } }]), /הכתובת/);
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner1, contact: { phone: '123', name: 'א' } }]), /נייד/);
+  const before = (await q('select count(*)::int n from contacts'))[0].n;
+  req1 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner1, teaser_text: 'חזית רחבה', contact: { phone: '054-1239999', name: 'לקוח חדש' } }]))[0].r;
+  assert.equal(req1.agreement_no, 76773); assert.ok(req1.token.length >= 40 && /^[A-Za-z0-9_-]+$/.test(req1.token));
+  assert.equal((await q('select count(*)::int n from contacts'))[0].n, before + 1);
+  const known = (await q('select phone, name from contacts where id <> $1 limit 1', [req1.contact_id]))[0];
+  req2 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner1, contact: { phone: known.phone, name: 'שם אחר' } }]))[0].r;
+  assert.equal(req2.agreement_no, 76774);
+  assert.equal((await q('select name from contacts where id=$1', [req2.contact_id]))[0].name, known.name);
+  const n = await q(`select type, title from notifications order by created_at`);
+  assert.equal(n.filter(x => x.type === 'signing_sent').length, 2);
+  const row = (await q('select teaser_snapshot t, address_snapshot a, status from signing_requests where id=$1', [req1.id]))[0];
+  assert.equal(row.a, addr1); assert.equal(row.status, 'sent'); assert.equal(row.t.teaser_text, 'חזית רחבה');
+});
+ok('009: signing_create — numbers 76773, 76774; url-safe token; teaser with a street rejected; bad phone rejected; new phone → new contact, known phone keeps its name; "נשלחה" notification');
+
+await as('authenticated', OTHER, () => fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner1, contact: { phone: '0541234001', name: 'x' } }]), /הרשאה/));
+await as('authenticated', OTHER, async () => assert.equal((await q('select count(*)::int n from signing_requests'))[0].n, 0));
+for (const t of ['signing_requests', 'notifications', 'agreement_templates', 'app_settings'])
+  await as('anon', null, () => fails(() => q(`select * from ${t}`), /denied/));
+for (const f of ['signing_public_get($1)', 'signing_public_begin($1)'])
+  for (const role of ['anon', 'authenticated']) await as(role, role === 'anon' ? null : LEAH, () => fails(() => q(`select ${f}`, [req1.token]), /denied/));
+await as('anon', null, () => fails(() => q('select signing_create($1::jsonb)', [{}]), /denied/));
+ok('009: non-member sees nothing and cannot create; anon cannot read any signing table; public functions closed to anon AND to Leah\'s login');
+
+const addrParts = (await q('select address_parts($1) p', [addr1]))[0].p;
+await as('service_role', null, async () => {
+  const g = (await q('select signing_public_get($1) r', [req1.token]))[0].r;
+  assert.equal(g.state, 'open'); assert.equal(g.agreement_no, 76773);
+  const flat = JSON.stringify(g);
+  for (const part of addrParts) assert.ok(!flat.includes(part), 'pre-sign payload leaks address part ' + part);
+  assert.ok(!('address' in g && g.address)); assert.ok(!/lat|lng/.test(Object.keys(g.teaser).join()));
+  assert.equal((await q('select status from signing_requests where id=$1', [req1.id]))[0].status, 'opened');
+  assert.equal((await q('select signing_public_get($1) r', ['nope']))[0].r.state, 'not_found');
+});
+ok('009: public get before signing → teaser + text, NO address part anywhere in the payload; marks "נפתחה"');
+
+await as('service_role', null, async () => {
+  const b = (await q('select signing_public_begin($1) r', [req1.token]))[0].r;
+  assert.equal(b.state, 'ok'); assert.ok(!('token' in b.request)); assert.equal(b.template.version, 1);
+  const done = { id: req1.id, signed_at: new Date().toISOString(), full_name: 'ישראל ישראלי', id_number: '000000018', home_address: 'הרצל 1, חיפה',
+    signature_png_path: 'x/sig.png', pdf_path: 'x/a.pdf', pdf_sha256: 'ab'.repeat(32), ip: '203.0.113.7', user_agent: 'UA' };
+  const c = (await q('select signing_public_complete($1::jsonb) r', [done]))[0].r;
+  assert.equal(c.state, 'signed'); assert.equal(c.address, addr1);
+  assert.equal((await q('select signing_public_complete($1::jsonb) r', [{ ...done, full_name: 'אחר' }]))[0].r.state, 'already');
+  const g = (await q('select signing_public_get($1) r', [req1.token]))[0].r;
+  assert.equal(g.state, 'signed'); assert.equal(g.address, addr1); assert.equal(g.pdf_path, 'x/a.pdf');
+  assert.equal((await q('select signing_public_begin($1) r', [req1.token]))[0].r.state, 'signed');
+  const n = (await q(`select title, body from notifications where type='signing_signed'`));
+  assert.equal(n.length, 1); assert.equal(n[0].title, 'ישראל ישראלי חתם/ה על הזמנת התיווך'); assert.match(n[0].body, /76773/);
+});
+ok('009: begin → complete signs once (second submit "already"); after signing the address + PDF path come back; "חתם/ה" notification');
+
+await as('service_role', null, async () => {
+  for (let i = 0; i < 10; i++) assert.equal((await q('select signing_public_begin($1) r', [req2.token]))[0].r.state, 'ok');
+  assert.equal((await q('select signing_public_begin($1) r', [req2.token]))[0].r.state, 'rate_limited');
+});
+await as('authenticated', LEAH, async () => {
+  await q('select signing_cancel($1)', [req2.id]);
+  await q('select signing_cancel($1)', [req1.id]); // signed stays signed
+  assert.deepEqual((await q('select agreement_no, status from signing_requests order by agreement_no')).map(r => r.status), ['signed', 'cancelled']);
+  await q('select notifications_mark_read()');
+  assert.equal((await q('select count(*)::int n from notifications where read_at is null'))[0].n, 0);
+});
+await as('service_role', null, async () => {
+  assert.equal((await q('select signing_public_get($1) r', [req2.token]))[0].r.state, 'cancelled');
+  assert.equal((await q('select signing_public_begin($1) r', [req2.token]))[0].r.state, 'cancelled');
+});
+let req3;
+await as('authenticated', LEAH, async () => { req3 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner1, contact: { phone: '0541239999' } }]))[0].r; });
+await q(`update signing_requests set expires_at = now() - interval '1 minute' where id=$1`, [req3.id]);
+await as('service_role', null, async () => {
+  assert.equal((await q('select signing_public_complete($1::jsonb) r', [{ id: req3.id, full_name: 'x' }]))[0].r.state, 'already');
+  assert.equal((await q('select signing_public_get($1) r', [req3.token]))[0].r.state, 'expired');
+});
+ok('009: 10 attempts per hour then "rate_limited"; cancel stops the link (a signed one stays signed); expired link refused; mark-read clears the bell');
+
+await fails(() => q(`update agreement_templates set body = body || ' x' where version = 1`), /אינו ניתן לשינוי/);
+await q(`update agreement_templates set is_active = is_active where version = 1`);
+ok('009: a saved agreement text cannot be edited (only switched on/off; new wording = new version)');
+
+await q(`update signing_requests set signed_at = now() - interval '31 days', expires_at = now() - interval '1 day' where id=$1`, [req1.id]);
+await as('service_role', null, async () => assert.equal((await q('select signing_public_get($1) r', [req1.token]))[0].r.state, 'expired'));
+await q(`update signing_requests set signed_at = now() - interval '29 days' where id=$1`, [req1.id]);
+await as('service_role', null, async () => assert.equal((await q('select signing_public_get($1) r', [req1.token]))[0].r.state, 'signed'));
+ok('009: a signed link shows the address + copy for 30 days after signing, then closes');
+
+await as('authenticated', LEAH, async () => {
+  const street = addrParts.find(x => !/\s/.test(x));
+  const optId = (await q(`insert into option_lists (list_key, value, sort) values ('owner_purpose', $1, 999) returning id`, ['חנות ב' + street]))[0].id;
+  await q('update owner_deals set purpose_id = $1 where id = $2', [optId, owner1]);
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner1, contact: { phone: '0541239999' } }]), /הכתובת/);
+});
+ok('009: the address check also covers the purpose shown to the client');
+
 console.log(`\nDB tests passed: ${pass}`);

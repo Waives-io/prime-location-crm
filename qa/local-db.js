@@ -14,7 +14,8 @@
   const seedOpts = { lead_need: ['לקנות', 'לשכור', 'להשכיר', 'להשקעה'],
     lead_purpose: ['תעשייה קלה', 'תעשייה כבדה', 'משרדים', 'מסחר / חנות', 'פרטי', 'מרלוג', 'מחסן'],
     owner_purpose: ['מחסן', 'תעשייה', 'מסחר', 'חנות'] };
-  const db = { options: [], fields: [], contacts: [], lead: [], owner: [] };
+  const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [] };
+  let agreementNo = 76773;
   for (const [k, vs] of Object.entries(seedOpts)) vs.forEach((v, i) => db.options.push({ id: id(), list_key: k, value: v, sort: (i + 1) * 10, created_at: now() }));
   const opt = (k, v) => db.options.find(o => o.list_key === k && o.value === v).id;
   const contact = (phone, name, entity_type, company_name = null) => { const c = { id: id(), phone, name, entity_type, company_name, created_at: now() }; db.contacts.push(c); return c.id; };
@@ -55,6 +56,35 @@
     async signOut() { session = null; try { sessionStorage.removeItem('pl-qa-session'); } catch {} },
     async isMember() { return true; },
     async loadAll() { await delay(); return { options: clone(db.options), fields: clone(db.fields), lead: join(db.lead), owner: join(db.owner) }; },
+    // signing (009_signing.sql semantics: address words rejected, bell notifications)
+    async loadSigning() { await delay();
+      return { signing: db.signing.map(r => ({ ...clone(r), contact: clone(db.contacts.find(c => c.id === r.contact_id)) })),
+        notifications: clone([...db.notifications].sort((a, b) => b.created_at.localeCompare(a.created_at))) }; },
+    async createSigning(p) { await delay(); this.calls.push({ signing: clone(p) });
+      const deal = db.owner.find(d => d.id === p.owner_deal_id); if (!deal) throw new Error('deal not found');
+      const words = String(deal.address || '').split(/[\s,]+/).filter(w => w.length >= 3 && !/\d/.test(w));
+      if (p.teaser_text && words.some(w => p.teaser_text.includes(w))) throw new Error('הטקסט מכיל את הכתובת');
+      const phone = norm(p.contact.phone);
+      let c = db.contacts.find(x => x.phone === phone);
+      if (!c) { c = { id: id(), phone, name: p.contact.name, entity_type: 'private', created_at: now() }; db.contacts.push(c); }
+      const purpose = db.options.find(o => o.id === deal.purpose_id)?.value || null;
+      const r = { id: id(), token: 'tok' + Math.random().toString(36).slice(2), agreement_no: agreementNo++, owner_deal_id: deal.id, contact_id: c.id,
+        status: 'sent', sent_at: now(), first_opened_at: null, signed_at: null, expires_at: new Date(Date.now() + 14 * 864e5).toISOString(),
+        signer_full_name: null, signer_id_number: null, pdf_path: null,
+        teaser_snapshot: { purpose, built_sqm: deal.built_sqm, plot_sqm: deal.plot_sqm, deal_kind: deal.deal_kind, teaser_text: p.teaser_text } };
+      db.signing.push(r);
+      db.notifications.push({ id: id(), type: 'signing_sent', title: `הזמנה ${r.agreement_no} נשלחה ל${c.name}`, body: null,
+        link: `#/m/owner/${deal.id}`, signing_request_id: r.id, read_at: null, created_at: now() });
+      return { id: r.id, token: r.token, agreement_no: r.agreement_no, contact_id: c.id }; },
+    async cancelSigning(rid) { await delay(); const r = db.signing.find(x => x.id === rid); if (r && r.status !== 'signed') r.status = 'cancelled'; },
+    async markNotificationsRead() { await delay(); db.notifications.forEach(n => { n.read_at ||= now(); }); },
+    async signedPdfUrl(path) { this.calls.push({ pdf: path }); return 'about:blank#' + path; },
+    // QA hook: what the Edge Function does when the client signs
+    _sign(rid, name = 'ישראל ישראלי', idn = '000000018') { const r = db.signing.find(x => x.id === rid);
+      Object.assign(r, { status: 'signed', signed_at: now(), first_opened_at: r.first_opened_at || now(), signer_full_name: name, signer_id_number: idn, pdf_path: `${r.owner_deal_id}/${r.id}.pdf` });
+      db.notifications.push({ id: id(), type: 'signing_signed', title: `${name} חתם/ה על הזמנת התיווך`, body: `הסכם ${r.agreement_no}`,
+        link: `#/m/owner/${r.owner_deal_id}`, signing_request_id: r.id, read_at: null, created_at: now() }); },
+    _db: db,
     async findContact(phone) { return clone(db.contacts.find(c => c.phone === phone) || null); },
     async saveDeal(module, p) {
       await delay(); this.calls.push({ module, p: clone(p) });

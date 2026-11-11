@@ -342,6 +342,39 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
 .lightbox{margin:0}
 .lightbox img{display:block;width:100%;max-height:70vh;object-fit:contain;background:#111;border-radius:10px}
 .lb-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}
+/* signing */
+.bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:var(--tap);height:var(--tap);border-radius:50%;color:var(--ink);text-decoration:none;flex:0 0 auto}
+.bell svg{width:24px;height:24px}
+.bell-n{position:absolute;top:2px;inset-inline-end:0;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--error);color:#fff;font-size:.72rem;font-weight:800;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.hero-top .bell{margin-inline-start:6px}
+.notif-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.notif-list a{display:flex;flex-direction:column;gap:2px;padding:14px 12px;border-bottom:1px solid var(--line);text-decoration:none;min-height:var(--tap)}
+.notif-list .unread a{background:#FFFBE0;border-inline-start:4px solid var(--yellow)}
+.notif-list .meta{color:var(--charcoal);font-size:.92rem}
+.sg-section{margin:22px 0 6px;padding-top:6px}
+.sg-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.sg-head h3{margin:0;font-size:1.1rem;font-weight:800}
+.sg-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.sg-row{padding:12px 2px;border-bottom:1px solid var(--line)}
+.sg-row .r1,.sg-hit .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.sg-times{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px;font-size:.88rem;color:var(--charcoal)}
+.sg-acts{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:8px}
+.sg-acts .btn{min-height:44px;padding-inline:14px;font-size:.9rem}
+.link.danger{color:var(--error)}
+.chip.sg-sent,.chip.sg-opened{background:#FFF3B0;border-color:#d4b100;color:var(--ink)}
+.chip.sg-signed{background:#DDF1E3;border-color:#2E7D4F;color:#174D2C}
+.chip.sg-expired,.chip.sg-cancelled{background:var(--surface);border-color:#c9c9c4;color:var(--charcoal)}
+.sg-hit button{display:block;width:100%;text-align:start;background:#FFFBE0;border:0;border-bottom:1px solid var(--line);border-inline-start:4px solid var(--yellow);padding:14px 12px;cursor:pointer;min-height:var(--tap)}
+.sg-hit .meta{display:block;color:var(--charcoal);font-size:.92rem;margin-top:3px}
+.sg-hit .sg-open{font-weight:700;color:var(--ink);text-decoration:underline}
+.sg-warn{font-weight:700}
+.sg-preview{margin:4px 0 14px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
+.sg-preview summary{cursor:pointer;font-weight:700;min-height:32px}
+.sg-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0}
+.sg-facts dt{color:var(--charcoal)}.sg-facts dd{margin:0;font-weight:700}
+#sg-pv-text{white-space:pre-line;margin:6px 0}
+.sg-lock{font-weight:700;margin:8px 0 0}
+.sg-lock::before{content:'🔒 '}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
@@ -361,6 +394,11 @@ const MAP_CENTER = [31.61, 34.77]; // קריית גת
 // GovMap (Israel's national map) finds exact house numbers. Its key works only from the approved domain
 // (waives-io.github.io; the key is public by design, it is bound to that domain). PL_APP.govmapToken = '' turns it off (tests).
 const GOVMAP_TOKEN = (window.PL_APP && 'govmapToken' in window.PL_APP) ? window.PL_APP.govmapToken : '811e5502-cd1e-4557-a510-ddd38cf0d8f9';
+// Brokerage-order signing (supabase/009_signing.sql + Edge Function "signing-public"). PL_APP.features.signing overrides.
+// Until Galli approves, signing is on only for the WAIVES test login; Leah sees nothing.
+const SIGN_TESTERS = ['contact@waives.io'];
+const FEATURES = { get signing() { return window.PL_APP?.features?.signing ?? SIGN_TESTERS.includes(String(S.session?.user?.email || '').toLowerCase()); } };
+const SIGN_PAGE = new URL('sign.html', location.href.split('#')[0].split('?')[0]).href;
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {
   lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
@@ -472,6 +510,18 @@ function supabaseDB() {
       return Object.fromEntries(r.filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
     },
     async deletePhotos(paths) { if (paths.length) must(await sb.storage.from('deal-photos').remove(paths)); },
+    // signing: requests + notifications (read with RLS); every change goes through an RPC
+    async loadSigning() {
+      const [reqs, notes] = await Promise.all([
+        sb.from('signing_requests').select('id, token, agreement_no, owner_deal_id, contact_id, status, sent_at, first_opened_at, signed_at, expires_at, signer_full_name, signer_id_number, pdf_path, teaser_snapshot, contact:contacts(name, phone)').order('sent_at', { ascending: false }),
+        sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(200),
+      ]);
+      return { signing: must(reqs), notifications: must(notes) };
+    },
+    async createSigning(p) { return must(await sb.rpc('signing_create', { p })); },
+    async cancelSigning(id) { must(await sb.rpc('signing_cancel', { p_id: id })); },
+    async markNotificationsRead() { must(await sb.rpc('notifications_mark_read')); },
+    async signedPdfUrl(path) { return must(await sb.storage.from('signed-agreements').createSignedUrl(path, 60)).signedUrl; },
     async setStatus(module, id, status) {
       must(await sb.from(module === 'lead' ? 'lead_deals' : 'owner_deals')
         .update({ status, closed_at: status === 'active' ? null : new Date().toISOString() }).eq('id', id));
@@ -502,7 +552,12 @@ const findDeal = (module, id) => deals(module).find(d => d.id === id);
 
 async function reload() {
   S.loadError = null;
-  try { S.data = await DB.loadAll(); }
+  try {
+    S.data = await DB.loadAll();
+    S.data.signing = []; S.data.notifications = [];
+    // signing must never block the CRM: if it fails to load, the rest works and the bell stays empty
+    if (FEATURES.signing) try { Object.assign(S.data, await DB.loadSigning()); } catch (e) { console.warn('signing', e); }
+  }
   catch (e) { console.error(e); S.loadError = e; }
 }
 
@@ -602,6 +657,7 @@ function lightbox(photos, start = 0) {
 // #/  ·  #/m/lead  ·  #/m/lead/new  ·  #/m/lead/new/dup/<id>  ·  #/m/lead/<id>  ·  #/m/lead/<id>/edit
 function parseRoute() {
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  if (p[0] === 'notifications' && FEATURES.signing) return { name: 'notifications' };
   if (p[0] !== 'm' || !MODULES[p[1]]) return { name: 'home' };
   const module = p[1];
   if (!p[2]) return { name: 'list', module };
@@ -636,10 +692,11 @@ async function render() {
   if (r.name !== 'form' && formDiscard) { formDiscard(); formDiscard = null; }
   if (r.name !== 'form') Dirty.on = false;
   if (r.name === 'home') return renderHome(app);
-  const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id) : formView(r);
+  const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id)
+    : r.name === 'notifications' ? notificationsView() : formView(r);
   app.innerHTML = shell(r, inner.html);
-  inner.mount?.();
   window.scrollTo(0, 0);
+  inner.mount?.();
 }
 
 function shell(r, html) {
@@ -655,12 +712,12 @@ function shell(r, html) {
       <button class="link" data-act="logout">יציאה</button>
     </nav>
     <div class="main">${html}</div>
-    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('').replace('</a><a', `</a><a class="nav-new" href="#/m/${r.module}/new">+ חדש</a><a`)}</nav>` : ''}
+    ${bottom ? `<nav class="bottom-nav" aria-label="מודולים">${navLinks('').replace('</a><a', `</a><a class="nav-new" href="#/m/${r.module || 'lead'}/new">+ חדש</a><a`)}</nav>` : ''}
   </div>`;
 }
 const topbar = (title, backHref, backText = 'חזרה', action = '') => `<header class="topbar">
   ${backHref ? `<a class="back" href="${backHref}">${backText}</a>` : ''}
-  <h1>${esc(title)}</h1>${action}
+  <h1>${esc(title)}</h1>${action}${bellHTML()}
   <a class="brand-mini" href="#/" aria-label="דף הבית"><img src="assets/pin.png" alt=""></a>
 </header>`;
 
@@ -754,7 +811,7 @@ function renderHome(app) {
   const count = (m) => deals(m).filter(d => d.status === 'active').length;
   app.innerHTML = `<main class="hero">
     <div class="hero-top">
-      <span class="hero-user"><button class="link" data-act="password">שינוי סיסמה</button> · <button class="link" data-act="logout">יציאה</button></span>
+      <span class="hero-user"><button class="link" data-act="password">שינוי סיסמה</button> · <button class="link" data-act="logout">יציאה</button></span>${bellHTML()}
       <img class="hero-logo" src="assets/logo.png" alt="פריים לוקיישן">
     </div>
     <div class="home-buttons">
@@ -778,7 +835,7 @@ function listView(module) {
   const st = S.list[module], M = MODULES[module];
   const html = `${topbar(M.title, '', '', `<a class="btn primary new-top" href="#/m/${module}/new">+ חדש</a>`)}
   <div class="content">
-    <input class="input search" id="q" type="search" placeholder="חיפוש: שם, טלפון, חברה, כתובת" value="${esc(st.q)}" aria-label="חיפוש">
+    <input class="input search" id="q" type="search" placeholder="${module === 'owner' && FEATURES.signing ? 'חיפוש: שם, טלפון, חברה, כתובת, מס׳ הסכם' : 'חיפוש: שם, טלפון, חברה, כתובת'}" value="${esc(st.q)}" aria-label="חיפוש">
     <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
       <label><input type="radio" name="tab" value="active" ${st.tab === 'active' ? 'checked' : ''}><span>פעילות</span></label>
       <label><input type="radio" name="tab" value="archive" ${st.tab === 'archive' ? 'checked' : ''}><span>ארכיון</span></label>
@@ -795,11 +852,12 @@ function listView(module) {
         .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
         .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
       const ul = $('#rows'); if (!ul) return; // list no longer on screen (e.g. undo from elsewhere)
-      if (!rows.length) {
+      const hits = module === 'owner' ? signingHits(q) : [];
+      if (!rows.length && !hits.length) {
         ul.innerHTML = `<li class="state">${q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
         return;
       }
-      ul.innerHTML = rows.map(d => `<li class="deal-row" data-id="${d.id}"><a href="#/m/${module}/${d.id}">
+      ul.innerHTML = hits.map(signingHitHTML).join('') + rows.map(d => `<li class="deal-row" data-id="${d.id}"><a href="#/m/${module}/${d.id}">
         ${d.photos?.length ? `<img class="row-thumb" data-photo="${esc(d.photos[0].thumb)}" alt="">` : ''}
         <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
@@ -811,6 +869,7 @@ function listView(module) {
     };
     // quick daily sweep: close / restore straight from the list, without leaving it or jumping to the top
     $('#rows').onclick = async (e) => {
+      const hit = e.target.closest('[data-sg]'); if (hit) return openSigning(hit.dataset.sg);
       const b = e.target.closest('button.row-act'); if (!b) return;
       const d = findDeal(module, b.closest('li').dataset.id); if (!d) return;
       if (b.dataset.a === 'dup') { location.hash = `#/m/${module}/new/dup/${d.id}`; return; }
@@ -896,6 +955,7 @@ function cardView(module, id) {
     </div>
     <dl class="dl">${rows.join('')}</dl>
     ${has(d.lat) && has(d.lng) ? '<div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>' : ''}
+    ${signingSectionHTML(module, d)}
     <div class="actions">
       <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
       <a class="btn" href="#/m/${module}/new/dup/${d.id}">שכפול</a>
@@ -911,6 +971,7 @@ function cardView(module, id) {
       mapsToCleanup.push(m);
     }
     $('#close-deal')?.addEventListener('click', () => closeDialog(module, d));
+    mountSigningSection(module, d);
     const strip = $('#card-photos');
     if (strip) { Photos.hydrate(strip); strip.onclick = (e) => { const b = e.target.closest('[data-i]'); if (b) lightbox(d.photos, +b.dataset.i); }; }
     $('#restore-deal')?.addEventListener('click', async (e) => {
@@ -948,6 +1009,218 @@ function closeDialog(module, d, after = render) {
   };
   dlg.showModal();
 }
+
+/* ════════════ brokerage-order signing ════════════ */
+const SIGN_STATUS = { sent: 'נשלחה', opened: 'נפתחה', signed: 'נחתמה', expired: 'פג תוקף', cancelled: 'בוטלה' };
+const signings = () => S.data?.signing || [];
+const signStatus = (r) => (r.status === 'sent' || r.status === 'opened') && new Date(r.expires_at) < new Date() ? 'expired' : r.status;
+const signLink = (r) => `${SIGN_PAGE}?t=${r.token}`;
+// exact time, Israel clock: DD/MM/YYYY HH:mm:ss
+const ilTime = (iso) => {
+  if (!iso) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
+};
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || '';
+function signWaText(name, teaser, link) {
+  const what = [teaser?.purpose, teaser?.built_sqm ? `${fmt.num(teaser.built_sqm)} מ"ר` : ''].filter(Boolean).join(' ');
+  return `שלום ${firstName(name)}, מצורף קישור לפרטי נכס${what ? ' ' + what : ''}. לצפייה בפרטים ובכתובת המלאה יש לחתום על הזמנת שירותי תיווך: ${link} . ליאה ארז, פריים לוקיישן`;
+}
+// the address words a teaser must not contain (same rule as public.address_parts in 009_signing.sql)
+const ADDR_GENERAL = new Set(['רחוב', 'רח׳', 'שדרות', 'שד׳', 'דרך', 'אזור', 'התעשייה', 'התעשיה', 'תעשייה', 'תעשיה', 'פארק', 'מתחם', 'קומה',
+  'בניין', 'בנין', 'מרכז', 'שכונת', 'כיכר', 'סמטת', 'מגרש', 'חלקה', 'גוש']);
+function addressParts(a) {
+  const out = new Set();
+  String(a || '').split(/\s*,\s*/).forEach(part => { const x = part.replace(/[0-9]+[א-ת]?(?![א-ת])/g, '').trim(); if (x.length >= 2) out.add(x); });
+  String(a || '').replace(/[^א-תA-Za-z"״׳' -]/g, ' ').split(/\s+/).forEach(w => { if (w.length >= 3 && !ADDR_GENERAL.has(w)) out.add(w); });
+  return [...out];
+}
+const addressInText = (text, address) => addressParts(address).filter(x => String(text || '').toLowerCase().includes(x.toLowerCase()));
+
+// opens a URL that is only known after an await, without the browser blocking it as a popup
+async function openLater(getUrl) {
+  const w = window.open('', '_blank');
+  try { const u = await getUrl(); if (w) w.location.href = u; else location.href = u; }
+  catch (e) { w?.close(); throw e; }
+}
+async function openSignedPdf(r) {
+  try { await openLater(() => DB.signedPdfUrl(r.pdf_path)); } catch (e) { console.error(e); toast('המסמך לא נפתח. נסי שוב.'); }
+}
+function openSigning(id) {
+  const r = signings().find(x => x.id === id); if (!r) return;
+  if (r.status === 'signed' && r.pdf_path) return openSignedPdf(r);
+  S.focus = 'signing'; go(`#/m/owner/${r.owner_deal_id}`);
+}
+
+const bellHTML = () => {
+  if (!FEATURES.signing || !S.data) return '';
+  const n = (S.data.notifications || []).filter(x => !x.read_at).length;
+  return `<a class="bell" href="#/notifications" aria-label="התראות${n ? `, ${n} חדשות` : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/></svg>${n ? `<span class="bell-n">${n > 99 ? '99+' : n}</span>` : ''}</a>`;
+};
+const updateBells = () => $$('.bell').forEach(b => { b.outerHTML = bellHTML(); });
+
+function notificationsView() {
+  const list = S.data.notifications || [];
+  const html = `${topbar('התראות', '#/')}
+  <div class="content">
+    ${list.length ? `<ul class="notif-list">${list.map(n => {
+      return `<li class="${n.read_at ? '' : 'unread'}"><a href="${esc(n.link || '#/')}" data-n="${n.id}">
+        <strong>${esc(n.title)}</strong>
+        ${n.body ? `<span class="meta">${esc(n.body)}</span>` : ''}
+        <span class="meta">${fmt.ltr(ilTime(n.created_at))}</span></a></li>`; }).join('')}</ul>`
+      : '<p class="state">אין התראות עדיין. כשתשלחי הזמנה להחתמה, וכשהלקוח יחתום, זה יופיע כאן.</p>'}
+  </div>`;
+  const mount = async () => {
+    $('.notif-list')?.addEventListener('click', (e) => { if (e.target.closest('a[data-n]')) S.focus = 'signing'; });
+    if (!list.some(n => !n.read_at)) return;
+    try { await DB.markNotificationsRead(); const t = new Date().toISOString(); list.forEach(n => { n.read_at ||= t; }); updateBells(); }
+    catch (e) { console.warn(e); }
+  };
+  return { html, mount };
+}
+
+// search hits in the owners list: agreement number, signer name / ID, client name. An exact number comes first.
+function signingHits(q) {
+  if (!FEATURES.signing || !q) return [];
+  const qd = q.replace(/\D/g, '');
+  const hits = signings().filter(r => (qd.length >= 3 && String(r.agreement_no).includes(qd))
+    || (qd.length >= 5 && String(r.signer_id_number || '').includes(qd))
+    || (r.signer_full_name || '').toLowerCase().includes(q) || (r.contact?.name || '').toLowerCase().includes(q));
+  return hits.sort((a, b) => (String(b.agreement_no) === qd) - (String(a.agreement_no) === qd) || String(b.sent_at).localeCompare(String(a.sent_at)));
+}
+function signingHitHTML(r) {
+  const st = signStatus(r), deal = findDeal('owner', r.owner_deal_id);
+  const prop = [r.teaser_snapshot?.purpose, deal?.address].filter(Boolean).join(' · ');
+  return `<li class="sg-hit"><button type="button" data-sg="${r.id}">
+    <span class="r1"><span><span class="name">הסכם <bdi class="num">${r.agreement_no}</bdi></span> · ${esc(r.signer_full_name || r.contact?.name || '')}</span>
+      <span class="chip sg-${st}">${SIGN_STATUS[st]}</span></span>
+    <span class="meta">${esc(prop)}${r.signed_at ? ` · נחתמה ${fmt.ltr(ilTime(r.signed_at))}` : ''}</span>
+    <span class="meta sg-open">${st === 'signed' ? 'פתיחת המסמך החתום' : 'מעבר להזמנה בכרטיס הנכס'}</span></button></li>`;
+}
+
+function signingRowHTML(r, { showProperty } = {}) {
+  const st = signStatus(r), live = st === 'sent' || st === 'opened';
+  const prop = showProperty ? [r.teaser_snapshot?.purpose, findDeal('owner', r.owner_deal_id)?.address].filter(Boolean).join(' · ') : '';
+  const times = [['נשלחה', r.sent_at], ['נפתחה', r.first_opened_at], ['נחתמה', r.signed_at]].filter(x => x[1])
+    .map(([k, v]) => `<span>${k} ${fmt.ltr(ilTime(v))}</span>`).join('');
+  return `<li class="sg-row" data-id="${r.id}">
+    <div class="r1"><span><strong>הסכם <bdi class="num">${r.agreement_no}</bdi></strong> · ${esc(r.signer_full_name || r.contact?.name || '')}</span>
+      <span class="chip sg-${st}">${SIGN_STATUS[st]}</span></div>
+    ${prop ? `<div class="meta">${esc(prop)}</div>` : ''}
+    <div class="meta sg-times">${times}</div>
+    <div class="sg-acts">${st === 'signed' && r.pdf_path ? '<button type="button" class="btn" data-a="pdf">פתיחת המסמך החתום</button>' : ''}
+      ${live ? `<button type="button" class="btn" data-a="wa">שליחה שוב בוואטסאפ</button>
+        <button type="button" class="link" data-a="copy">העתקת קישור</button>
+        <button type="button" class="link danger" data-a="cancel">ביטול</button>` : ''}</div></li>`;
+}
+function signingSectionHTML(module, d) {
+  if (!FEATURES.signing) return '';
+  const list = signings().filter(r => module === 'owner' ? r.owner_deal_id === d.id : r.contact_id === d.contact_id);
+  if (module !== 'owner' && !list.length) return '';
+  return `<section class="sg-section" id="signing" aria-labelledby="signing-h">
+    <div class="sg-head"><h3 id="signing-h">הזמנות תיווך</h3>
+      ${module === 'owner' && d.status === 'active' ? '<button type="button" class="btn primary" id="send-sign">שליחה להחתמה</button>' : ''}</div>
+    ${list.length ? `<ul class="sg-list">${list.map(r => signingRowHTML(r, { showProperty: module !== 'owner' })).join('')}</ul>`
+      : '<p class="hint">עדיין לא נשלחו הזמנות תיווך לנכס הזה.</p>'}</section>`;
+}
+function mountSigningSection(module, d) {
+  const sec = $('#signing'); if (!sec) return;
+  if (S.focus === 'signing') { S.focus = null; sec.scrollIntoView({ block: 'start' }); }
+  $('#send-sign')?.addEventListener('click', () => signingDialog(d));
+  sec.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    const r = signings().find(x => x.id === b.closest('[data-id]').dataset.id); if (!r) return;
+    if (b.dataset.a === 'pdf') return openSignedPdf(r);
+    if (b.dataset.a === 'wa') return window.open(Phone.wa(r.contact?.phone || '') + '?text=' + encodeURIComponent(signWaText(r.contact?.name, r.teaser_snapshot, signLink(r))), '_blank', 'noopener');
+    if (b.dataset.a === 'copy') {
+      try { await navigator.clipboard.writeText(signLink(r)); toast('הקישור הועתק'); } catch { prompt('העתיקי את הקישור:', signLink(r)); }
+      return;
+    }
+    if (b.dataset.a === 'cancel') {
+      if (!confirm(`לבטל את הזמנה ${r.agreement_no}? הקישור יפסיק לעבוד אצל הלקוח.`)) return;
+      b.disabled = true;
+      try { await DB.cancelSigning(r.id); Object.assign(S.data, await DB.loadSigning()); toast('ההזמנה בוטלה'); render(); }
+      catch (ex) { console.error(ex); toast('הביטול נכשל. נסי שוב.'); b.disabled = false; }
+    }
+  });
+}
+
+// Leah's sheet: client (phone first) → teaser text (checked for address words) → preview → WhatsApp
+function signingDialog(d) {
+  const dlg = $('#dlg'); dlg.oninput = null;
+  const teaser = { purpose: optText(d.purpose_id), built_sqm: d.built_sqm, plot_sqm: d.plot_sqm, deal_kind: d.deal_kind,
+    sale_price: d.deal_kind === 'sale' ? d.asking_price : null, monthly_rent: d.deal_kind === 'rent' ? d.asking_price : null };
+  const factsHTML = (t) => [t.purpose && ['ייעוד', esc(t.purpose)],
+    (t.built_sqm || t.plot_sqm) && ['שטח', [t.built_sqm ? `${fmt.bi(fmt.num(t.built_sqm))} מ״ר בנוי` : '', t.plot_sqm ? `${fmt.bi(fmt.num(t.plot_sqm))} מ״ר מגרש` : ''].filter(Boolean).join(' · ')],
+    t.deal_kind === 'sale' && ['מכירה', t.sale_price ? fmt.ltr(fmt.money(t.sale_price)) : '—'],
+    t.deal_kind === 'rent' && ['השכרה', t.monthly_rent ? fmt.ltr(fmt.money(t.monthly_rent)) + ' לחודש' : '—']]
+    .filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  dlg.innerHTML = `<form id="sg-form" novalidate><h2>שליחה להחתמה</h2>
+    <p class="hint">הלקוח יקבל קישור, יראה את פרטי הנכס בלי הכתובת, ויחתום על הזמנת שירותי תיווך. אחרי החתימה תוצג לו הכתובת.</p>
+    <div class="field" data-field="sg_phone"><label for="sg_phone">טלפון הלקוח <span class="req" aria-hidden="true">*</span></label>
+      <input class="input num" id="sg_phone" type="tel" inputmode="tel" dir="ltr" autocomplete="off">
+      <p class="note" id="sg-existing" hidden>לקוח קיים</p><p class="err" id="sg_phone-err" aria-live="polite"></p></div>
+    <div class="field" data-field="sg_name"><label for="sg_name">שם הלקוח <span class="req" aria-hidden="true">*</span></label>
+      <input class="input" id="sg_name"><p class="err" id="sg_name-err" aria-live="polite"></p></div>
+    <div class="field" data-field="sg_teaser"><label for="sg_teaser">טקסט על הנכס</label>
+      <textarea class="input" id="sg_teaser">${esc(d.description || '')}</textarea>
+      <p class="hint sg-warn">בדקי שאין כאן כתובת או שם רחוב</p><p class="err" id="sg_teaser-err" aria-live="polite"></p></div>
+    <details class="sg-preview" open><summary>כך הלקוח יראה את הנכס</summary>
+      <div class="sg-pv"><dl class="sg-facts">${factsHTML(teaser)}</dl><p id="sg-pv-text"></p>
+      <p class="sg-lock">הכתובת המלאה תוצג מיד לאחר החתימה</p></div></details>
+    <p class="err" id="sg-form-err" aria-live="polite"></p>
+    <div class="stack"><button class="btn primary" type="submit" id="sg-send">שליחה בוואטסאפ</button>
+      <button class="link" type="button" id="sg-cancel">ביטול</button></div></form>`;
+  const phone = $('#sg_phone'), name = $('#sg_name'), text = $('#sg_teaser');
+  const setErr = (id, m) => { $(`#${id}-err`).textContent = m; dlg.querySelector(`[data-field=${id}]`).classList.toggle('invalid', !!m); return !m; };
+  const checkTeaser = () => {
+    $('#sg-pv-text').textContent = text.value.trim();
+    const found = addressInText(text.value, d.address);
+    return setErr('sg_teaser', found.length ? `יש להסיר מהטקסט: ${found.map(x => `"${x}"`).join(', ')}. הכתובת נשלחת ללקוח רק אחרי החתימה.` : '');
+  };
+  let lookupSeq = 0, known = null;
+  const lookup = async () => {
+    const n = Phone.normalize(phone.value); if (!n) { known = null; $('#sg-existing').hidden = true; return; }
+    phone.value = n; const seq = ++lookupSeq;
+    try { const c = await DB.findContact(n); if (seq !== lookupSeq) return; known = c;
+      $('#sg-existing').hidden = !c; if (c) { name.value = c.name || ''; setErr('sg_name', ''); } } catch (e) { console.warn(e); }
+  };
+  phone.addEventListener('blur', async () => { if (!phone.value.trim()) return; setErr('sg_phone', Phone.normalize(phone.value) ? '' : Phone.error); await lookup(); });
+  phone.addEventListener('paste', () => setTimeout(() => { const n = Phone.normalize(phone.value); if (n) { phone.value = n; setErr('sg_phone', ''); lookup(); } }, 0));
+  text.addEventListener('input', checkTeaser); checkTeaser();
+  $('#sg-cancel').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+  $('#sg-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const ok = [setErr('sg_phone', Phone.normalize(phone.value) ? '' : Phone.error), setErr('sg_name', name.value.trim() ? '' : 'יש למלא שם'), checkTeaser()];
+    if (ok.includes(false)) { dlg.querySelector('.invalid input, .invalid textarea')?.focus(); return; }
+    const btn = $('#sg-send'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> יוצרת קישור…'; $('#sg-form-err').textContent = '';
+    const p = { owner_deal_id: d.id, teaser_text: text.value.trim() || null, contact: { phone: Phone.normalize(phone.value), name: name.value.trim() } };
+    try {
+      let link = '';
+      await openLater(async () => {
+        const res = await DB.createSigning(p);
+        link = `${SIGN_PAGE}?t=${res.token}`;
+        return Phone.wa(p.contact.phone) + '?text=' + encodeURIComponent(signWaText(known?.name || p.contact.name, { ...teaser }, link));
+      });
+      Object.assign(S.data, await DB.loadSigning());
+      dlg.close(); toast('ההזמנה נשלחה. כשהלקוח יחתום תקבלי התראה.'); S.focus = 'signing'; render();
+    } catch (ex) {
+      console.error(ex);
+      $('#sg-form-err').textContent = /הכתובת/.test(ex?.message || '') ? 'הטקסט מכיל את הכתובת. הסירי אותה ונסי שוב.' : 'השליחה נכשלה. בדקי את החיבור ונסי שוב.';
+      btn.disabled = false; btn.textContent = 'שליחה בוואטסאפ';
+    }
+  };
+  dlg.showModal(); phone.focus();
+}
+
+// a signature can arrive while the app is open in the background: refresh the bell when Leah comes back
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !FEATURES.signing || !S.data || !S.session || Dirty.on) return;
+  try { Object.assign(S.data, await DB.loadSigning()); updateBells(); if (parseRoute().name === 'notifications') render(); }
+  catch (e) { console.warn(e); }
+});
 
 /* ════════════ option list editor ════════════ */
 const LIST_TITLES = { lead_need: 'צורך', lead_purpose: 'ייעוד – מתעניינים', owner_purpose: 'ייעוד – בעלים' };

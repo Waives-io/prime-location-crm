@@ -10,6 +10,7 @@ const photosSql = readFileSync(new URL('../supabase/004_photos.sql', import.meta
 const round2Sql = readFileSync(new URL('../supabase/005_round2.sql', import.meta.url), 'utf8');
 const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', import.meta.url), 'utf8');
 const multiSql = readFileSync(new URL('../supabase/007_multi_need.sql', import.meta.url), 'utf8');
+const purposeSql = readFileSync(new URL('../supabase/008_multi_purpose.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -42,6 +43,7 @@ await db.exec(round2Sql);
 await db.exec(round2Sql); // idempotent re-run
 await db.exec(removeSql); await db.exec(removeSql);
 await db.exec(multiSql); await db.exec(multiSql);
+await db.exec(purposeSql); await db.exec(purposeSql);
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -357,4 +359,22 @@ await as('authenticated', LEAH, async () => {
   await fails(() => q('select save_lead_deal($1::jsonb)', [{ id, contact, need_ids: [purpose] }]), /./);
 });
 ok('007: several needs saved in order without repeats; older app keeps or replaces them safely; wrong list rejected');
+await as('authenticated', LEAH, async () => {
+  const opt = async (k, v) => (await q('select id from option_lists where list_key=$1 and value=$2', [k, v]))[0].id;
+  const [store, shop, office, buy, inv] = [await opt('lead_purpose', 'מחסן'), await opt('lead_purpose', 'מסחר / חנות'), await opt('lead_purpose', 'משרדים'),
+    await opt('lead_need', 'לקנות'), await opt('lead_need', 'להשקעה')];
+  assert.equal((await q('select count(*)::int n from lead_deals where purpose_id is not null and purpose_ids <> array[purpose_id]'))[0].n, 0);
+  const contact = { phone: '0528880002', name: 'כמה ייעודים', entity_type: 'private' };
+  const id = (await q('select save_lead_deal($1::jsonb) r', [{ contact, need_ids: [buy, inv], purpose_ids: [shop, store, shop] }]))[0].r.id;
+  let row = (await q('select need_ids, purpose_id, purpose_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_ids, row.purpose_id, row.purpose_ids], [[buy, inv], shop, [shop, store]]);
+  await q('select save_lead_deal($1::jsonb)', [{ id, contact, need_id: buy, purpose_id: shop }]);    // older app, same first values
+  row = (await q('select need_ids, purpose_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_ids, row.purpose_ids], [[buy, inv], [shop, store]]);
+  await q('select save_lead_deal($1::jsonb)', [{ id, contact, need_id: buy, purpose_id: office }]);  // older app, purpose changed
+  row = (await q('select need_ids, purpose_id, purpose_ids from lead_deals where id=$1', [id]))[0];
+  assert.deepEqual([row.need_ids, row.purpose_id, row.purpose_ids], [[buy, inv], office, [office]]);
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ id, contact, purpose_ids: [buy] }]), /./);
+});
+ok('008: several purposes per lead, in order, no repeats; needs untouched; older app safe; wrong list rejected');
 console.log(`\nDB tests passed: ${pass}`);

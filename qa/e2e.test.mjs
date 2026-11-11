@@ -189,7 +189,7 @@ try {
   assert.equal(await page.inputValue('#size_min'), '2');
   ok('"צורך" takes several choices; "+ חדש" adds "לחכור", ticks it, keeps everything typed');
 
-  await page.click('[data-field=purpose_id] .opt-edit');
+  await page.click('[data-field=purpose_ids] .opt-edit');
   const rowOf = (v) => page.locator('.opt-rows li').filter({ has: page.locator(`input[value="${v}"]`) });
   const mrl = rowOf('מרלוג');
   assert.match(await mrl.locator('.hint').first().innerText(), /בשימוש ב-1 רשומות/);
@@ -203,12 +203,14 @@ try {
   await off.locator('[data-a=remove-yes]').click();
   await page.waitForFunction(() => !document.querySelector('.opt-rows input[value="פרטי"]'));
   await page.click('dialog [data-a=close]');
-  await page.waitForFunction(() => [...document.querySelectorAll('#purpose_id option')].some(o => o.textContent === 'מרלוג / לוגיסטיקה'));
-  const purposeOpts = await page.locator('#purpose_id option').allInnerTexts();
+  await page.waitForFunction(() => [...document.querySelectorAll('#purpose_ids label')].some(o => o.textContent === 'מרלוג / לוגיסטיקה'));
+  const purposeOpts = await page.locator('#purpose_ids label').allInnerTexts();
   assert.ok(purposeOpts.includes('מרלוג / לוגיסטיקה') && !purposeOpts.includes('פרטי') && !purposeOpts.includes('מרלוג'));
   assert.equal(await page.inputValue('#name'), 'מירב כהן');
   ok('"עריכת הרשימה": rename warns when in use, remove hides value; form keeps typed data');
-  await page.selectOption('#purpose_id', { label: 'מחסן' });
+  await page.click('#purpose_ids label:has-text("מחסן")'); await page.click('#purpose_ids label:has-text("מסחר")');
+  assert.equal(await page.locator('#purpose_ids input:checked').count(), 2);
+  ok('"ייעוד" (leads) takes several choices too');
   await radio('size_unit', 'dunam');
   await fill('#height_m', '7');
   await page.fill('#address', 'אזור התעשיה חולון'); await page.click('#geo-go');
@@ -250,8 +252,10 @@ try {
 
   /* card */
   assert.match(await text('.dl'), /לקנות, להשקעה, לחכור/);
+  assert.match(await text('.dl'), /ייעוד\s*מחסן, מסחר/);
   const sent = await page.evaluate(() => PL_TEST_DB.calls.at(-1).p);
   assert.equal(sent.need_ids.length, 3); assert.equal(sent.need_id, sent.need_ids[0]);
+  assert.equal(sent.purpose_ids.length, 2); assert.equal(sent.purpose_id, sent.purpose_ids[0]);
   assert.match(await text('.dl'), /2–3 דונם/);
   assert.match(await text('.dl'), /דדליין/);
   assert.equal(await page.locator('#card-photos').count(), 0);

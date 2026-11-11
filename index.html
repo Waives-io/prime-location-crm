@@ -491,6 +491,9 @@ const optText = (id) => (S.data?.options || []).find(o => o.id === id)?.value ||
 // a lead's needs: need_ids (several, 007); rows saved before 007 have only need_id
 const needIds = (d) => d?.need_ids?.length ? d.need_ids : d?.need_id ? [d.need_id] : [];
 const needText = (d) => needIds(d).map(optText).filter(Boolean).join(', ');
+// a lead's purposes: purpose_ids (several, 008); owners and rows saved before 008 have only purpose_id
+const purposeIds = (d) => d?.purpose_ids?.length ? d.purpose_ids : d?.purpose_id ? [d.purpose_id] : [];
+const purposeText = (d) => purposeIds(d).map(optText).filter(Boolean).join(', ');
 const fieldsOf = (module) => (S.data?.fields || []).filter(f => f.module === module && !f.hidden);
 const SECTIONS = ['contact', 'property', 'location', 'money'];
 const sectionOf = (f) => SECTIONS.includes(f.section) ? f.section : 'money';
@@ -766,7 +769,7 @@ function dealSearchText(d) {
   return [c.name, c.company_name, c.company_number, c.broker_license, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
 }
 function rowSummary(module, d) {
-  if (module === 'lead') return [needText(d), optText(d.purpose_id), leadSize(d)];
+  if (module === 'lead') return [needText(d), purposeText(d), leadSize(d)];
   return [d.deal_kind === 'rent' ? 'השכרה' : d.deal_kind === 'sale' ? 'מכירה' : '', optText(d.purpose_id), fmt.size(d.built_sqm, 'sqm')];
 }
 const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.created_at).slice(0, 10);
@@ -844,7 +847,7 @@ function cardView(module, id) {
   if (module === 'lead') {
     add('תאריך פנייה', fmt.ltr(fmt.date(d.lead_date)));
     add('צורך', esc(needText(d)));
-    add('ייעוד', esc(optText(d.purpose_id)));
+    add('ייעוד', esc(purposeText(d)));
     add('גודל', leadSize(d) ? fmt.bi(leadSize(d)) : '');
     add('גובה נדרש', has(d.height_m) ? fmt.bi(fmt.num(d.height_m) + ' מ׳') : '');
     sec = 'location';
@@ -948,7 +951,7 @@ function closeDialog(module, d, after = render) {
 
 /* ════════════ option list editor ════════════ */
 const LIST_TITLES = { lead_need: 'צורך', lead_purpose: 'ייעוד – מתעניינים', owner_purpose: 'ייעוד – בעלים' };
-const optionUsage = (id) => ['lead', 'owner'].reduce((n, m) => n + deals(m).filter(d => needIds(d).includes(id) || d.purpose_id === id).length, 0);
+const optionUsage = (id) => ['lead', 'owner'].reduce((n, m) => n + deals(m).filter(d => needIds(d).includes(id) || purposeIds(d).includes(id)).length, 0);
 function optionsDialog(listKey, onDone) {
   const dlg = $('#dlg');
   const draw = () => {
@@ -1140,7 +1143,7 @@ function formView(r) {
   const leadProperty = `
     ${field('lead_date', 'תאריך פנייה', dateInput('lead_date', d.lead_date || todayISO()))}
     ${field('need_ids', 'צורך <small>(אפשר לבחור כמה)</small>', optChecks('need_ids', LISTS.need, needIds(d)))}
-    ${field('purpose_id', 'ייעוד', optSelect('purpose_id', LISTS.lead_purpose, d.purpose_id))}
+    ${field('purpose_ids', 'ייעוד <small>(אפשר לבחור כמה)</small>', optChecks('purpose_ids', LISTS.lead_purpose, purposeIds(d)))}
     ${field('size_min', 'גודל', `<div class="row size-range">${numInput('size_min', d.size_min ?? d.size_value, '', 'placeholder="מ־" aria-label="גודל מ־"')}${numInput('size_max', d.size_max ?? d.size_value, '', 'placeholder="עד" aria-label="גודל עד"')}${seg('size_unit', [['sqm', 'מ״ר'], ['dunam', 'דונם']], d.size_unit || 'sqm')}</div>`,
       { hint: 'אפשר למלא רק "מ־" או רק "עד"' })}
     ${field('height_m', 'גובה נדרש', numInput('height_m', d.height_m, 'מ׳'), { hint: 'גובה תקרה מינימלי במטרים' })}`;
@@ -1354,12 +1357,14 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     cancelBtn.onclick = () => { sel.value = prev; box.hidden = true; sel.focus(); };
   });
 
-  /* several needs keep the order they were picked in (need_id = the first, for older app versions) */
-  const needOrder = [...needIds(src)];
-  $('#need_ids', form)?.addEventListener('change', (e) => {
-    const v = e.target.value, i = needOrder.indexOf(v);
-    if (e.target.checked && i < 0) needOrder.push(v); else if (!e.target.checked && i >= 0) needOrder.splice(i, 1);
-  });
+  /* several-choice chips keep the order they were picked in (need_id / purpose_id = the first, for older app versions) */
+  const chipOrder = { need_ids: [...needIds(src)], purpose_ids: [...purposeIds(src)] };
+  $$('.chips', form).forEach(g => g.addEventListener('change', (e) => {
+    const order = chipOrder[g.id] ||= [], v = e.target.value, i = order.indexOf(v);
+    if (e.target.checked && i < 0) order.push(v); else if (!e.target.checked && i >= 0) order.splice(i, 1);
+  }));
+  const picked = (id) => { const order = chipOrder[id] || [], ticked = $$(`#${id} input:checked`, form).map(i => i.value);
+    return [...order.filter(v => ticked.includes(v)), ...ticked.filter(v => !order.includes(v))]; };
 
   /* "+ חדש" for several-choice chips: adds the value and ticks it */
   $$('.chip-new', form).forEach(b => {
@@ -1373,7 +1378,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
         if (!S.data.options.some(o => o.id === row.id)) S.data.options.push(row);
         if (!group.querySelector(`input[value="${row.id}"]`)) group.insertAdjacentHTML('beforeend', `<label><input type="checkbox" name="${group.id}" value="${row.id}"><span>${esc(row.value)}</span></label>`);
         group.querySelector(`input[value="${row.id}"]`).checked = true;
-        if (group.id === 'need_ids' && !needOrder.includes(row.id)) needOrder.push(row.id);
+        const order = chipOrder[group.id] ||= []; if (!order.includes(row.id)) order.push(row.id);
         box.hidden = true; Dirty.on = true; sync(); toast(`"${row.value}" נוסף לרשימה`);
       } catch (ex) { console.error(ex); toast('ההוספה נכשלה. נסי שוב.'); }
       addBtn.disabled = false;
@@ -1613,9 +1618,8 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
     let p;
     if (isLead) {
       const smin = parseNum(val('size_min')), smax = parseNum(val('size_max'));
-      const ticked = $$('#need_ids input:checked', form).map(i => i.value);
-      const needsPicked = [...needOrder.filter(v => ticked.includes(v)), ...ticked.filter(v => !needOrder.includes(v))];
-      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_ids: needsPicked, need_id: needsPicked[0] || null, purpose_id: optId('purpose_id'),
+      const needsPicked = picked('need_ids'), purposesPicked = picked('purpose_ids');
+      p = { v: 2, id: dealId, contact, lead_date: val('lead_date') || null, need_ids: needsPicked, need_id: needsPicked[0] || null, purpose_ids: purposesPicked, purpose_id: purposesPicked[0] || null,
         size_min: smin, size_max: smax, size_value: smin ?? smax, size_unit: radio('size_unit') || 'sqm',
         lat: pin.lat, lng: pin.lng, radius_m: pin.lat != null ? +radiusEl.value : null,
         height_m: parseNum(val('height_m')), notes: val('notes').trim() || null,

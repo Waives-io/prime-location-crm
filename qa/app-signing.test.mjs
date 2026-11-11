@@ -81,13 +81,13 @@ try {
   ok('send: WhatsApp opens to the client with the greeting, the sign link and no address');
 
   await page.waitForSelector('.sg-row');
-  assert.match(await page.locator('.sg-row').innerText(), /76773[\s\S]*נשלחה/);
+  assert.match(await page.locator('.sg-row').innerText(), /76773[\s\S]*ממתינה לחתימה[\s\S]*קישור נוצר/);
   assert.equal(await bellCount(), '1');
-  ok('card: request 76773 listed as "נשלחה"; bell shows 1');
+  ok('card: request 76773 listed as "ממתינה לחתימה" with the time the link was made; bell shows 1');
   await shot('s03-card-sent', true);
 
   await page.click('.topbar .bell'); await page.waitForSelector('.notif-list');
-  assert.match(await page.locator('.notif-list').innerText(), /76773/);
+  assert.match(await page.locator('.notif-list').innerText(), /נוצר קישור להחתמה עבור יוסי אברהם/);
   await page.waitForFunction(() => !document.querySelector('.bell-n'));
   ok('notifications: listed; opening the screen marks them read (bell clears)');
   await shot('s04-notifications');
@@ -99,6 +99,7 @@ try {
   ok('a signature while the app is in the background → bell updates on return');
   await page.click('.notif-list li:first-child a'); await page.waitForSelector('.sg-row');
   assert.match(await page.locator('.sg-row').innerText(), /נחתמה[\s\S]*ישראל ישראלי|ישראל ישראלי[\s\S]*נחתמה/);
+  assert.match(await page.locator('.sg-row').innerText(), /000000018/);
   const [pdfPop] = await Promise.all([page.waitForEvent('popup'), page.click('.sg-row [data-a=pdf]')]);
   await pdfPop.close();
   assert.ok((await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.pdf).length)) === 1);

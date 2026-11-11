@@ -1011,7 +1011,8 @@ function closeDialog(module, d, after = render) {
 }
 
 /* ════════════ brokerage-order signing ════════════ */
-const SIGN_STATUS = { sent: 'נשלחה', opened: 'נפתחה', signed: 'נחתמה', expired: 'פג תוקף', cancelled: 'בוטלה' };
+// the app cannot know whether the WhatsApp message was really sent, so "sent" reads as waiting, with the time the link was made
+const SIGN_STATUS = { sent: 'ממתינה לחתימה', opened: 'הלקוח פתח', signed: 'נחתמה', expired: 'פג תוקף', cancelled: 'בוטלה' };
 const signings = () => S.data?.signing || [];
 const signStatus = (r) => (r.status === 'sent' || r.status === 'opened') && new Date(r.expires_at) < new Date() ? 'expired' : r.status;
 const signLink = (r) => `${SIGN_PAGE}?t=${r.token}`;
@@ -1065,8 +1066,10 @@ function notificationsView() {
   const html = `${topbar('התראות', '#/')}
   <div class="content">
     ${list.length ? `<ul class="notif-list">${list.map(n => {
+      const r = n.type === 'signing_sent' && signings().find(x => x.id === n.signing_request_id);
+      const title = r ? `נוצר קישור להחתמה עבור ${r.contact?.name || ''}` : n.title;
       return `<li class="${n.read_at ? '' : 'unread'}"><a href="${esc(n.link || '#/')}" data-n="${n.id}">
-        <strong>${esc(n.title)}</strong>
+        <strong>${esc(title)}</strong>
         ${n.body ? `<span class="meta">${esc(n.body)}</span>` : ''}
         <span class="meta">${fmt.ltr(ilTime(n.created_at))}</span></a></li>`; }).join('')}</ul>`
       : '<p class="state">אין התראות עדיין. כשתשלחי הזמנה להחתמה, וכשהלקוח יחתום, זה יופיע כאן.</p>'}
@@ -1102,12 +1105,13 @@ function signingHitHTML(r) {
 function signingRowHTML(r, { showProperty } = {}) {
   const st = signStatus(r), live = st === 'sent' || st === 'opened';
   const prop = showProperty ? [r.teaser_snapshot?.purpose, findDeal('owner', r.owner_deal_id)?.address].filter(Boolean).join(' · ') : '';
-  const times = [['נשלחה', r.sent_at], ['נפתחה', r.first_opened_at], ['נחתמה', r.signed_at]].filter(x => x[1])
+  const times = [['קישור נוצר', r.sent_at], ['נפתח', r.first_opened_at], ['נחתם', r.signed_at]].filter(x => x[1])
     .map(([k, v]) => `<span>${k} ${fmt.ltr(ilTime(v))}</span>`).join('');
   return `<li class="sg-row" data-id="${r.id}">
     <div class="r1"><span><strong>הסכם <bdi class="num">${r.agreement_no}</bdi></strong> · ${esc(r.signer_full_name || r.contact?.name || '')}</span>
       <span class="chip sg-${st}">${SIGN_STATUS[st]}</span></div>
     ${prop ? `<div class="meta">${esc(prop)}</div>` : ''}
+    ${r.status === 'signed' && r.signer_id_number ? `<div class="meta">ת״ז ${fmt.ltr(r.signer_id_number)}</div>` : ''}
     <div class="meta sg-times">${times}</div>
     <div class="sg-acts">${st === 'signed' && r.pdf_path ? '<button type="button" class="btn" data-a="pdf">פתיחת המסמך החתום</button>' : ''}
       ${live ? `<button type="button" class="btn" data-a="wa">שליחה שוב בוואטסאפ</button>
@@ -1205,7 +1209,7 @@ function signingDialog(d) {
         return Phone.wa(p.contact.phone) + '?text=' + encodeURIComponent(signWaText(known?.name || p.contact.name, { ...teaser }, link));
       });
       Object.assign(S.data, await DB.loadSigning());
-      dlg.close(); toast('ההזמנה נשלחה. כשהלקוח יחתום תקבלי התראה.'); S.focus = 'signing'; render();
+      dlg.close(); toast('הקישור נוצר. אם ההודעה לא נשלחה, אפשר "שליחה שוב בוואטסאפ".'); S.focus = 'signing'; render();
     } catch (ex) {
       console.error(ex);
       $('#sg-form-err').textContent = /הכתובת/.test(ex?.message || '') ? 'הטקסט מכיל את הכתובת. הסירי אותה ונסי שוב.' : 'השליחה נכשלה. בדקי את החיבור ונסי שוב.';

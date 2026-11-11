@@ -30,7 +30,9 @@ a{color:inherit}
 .top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
 .top::before{content:"";display:block;height:6px;background:var(--yellow)}
 .top-in{display:flex;align-items:center;gap:12px;max-width:720px;margin-inline:auto;padding:10px 16px}
-.top-in img{height:40px;width:auto;display:block}
+.top-in{justify-content:space-between}
+.top-in img{height:52px;width:auto;display:block}
+.agr-by{color:var(--muted);font-size:.88rem;margin:0 0 4px}
 .broker{flex:1;min-width:0;line-height:1.25}
 .broker strong{display:block;font-size:1rem}
 .broker small{color:var(--muted);font-size:.85rem}
@@ -92,7 +94,6 @@ h1{font-size:1.45rem;line-height:1.25;font-weight:800;margin:6px 0 4px}
 <body>
 <header class="top"><div class="top-in">
   <img src="assets/logo.png" alt="פריים לוקיישן">
-  <div class="broker"><strong id="broker-name">ליאה ארז</strong><small>רשיון תיווך: <bdi class="num" id="broker-license">3156857</bdi></small></div>
   <a class="call" id="call" href="#" hidden aria-label="חיוג לליאה"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></a>
 </div></header>
 <main id="app" aria-live="polite"><div class="state-msg"><span class="spinner" aria-hidden="true"></span> טוען…</div></main>
@@ -120,8 +121,6 @@ function validId(raw) {
 const waTo = (p) => 'https://wa.me/972' + String(p).replace(/\D/g, '').replace(/^0/, '');
 function setOffice(o) {
   if (!o) return;
-  if (o.broker_name) $('#broker-name').textContent = o.broker_name;
-  if (o.broker_license) $('#broker-license').textContent = o.broker_license;
   if (o.phone) { const c = $('#call'); c.href = 'tel:' + String(o.phone).replace(/\D/g, ''); c.hidden = false; }
 }
 async function api(method, body) {
@@ -151,6 +150,7 @@ function step1() {
   const t = D.teaser || {};
   app.innerHTML = `<h1>${esc(D.title)}</h1>
     <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
+    <p class="agr-by">${esc(D.office?.broker_name || 'ליאה ארז')} · רשיון תיווך <bdi class="num">${esc(D.office?.broker_license || '3156857')}</bdi></p>
     <section class="card" aria-labelledby="prop-h"><h2 id="prop-h">פרטי הנכס</h2>
       <dl class="facts">${facts(t)}</dl>
       ${t.teaser_text ? `<p class="teaser-text">${esc(t.teaser_text)}</p>` : ''}
@@ -168,6 +168,7 @@ function step2() {
   app.innerHTML = `<button class="back" type="button" id="back">חזרה להסכם</button>
     <h1>חתימה על ההזמנה</h1>
     <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
+    <p class="agr-by">${esc(D.office?.broker_name || 'ליאה ארז')} · רשיון תיווך <bdi class="num">${esc(D.office?.broker_license || '3156857')}</bdi></p>
     <form id="sign-form" novalidate>
       <div class="field" data-f="full_name"><label for="full_name">שם מלא <span class="req" aria-hidden="true">*</span></label>
         <input class="input" id="full_name" autocomplete="name" required aria-describedby="full_name-err"><p class="err" id="full_name-err" aria-live="polite"></p></div>

@@ -395,9 +395,8 @@ const MAP_CENTER = [31.61, 34.77]; // קריית גת
 // (waives-io.github.io; the key is public by design, it is bound to that domain). PL_APP.govmapToken = '' turns it off (tests).
 const GOVMAP_TOKEN = (window.PL_APP && 'govmapToken' in window.PL_APP) ? window.PL_APP.govmapToken : '811e5502-cd1e-4557-a510-ddd38cf0d8f9';
 // Brokerage-order signing (supabase/009_signing.sql + Edge Function "signing-public"). PL_APP.features.signing overrides.
-// Until Galli approves, signing is on only for the WAIVES test login; Leah sees nothing.
-const SIGN_TESTERS = ['contact@waives.io'];
-const FEATURES = { get signing() { return window.PL_APP?.features?.signing ?? SIGN_TESTERS.includes(String(S.session?.user?.email || '').toLowerCase()); } };
+// On for everyone since 2026-11-11 (Galli + Leah tested on the live site; Leah approved the wording). PL_APP.features.signing = false turns it off.
+const FEATURES = { signing: window.PL_APP?.features?.signing ?? true };
 const SIGN_PAGE = new URL('sign.html', location.href.split('#')[0].split('?')[0]).href;
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose' };
 const MODULES = {

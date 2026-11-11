@@ -132,7 +132,7 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
 
   heading('תיעוד');
   const a = (k, v) => kv(k, v, 9);
-  a('נשלח', ilTime(audit.sent_at)); a('נפתח', ilTime(audit.opened_at)); a('נחתם', ilTime(audit.signed_at));
+  a('קישור נוצר', ilTime(audit.sent_at)); a('נפתח', ilTime(audit.opened_at)); a('נחתם', ilTime(audit.signed_at));
   a('אזור זמן', 'שעון ישראל (Asia/Jerusalem)');
   a('כתובת IP', audit.ip || '—'); a('דפדפן', audit.ua || '—');
   a('גרסת נוסח', String(audit.template_version)); a('מזהה בקשה', audit.request_id);

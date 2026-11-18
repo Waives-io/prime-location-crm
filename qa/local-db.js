@@ -62,27 +62,47 @@
         notifications: clone([...db.notifications].sort((a, b) => b.created_at.localeCompare(a.created_at))) }; },
     async createSigning(p) { await delay(); this.calls.push({ signing: clone(p) });
       const deal = db.owner.find(d => d.id === p.owner_deal_id); if (!deal) throw new Error('deal not found');
+      const kind = p.kind || 'client_order', coop = kind === 'broker_coop';
+      if (coop && !['shared', 'each_side', 'referral'].includes(p.coop_type)) throw new Error('coop_type required');
+      const purpose = db.options.find(o => o.id === deal.purpose_id)?.value || null;
       const words = String(deal.address || '').split(/[\s,]+/).filter(w => w.length >= 3 && !/\d/.test(w));
       if (p.teaser_text && words.some(w => p.teaser_text.includes(w))) throw new Error('הטקסט מכיל את הכתובת');
-      const phone = norm(p.contact.phone);
-      let c = db.contacts.find(x => x.phone === phone);
-      if (!c) { c = { id: id(), phone, name: p.contact.name, entity_type: 'private', created_at: now() }; db.contacts.push(c); }
-      const purpose = db.options.find(o => o.id === deal.purpose_id)?.value || null;
-      const r = { id: id(), token: 'tok' + Math.random().toString(36).slice(2), agreement_no: agreementNo++, owner_deal_id: deal.id, contact_id: c.id,
+      let c, lead = null, draft = false;
+      if (!coop && p.lead_id) {
+        lead = db.lead.find(l => l.id === p.lead_id); if (!lead) throw new Error('lead not found');
+        c = db.contacts.find(x => x.id === lead.contact_id);
+      } else {
+        const phone = norm(p.contact.phone);
+        c = db.contacts.find(x => x.phone === phone);
+        if (!c) { c = { id: id(), phone, name: p.contact.name.trim(), entity_type: coop ? 'broker' : 'private', company_name: null, created_at: now() }; db.contacts.push(c); }
+        if (!coop) {
+          lead = db.lead.find(l => l.contact_id === c.id && l.status === 'active');
+          if (!lead) { draft = true;
+            const need = db.options.find(o => o.list_key === 'lead_need' && o.value === (deal.deal_kind === 'rent' ? 'לשכור' : 'לקנות'));
+            const purp = db.options.find(o => o.list_key === 'lead_purpose' && o.value === purpose);
+            lead = { id: id(), contact_id: c.id, lead_date: now().slice(0, 10), need_id: need?.id || null, need_ids: need ? [need.id] : [],
+              purpose_id: purp?.id || null, purpose_ids: purp ? [purp.id] : [], notes: `נוצר מהחתמה על נכס: ${deal.address}`,
+              status: 'active', closed_at: null, custom: {}, is_draft: true, created_at: now() };
+            db.lead.push(lead); }
+        }
+      }
+      const r = { id: id(), token: 'tok' + Math.random().toString(36).slice(2), agreement_no: agreementNo++, kind, coop_type: coop ? p.coop_type : null,
+        coop_notes: coop ? p.coop_notes || null : null, owner_deal_id: deal.id, contact_id: c.id, lead_deal_id: lead?.id || null,
         status: 'sent', sent_at: now(), first_opened_at: null, signed_at: null, expires_at: new Date(Date.now() + 14 * 864e5).toISOString(),
-        signer_full_name: null, signer_id_number: null, pdf_path: null,
+        signer_full_name: null, signer_id_number: null, signer_license: null, pdf_path: null,
         teaser_snapshot: { purpose, built_sqm: deal.built_sqm, plot_sqm: deal.plot_sqm, deal_kind: deal.deal_kind, teaser_text: p.teaser_text } };
       db.signing.push(r);
-      db.notifications.push({ id: id(), type: 'signing_sent', title: `הזמנה ${r.agreement_no} נשלחה ל${c.name}`, body: null,
+      db.notifications.push({ id: id(), type: 'signing_sent', title: `נוצר קישור להחתמה עבור ${c.name}`, body: null,
         link: `#/m/owner/${deal.id}`, signing_request_id: r.id, read_at: null, created_at: now() });
-      return { id: r.id, token: r.token, agreement_no: r.agreement_no, contact_id: c.id }; },
+      return { id: r.id, token: r.token, agreement_no: r.agreement_no, contact_id: c.id, lead_id: lead?.id || null, draft_created: draft }; },
     async cancelSigning(rid) { await delay(); const r = db.signing.find(x => x.id === rid); if (r && r.status !== 'signed') r.status = 'cancelled'; },
     async markNotificationsRead() { await delay(); db.notifications.forEach(n => { n.read_at ||= now(); }); },
     async signedPdfUrl(path) { this.calls.push({ pdf: path }); return 'about:blank#' + path; },
     // QA hook: what the Edge Function does when the client signs
-    _sign(rid, name = 'ישראל ישראלי', idn = '000000018') { const r = db.signing.find(x => x.id === rid);
-      Object.assign(r, { status: 'signed', signed_at: now(), first_opened_at: r.first_opened_at || now(), signer_full_name: name, signer_id_number: idn, pdf_path: `${r.owner_deal_id}/${r.id}.pdf` });
-      db.notifications.push({ id: id(), type: 'signing_signed', title: `${name} חתם/ה על הזמנת התיווך`, body: `הסכם ${r.agreement_no}`,
+    _sign(rid, name = 'ישראל ישראלי', idn = '000000018', license = null) { const r = db.signing.find(x => x.id === rid);
+      Object.assign(r, { status: 'signed', signed_at: now(), first_opened_at: r.first_opened_at || now(), signer_full_name: name, signer_id_number: idn,
+        signer_license: r.kind === 'broker_coop' ? license : null, pdf_path: `${r.owner_deal_id}/${r.id}.pdf` });
+      db.notifications.push({ id: id(), type: 'signing_signed', title: `${name} חתם/ה על ${r.kind === 'broker_coop' ? 'הסכם שת״פ' : 'הזמנת התיווך'}`, body: `הסכם ${r.agreement_no}`,
         link: `#/m/owner/${r.owner_deal_id}`, signing_request_id: r.id, read_at: null, created_at: now() }); },
     _db: db,
     async findContact(phone) { return clone(db.contacts.find(c => c.phone === phone) || null); },
@@ -97,6 +117,7 @@
         const { contact, ...fields } = p;
         if (!row) { row = { id: p.id, status: 'active', closed_at: null, created_at: now() }; table.push(row); }
         Object.assign(row, fields, { contact_id });
+        if (module === 'lead') row.is_draft = false;
         if (fields.size_min != null && fields.size_max != null && fields.size_min > fields.size_max) throw new Error('size range');
         if (module === 'owner') row.yield_pct = row.monthly_rent && row.asking_price ? Math.round(row.monthly_rent * 12 / row.asking_price * 10000) / 100 : null;
         return { id: p.id, contact_id };

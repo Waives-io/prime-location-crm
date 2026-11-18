@@ -3,6 +3,7 @@
 //   POST {token, full_name, id_number, home_address, consent, signature}  → stores signature + signed PDF, returns the address.
 // Plain JS with its dependencies passed in, so the same code runs in the Edge Function (Deno) and in the QA tests (Node).
 import { buildAgreementPdf } from './pdf.js';
+import { notifyLeah } from './notify.js';
 
 export const ALLOWED_ORIGINS = ['https://waives-io.github.io'];
 const BUCKET = 'signed-agreements';
@@ -17,6 +18,8 @@ export function validIsraeliId(raw) {
   for (let i = 0; i < 9; i++) { let n = +id[i] * ((i % 2) + 1); if (n > 9) n -= 9; sum += n; }
   return sum % 10 === 0;
 }
+// ת״ז, or a company / non-profit number (ח.פ. / ע״ר: 9 digits starting with 5)
+export const validIdOrCompany = (raw) => /^5\d{8}$/.test(String(raw ?? '').replace(/[\s-]/g, '')) || validIsraeliId(raw);
 
 const PNG_PREFIX = 'data:image/png;base64,';
 function decodeSignature(dataUrl, b64decode) {
@@ -63,7 +66,7 @@ export async function handle(req, deps) {
       if (r.state !== 'open') return json({ state: r.state, office: r.office }, r.state === 'not_found' ? 404 : 410);
       // only these fields leave the server before a signature
       const { purpose, built_sqm, plot_sqm, deal_kind, sale_price, monthly_rent, teaser_text } = r.teaser || {};
-      return json({ state: 'open', office: r.office, agreement_no: r.agreement_no, title: r.title, body: r.body,
+      return json({ state: 'open', kind: r.kind, office: r.office, agreement_no: r.agreement_no, title: r.title, body: r.body,
         teaser: { purpose, built_sqm, plot_sqm, deal_kind, sale_price, monthly_rent, teaser_text } });
     }
 
@@ -76,7 +79,7 @@ export async function handle(req, deps) {
       const id_number = String(b.id_number || '').replace(/\D/g, '');
       const errors = {};
       if (full_name.length < 2 || full_name.length > 80) errors.full_name = 'required';
-      if (!validIsraeliId(b.id_number)) errors.id_number = 'invalid';
+      if (!validIdOrCompany(b.id_number)) errors.id_number = 'invalid';
       if (home_address.length < 3 || home_address.length > 160) errors.home_address = 'required';
       if (b.consent !== true) errors.consent = 'required';
       const sig = decodeSignature(b.signature, deps.b64decode);
@@ -89,6 +92,8 @@ export async function handle(req, deps) {
       if (begin.state !== 'ok') return json({ state: begin.state }, begin.state === 'not_found' ? 404 : 410);
 
       const r = begin.request, t = begin.template, signedAt = new Date(begin.now);
+      const coop = r.kind === 'broker_coop', license = String(b.license || '').replace(/\D/g, '');
+      if (coop && !/^\d{4,9}$/.test(license)) return json({ state: 'invalid', errors: { license: 'required' } }, 422);
       const ip = (req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || '').split(',')[0].trim() || null;
       const ua = (req.headers.get('user-agent') || '').slice(0, 400);
       // one file name per attempt, so a retry or a parallel submit never overwrites a stored, hashed PDF
@@ -97,28 +102,35 @@ export async function handle(req, deps) {
       const pdf = await buildAgreementPdf({
         pdfLib: deps.pdfLib, fontkit: deps.fontkit, fonts: deps.fonts, signaturePng: sig,
         office: { office_name: t.office_name, broker_name: t.broker_name, broker_license: t.broker_license },
-        agreementNo: r.agreement_no, title: t.title, body: t.body, teaser: r.teaser_snapshot, address: r.address_snapshot,
-        signer: { full_name, id_number: id_number.padStart(9, '0'), home_address },
+        agreementNo: r.agreement_no, title: t.title, body: begin.body ?? t.body, teaser: r.teaser_snapshot, address: r.address_snapshot, kind: r.kind,
+        signer: { full_name, id_number: id_number.padStart(9, '0'), home_address, license: coop ? license : null },
         audit: { sent_at: r.sent_at, opened_at: r.first_opened_at || begin.now, signed_at: signedAt.toISOString(), ip, ua,
                  template_version: r.template_version, request_id: r.id },
       });
       const sha = hex(await deps.sha256(pdf));
-      let done;
+      let done, completing = false;
       try {
         await deps.upload(BUCKET, `${base}-signature.png`, sig, 'image/png');
         await deps.upload(BUCKET, `${base}.pdf`, pdf, 'application/pdf');
+        completing = true;
         done = await deps.rpc('signing_public_complete', { p: {
           id: r.id, signed_at: signedAt.toISOString(), full_name, id_number: id_number.padStart(9, '0'), home_address,
-          signature_png_path: `${base}-signature.png`, pdf_path: `${base}.pdf`, pdf_sha256: sha, ip, user_agent: ua } });
+          signature_png_path: `${base}-signature.png`, pdf_path: `${base}.pdf`, pdf_sha256: sha, ip, user_agent: ua, license: coop ? license : null } });
       } catch (e) {
-        await deps.remove(BUCKET, [`${base}-signature.png`, `${base}.pdf`]).catch(() => {});
+        // the save may have committed even though its answer was lost: never delete files a signed row may point to
+        let signed = false;
+        if (completing) signed = await deps.rpc('signing_public_get', { p_token: token }).then(g => g?.state === 'signed').catch(() => true);
+        if (!signed) await deps.remove(BUCKET, [`${base}-signature.png`, `${base}.pdf`]).catch(() => {});
         throw e;
       }
       if (done.state !== 'signed') {           // a parallel submit won: keep its files, drop ours
         await deps.remove(BUCKET, [`${base}-signature.png`, `${base}.pdf`]).catch(() => {});
         return json(await signedBody(await deps.rpc('signing_public_get', { p_token: token }), deps));
       }
-      return json({ state: 'signed', agreement_no: r.agreement_no, address: done.address,
+      // tell Leah (email with the PDF + WhatsApp); never delays or breaks the client's answer
+      const job = notifyLeah({ requestId: r.id, pdf, deps }).catch(e => console.error('notify', e));
+      if (deps.background) deps.background(job); else await job;
+      return json({ state: 'signed', agreement_no: r.agreement_no, address: done.address, kind: r.kind,
         pdf_url: await deps.signedUrl(BUCKET, done.pdf_path, 600), office: begin.template && { broker_name: t.broker_name } });
     }
     return json({ state: 'method' }, 405);
@@ -129,6 +141,6 @@ export async function handle(req, deps) {
 }
 
 async function signedBody(r, deps) {
-  return { state: 'signed', agreement_no: r.agreement_no, address: r.address, office: r.office,
+  return { state: 'signed', kind: r.kind, agreement_no: r.agreement_no, address: r.address, office: r.office,
     pdf_url: r.pdf_path ? await deps.signedUrl(BUCKET, r.pdf_path, 600) : null };
 }

@@ -13,6 +13,7 @@ const removeSql = readFileSync(new URL('../supabase/006_field_remove.sql', impor
 const multiSql = readFileSync(new URL('../supabase/007_multi_need.sql', import.meta.url), 'utf8');
 const purposeSql = readFileSync(new URL('../supabase/008_multi_purpose.sql', import.meta.url), 'utf8');
 const signingSql = readFileSync(new URL('../supabase/009_signing.sql', import.meta.url), 'utf8');
+const signing2Sql = readFileSync(new URL('../supabase/010_signing2.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -48,6 +49,7 @@ await db.exec(removeSql); await db.exec(removeSql);
 await db.exec(multiSql); await db.exec(multiSql);
 await db.exec(purposeSql); await db.exec(purposeSql);
 await db.exec(signingSql); await db.exec(signingSql); // idempotent re-run
+await db.exec(signing2Sql); await db.exec(signing2Sql);
 await db.exec(`insert into auth.users values ('${OTHER}', 'other@example.com');`); // added after: NOT a member
 
 let pass = 0;
@@ -385,7 +387,7 @@ ok('008: several purposes per lead, in order, no repeats; needs untouched; older
 /* ── 009: brokerage-order signing ── */
 const owner1 = 'd2000000-0000-4000-8000-000000000001';
 const addr1 = (await q('select address from owner_deals where id=$1', [owner1]))[0].address;
-const tpl = (await q('select version, broker_name, broker_license, office_name, length(body) n from agreement_templates where is_active'));
+const tpl = (await q("select version, broker_name, broker_license, office_name, length(body) n from agreement_templates where is_active and kind = $1", ['client_order']));
 assert.equal(tpl.length, 1); assert.deepEqual([tpl[0].version, tpl[0].broker_name, tpl[0].broker_license, tpl[0].office_name], [1, 'ליאה ארז', '3156857', 'פריים לוקיישן']);
 assert.ok(tpl[0].n > 1500);
 ok('009: one active agreement text v1 (ליאה ארז, 3156857, פריים לוקיישן), idempotent re-run');
@@ -491,5 +493,62 @@ await as('authenticated', LEAH, async () => {
   await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner1, contact: { phone: '0541239999' } }]), /הכתובת/);
 });
 ok('009: the address check also covers the purpose shown to the client');
+
+/* ── 010: drafts, existing leads, broker cooperation, notification info ── */
+const owner2 = 'd2000000-0000-4000-8000-000000000002';
+let s1, s2, s3;
+await as('authenticated', LEAH, async () => {
+  const before = (await q('select count(*)::int n from lead_deals'))[0].n;
+  s1 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner2, contact: { phone: '0547001001', name: 'לקוח טיוטה' } }]))[0].r;
+  assert.equal(s1.draft_created, true);
+  const lead = (await q('select is_draft, need_ids, purpose_ids, notes, contact_id from lead_deals where id=$1', [s1.lead_id]))[0];
+  assert.equal(lead.is_draft, true); assert.equal(lead.contact_id, s1.contact_id); assert.match(lead.notes, /נוצר מהחתמה/);
+  assert.equal((await q('select count(*)::int n from lead_deals'))[0].n, before + 1);
+  assert.equal((await q('select lead_deal_id from signing_requests where id=$1', [s1.id]))[0].lead_deal_id, s1.lead_id);
+  // same phone again → the existing lead, no second draft
+  const again = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner2, contact: { phone: '054-700-1001', name: 'x' } }]))[0].r;
+  assert.equal(again.draft_created, false); assert.equal(again.lead_id, s1.lead_id);
+  // picked from the leads list
+  const anyLead = (await q(`select id, contact_id from lead_deals where not is_draft limit 1`))[0];
+  s2 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner2, lead_id: anyLead.id }]))[0].r;
+  assert.equal(s2.contact_id, anyLead.contact_id); assert.equal(s2.draft_created, false);
+  // completing the draft from the form clears the mark
+  await q('select save_lead_deal($1::jsonb)', [{ id: s1.lead_id, contact: { phone: '0547001001', name: 'לקוח טיוטה', entity_type: 'private' }, notes: 'הושלם' }]);
+  assert.equal((await q('select is_draft from lead_deals where id=$1', [s1.lead_id]))[0].is_draft, false);
+});
+ok('010: new client (name + phone) → draft lead linked to the request; same phone reuses it; a lead can be picked; saving the form completes the draft');
+
+await as('authenticated', LEAH, async () => {
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: owner2, kind: 'broker_coop', contact: { phone: '0547002002', name: 'מתווך' } }]), /סוג שת/);
+  const leadsBefore = (await q('select count(*)::int n from lead_deals'))[0].n;
+  s3 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: owner2, kind: 'broker_coop', coop_type: 'referral', coop_notes: '25% למתווך המוכר',
+    contact: { phone: '0547002002', name: 'דני מתווך' } }]))[0].r;
+  assert.equal((await q('select count(*)::int n from lead_deals'))[0].n, leadsBefore, 'a broker is not a lead');
+  assert.equal((await q('select entity_type from contacts where id=$1', [s3.contact_id]))[0].entity_type, 'broker');
+  assert.equal(s3.lead_id, null);
+});
+await as('service_role', null, async () => {
+  const g = (await q('select signing_public_get($1) r', [s3.token]))[0].r;
+  assert.equal(g.kind, 'broker_coop'); assert.equal(g.title, 'הסכם שת"פ בין מתווכים');
+  assert.match(g.body, /\(להלן: "העמלה"\):\nהפניה\nהערות \(אחוזים\): 25% למתווך המוכר\n4\. /);
+  assert.ok(!g.body.includes('{{split}}'));
+  const b = (await q('select signing_public_begin($1) r', [s3.token]))[0].r;
+  assert.equal(b.body, g.body); assert.equal(b.request.kind, 'broker_coop');
+  await q('select signing_public_complete($1::jsonb)', [{ id: s3.id, signed_at: new Date().toISOString(), full_name: 'דני מתווך', id_number: '000000018',
+    home_address: 'x 1', license: '1234567', signature_png_path: 'a', pdf_path: 'b', pdf_sha256: 'c', ip: '1', user_agent: 'u' }]);
+  const n = (await q(`select title from notifications where signing_request_id=$1 and type='signing_signed'`, [s3.id]))[0];
+  assert.equal(n.title, 'דני מתווך חתם/ה על הסכם שת״פ');
+  const info = (await q('select signing_public_notify_info($1) r', [s3.id]))[0].r;
+  assert.deepEqual([info.email, info.whatsapp, info.kind_label, info.request.signer_license], ['liaherez@gmail.com', '972505544524', 'הסכם שת״פ', '1234567']);
+  assert.ok(!('token' in info.request));
+  await q('select signing_public_notified($1, $2, null)', [s3.id, 'email']);
+  await q('select signing_public_notified($1, $2, $3)', [s3.id, 'whatsapp', 'timeout']);
+  const row = (await q('select notified_email_at, notified_whatsapp_at, notify_error from signing_requests where id=$1', [s3.id]))[0];
+  assert.ok(row.notified_email_at && !row.notified_whatsapp_at); assert.equal(row.notify_error, 'whatsapp: timeout');
+});
+assert.equal((await q('select broker_license from contacts where id=$1', [s3.contact_id]))[0].broker_license, '1234567');
+for (const f of ['signing_public_notify_info($1)', 'signing_public_notified($1, null, null)'])
+  for (const role of ['anon', 'authenticated']) await as(role, role === 'anon' ? null : LEAH, () => fails(() => q(`select ${f}`, [s3.id]), /denied/));
+ok('010: broker co-op — type required; broker saved as a broker contact (not a lead); section 3 shows the type + notes; licence kept; "חתם/ה על הסכם שת״פ"; notify info + log; closed to anon and Leah');
 
 console.log(`\nDB tests passed: ${pass}`);

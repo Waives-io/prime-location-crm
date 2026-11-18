@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#FFD400">
-<title>פריים לוקיישן · הזמנת שירותי תיווך</title>
+<title>פריים לוקיישן · חתימה על הסכם</title>
 <link rel="icon" href="icons/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -110,9 +110,14 @@ const money = (n) => '₪ ' + Math.round(Number(n)).toLocaleString('en-US');
 const token = new URLSearchParams(location.search).get('t') || '';
 const app = $('#app'), sticky = $('#sticky');
 let D = null;
+const isCoop = () => D?.kind === 'broker_coop';
+const WORD = () => isCoop() ? { doc: 'ההסכם', consent: 'קראתי ואני מאשר/ת את הסכם שיתוף הפעולה בין המתווכים', done: 'ההסכם נחתם בהצלחה' }
+  : { doc: 'ההזמנה', consent: 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך', done: 'ההזמנה נחתמה בהצלחה' };
 
+// ת״ז with its check digit; a company / non-profit number (9 digits starting with 5) only by its length
 function validId(raw) {
   const s = String(raw || '').replace(/[\s-]/g, '');
+  if (/^5\d{8}$/.test(s)) return true;
   if (!/^\d{5,9}$/.test(s)) return false;
   const id = s.padStart(9, '0'); if (/^0+$/.test(id)) return false;
   let sum = 0; for (let i = 0; i < 9; i++) { let n = +id[i] * ((i % 2) + 1); if (n > 9) n -= 9; sum += n; }
@@ -157,7 +162,7 @@ function step1() {
       <p class="hidden-addr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
         הכתובת המלאה תוצג מיד לאחר החתימה</p>
     </section>
-    <section class="card agreement" aria-labelledby="agr-h"><h2 id="agr-h">נוסח ההזמנה</h2>
+    <section class="card agreement" aria-labelledby="agr-h"><h2 id="agr-h">נוסח ${WORD().doc}</h2>
       ${String(D.body || '').split(/\n+/).map(p => `<p>${esc(p)}</p>`).join('')}</section>`;
   sticky.innerHTML = '<button class="btn primary" id="to-sign" type="button">מעבר לחתימה</button>'; sticky.hidden = false;
   $('#to-sign').onclick = step2;
@@ -166,21 +171,23 @@ function step1() {
 
 function step2() {
   app.innerHTML = `<button class="back" type="button" id="back">חזרה להסכם</button>
-    <h1>חתימה על ההזמנה</h1>
+    <h1>חתימה על ${WORD().doc}</h1>
     <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
     <p class="agr-by">${esc(D.office?.broker_name || 'ליאה ארז')} · רשיון תיווך <bdi class="num">${esc(D.office?.broker_license || '3156857')}</bdi></p>
     <form id="sign-form" novalidate>
       <div class="field" data-f="full_name"><label for="full_name">שם מלא <span class="req" aria-hidden="true">*</span></label>
         <input class="input" id="full_name" autocomplete="name" required aria-describedby="full_name-err"><p class="err" id="full_name-err" aria-live="polite"></p></div>
-      <div class="field" data-f="id_number"><label for="id_number">תעודת זהות <span class="req" aria-hidden="true">*</span></label>
+      <div class="field" data-f="id_number"><label for="id_number">ת״ז / ח.פ. <span class="req" aria-hidden="true">*</span></label>
         <input class="input num" id="id_number" inputmode="numeric" maxlength="9" dir="ltr" required aria-describedby="id_number-err"><p class="err" id="id_number-err" aria-live="polite"></p></div>
-      <div class="field" data-f="home_address"><label for="home_address">כתובת מגורים <span class="req" aria-hidden="true">*</span></label>
+      ${isCoop() ? `<div class="field" data-f="license"><label for="license">מספר רשיון תיווך <span class="req" aria-hidden="true">*</span></label>
+        <input class="input num" id="license" inputmode="numeric" maxlength="9" dir="ltr" required aria-describedby="license-err"><p class="err" id="license-err" aria-live="polite"></p></div>` : ''}
+      <div class="field" data-f="home_address"><label for="home_address">${isCoop() ? 'כתובת' : 'כתובת מגורים'} <span class="req" aria-hidden="true">*</span></label>
         <input class="input" id="home_address" autocomplete="street-address" required aria-describedby="home_address-err"><p class="err" id="home_address-err" aria-live="polite"></p></div>
       <div class="field" data-f="signature"><div class="pad-row"><label id="pad-lbl">חתימה <span class="req" aria-hidden="true">*</span></label>
           <button class="link" type="button" id="clear">ניקוי חתימה</button></div>
         <div class="pad-wrap"><canvas class="pad" id="pad" role="img" aria-labelledby="pad-lbl"></canvas><span class="pad-hint" id="pad-hint">חתמו כאן באצבע או בעכבר</span></div>
         <p class="err" id="signature-err" aria-live="polite"></p></div>
-      <div class="field" data-f="consent"><label class="check"><input type="checkbox" id="consent"><span>קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך</span></label>
+      <div class="field" data-f="consent"><label class="check"><input type="checkbox" id="consent"><span>${WORD().consent}</span></label>
         <p class="err" id="consent-err" aria-live="polite"></p></div>
       <p class="err" id="form-err" aria-live="polite"></p>
     </form>`;
@@ -191,17 +198,19 @@ function step2() {
   const val = (id) => $('#' + id).value.trim();
   const checks = {
     full_name: () => val('full_name').length >= 2 ? '' : 'נא למלא שם מלא',
-    id_number: () => !val('id_number') ? 'נא למלא מספר תעודת זהות' : validId(val('id_number')) ? '' : 'מספר תעודת הזהות אינו תקין. בדקו את 9 הספרות, כולל ספרת הביקורת',
+    id_number: () => !val('id_number') ? 'נא למלא ת״ז או ח.פ.' : validId(val('id_number')) ? '' : 'המספר אינו תקין. בדקו את 9 הספרות של הת״ז (כולל ספרת הביקורת) או של הח.פ.',
+    ...(isCoop() ? { license: () => /^\d{4,9}$/.test(val('license')) ? '' : 'נא למלא מספר רשיון תיווך (ספרות בלבד)' } : {}),
     home_address: () => val('home_address').length >= 3 ? '' : 'נא למלא כתובת מגורים',
     signature: () => pad.isEmpty() ? 'נא לחתום במסגרת' : '',
     consent: () => $('#consent').checked ? '' : 'יש לסמן את האישור כדי לחתום',
   };
   function setErr(f, m) { $(`#${f}-err`).textContent = m; $(`[data-f=${f}]`).classList.toggle('invalid', !!m); const i = $('#' + f); if (i && i.tagName === 'INPUT') i.setAttribute('aria-invalid', m ? 'true' : 'false'); }
-  ['full_name', 'id_number', 'home_address'].forEach(f => {
+  ['full_name', 'id_number', 'home_address', ...(isCoop() ? ['license'] : [])].forEach(f => {
     $('#' + f).addEventListener('blur', () => { if (val(f)) setErr(f, checks[f]()); });
     $('#' + f).addEventListener('input', () => { if ($(`[data-f=${f}]`).classList.contains('invalid')) setErr(f, checks[f]()); });
   });
   $('#id_number').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 9); });
+  $('#license')?.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 9); });
   $('#consent').onchange = () => setErr('consent', checks.consent());
   let busy = false;
   $('#sign-form').onsubmit = async (e) => {
@@ -215,10 +224,10 @@ function step2() {
     busy = true; const btn = $('#submit'); btn.disabled = true; btn.innerHTML = '<span class="spinner" aria-hidden="true"></span> שומר את החתימה…';
     try {
       const r = await api('POST', { token, full_name: val('full_name'), id_number: val('id_number'), home_address: val('home_address'),
-        consent: true, signature: pad.toPNG() });
+        license: isCoop() ? val('license') : undefined, consent: true, signature: pad.toPNG() });
       if (r.state === 'signed') return done(r);
       if (r.state === 'invalid') {
-        const map = { full_name: 'נא למלא שם מלא', id_number: 'מספר תעודת הזהות אינו תקין', home_address: 'נא למלא כתובת מגורים', signature: 'נא לחתום במסגרת', consent: 'יש לסמן את האישור כדי לחתום' };
+        const map = { full_name: 'נא למלא שם מלא', id_number: 'מספר ת״ז / ח.פ. אינו תקין', license: 'נא למלא מספר רשיון תיווך', home_address: 'נא למלא כתובת מגורים', signature: 'נא לחתום במסגרת', consent: 'יש לסמן את האישור כדי לחתום' };
         const fs = Object.keys(r.errors || {}).filter(f => map[f]); fs.forEach(f => setErr(f, map[f]));
         if (fs[0]) $(`[data-f=${fs[0]}]`).scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (r.state === 'expired' || r.state === 'cancelled') return showMessage('הקישור אינו בתוקף, נא לפנות לליאה', D.office?.phone);
@@ -235,7 +244,7 @@ function done(r) {
   const a = r.address || '';
   app.innerHTML = `<div class="done">
     <div class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
-    <h1>ההזמנה נחתמה בהצלחה</h1>
+    <h1>${WORD().done}</h1>
     <p class="agr-no">מספר הסכם: <bdi class="num">${esc(r.agreement_no)}</bdi></p>
     <section class="card" aria-labelledby="addr-h"><h2 id="addr-h">כתובת הנכס</h2>
       <p class="addr" id="address">${esc(a) || '—'}</p>
@@ -300,7 +309,7 @@ function signaturePad(canvas, onChange) {
     if (D.state === 'signed') return done(D);
     if (D.state === 'expired' || D.state === 'cancelled') return showMessage('הקישור אינו בתוקף, נא לפנות לליאה', D.office?.phone);
     return showMessage('הקישור אינו תקין, נא לפנות לליאה');
-  } catch (e) { console.error(e); showMessage('לא הצלחנו לטעון את ההזמנה. בדקו את החיבור לאינטרנט ונסו שוב.'); }
+  } catch (e) { console.error(e); showMessage('לא הצלחנו לטעון את ההסכם. בדקו את החיבור לאינטרנט ונסו שוב.'); }
 })();
 </script>
 </body>

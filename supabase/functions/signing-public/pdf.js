@@ -69,13 +69,14 @@ export function teaserLines(t = {}) {
   return rows;
 }
 
-export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, office, agreementNo, title, body, teaser, address, signer, audit }) {
+export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, office, agreementNo, title, body, teaser, address, signer, audit, kind }) {
+  const coop = kind === 'broker_coop';
   const { PDFDocument, rgb } = pdfLib;
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   const reg = await doc.embedFont(fonts.regular, { subset: true });
   const bold = await doc.embedFont(fonts.bold, { subset: true });
-  doc.setTitle(`הזמנת שירותי תיווך ${agreementNo}`); doc.setAuthor(office.office_name); doc.setLanguage('he');
+  doc.setTitle(`${title} ${agreementNo}`); doc.setAuthor(office.office_name); doc.setLanguage('he');
   const W = 595.28, H = 841.89, M = 46, R = W - M, INK = rgb(0.1, 0.1, 0.1), GREY = rgb(0.38, 0.38, 0.38), YELLOW = rgb(1, 0.83, 0);
   let page, y;
   const newPage = () => { page = doc.addPage([W, H]); y = H - M; };
@@ -112,16 +113,17 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
   if (teaser?.teaser_text) kv('תיאור', teaser.teaser_text);
   kv('כתובת הנכס', address || '—');
 
-  heading('נוסח ההזמנה');
+  heading(coop ? 'נוסח ההסכם' : 'נוסח ההזמנה');
   String(body || '').split(/\n+/).forEach(p => para(p, { size: 10, gap: 5 }));
 
-  heading('פרטי הלקוח');
+  heading(coop ? 'פרטי המתווך' : 'פרטי הלקוח');
   kv('שם מלא', signer.full_name);
-  kv('תעודת זהות', signer.id_number);
-  kv('כתובת מגורים', signer.home_address);
-  kv('אישור', 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך');
+  kv('ת״ז / ח.פ.', signer.id_number);
+  if (coop) kv('רשיון תיווך', signer.license);
+  kv(coop ? 'כתובת' : 'כתובת מגורים', signer.home_address);
+  kv('אישור', coop ? 'קראתי ואני מאשר/ת את הסכם שיתוף הפעולה בין המתווכים' : 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך');
 
-  heading('חתימת הלקוח');
+  heading(coop ? 'חתימת המתווך' : 'חתימת הלקוח');
   const png = await doc.embedPng(signaturePng);
   const sc = Math.min(230 / png.width, 95 / png.height, 1);
   const sw = png.width * sc, sh = png.height * sc;

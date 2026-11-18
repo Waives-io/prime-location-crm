@@ -62,12 +62,16 @@ try {
   ok('send sheet: clean teaser accepted, live preview updates');
 
   await page.click('#sg-send');
-  assert.match(await page.locator('#sg_phone-err').innerText(), /05/);
-  ok('send sheet: empty phone → inline error, nothing sent');
-  await page.fill('#sg_phone', '054 111 0001'); await page.locator('#sg_phone').blur();
-  await page.waitForFunction(() => document.querySelector('#sg_name').value === 'יוסי אברהם');
-  assert.equal(await page.isVisible('#sg-existing'), true);
-  ok('send sheet: existing phone fills the client name ("לקוח קיים")');
+  assert.match(await page.locator('#sg_who-err').innerText(), /יש לבחור לקוח/);
+  ok('send sheet: nobody chosen → inline error, nothing sent');
+  await page.fill('#sg_find', 'יוסי');
+  await page.waitForSelector('#sg-results button');
+  assert.equal(await page.locator('#sg-results button').count(), 2, 'each of the contact\'s leads is offered, with its purpose');
+  await page.fill('#sg_find', '1110003'); await page.waitForSelector('#sg-results button:has-text("דוד לוי")');
+  assert.match(await page.locator('#sg-results').innerText(), /ארכיון/);
+  await page.fill('#sg_find', 'יוסי'); await page.click('#sg-results button >> nth=0');
+  assert.match(await page.locator('#sg-chosen').innerText(), /יוסי אברהם[\s\S]*054-1110001/);
+  ok('send sheet: search the leads by name or phone (one row per lead, archived marked); pick one');
   await shot('s02-send-sheet', true);
 
   const [pop] = await Promise.all([page.waitForEvent('popup'), page.click('#sg-send')]);
@@ -78,7 +82,9 @@ try {
   assert.match(msg, /^שלום יוסי,/); assert.match(msg, /sign\.html\?t=tok/); assert.match(msg, /ליאה ארז, פריים לוקיישן$/);
   assert.ok(!msg.includes('לכיש'), 'the WhatsApp text must not include the address');
   await pop.close();
-  ok('send: WhatsApp opens to the client with the greeting, the sign link and no address');
+  const call1 = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.signing)[0].signing);
+  assert.equal(call1.kind, 'client_order'); assert.ok(call1.lead_id && !call1.contact, 'an existing lead is sent by id');
+  ok('send: WhatsApp opens to the client with the greeting, the sign link and no address; the lead is linked');
 
   await page.waitForSelector('.sg-row');
   assert.match(await page.locator('.sg-row').innerText(), /76773[\s\S]*ממתינה לחתימה[\s\S]*קישור נוצר/);
@@ -106,17 +112,71 @@ try {
   ok('signed: notification opens the card, row shows signer + "נחתמה", PDF opens (signed URL asked)');
   await shot('s05-card-signed', true);
 
-  // second request to a new client, then cancel it
+  // second request to a new client → a draft lead; then cancel it
   await page.click('#send-sign'); await page.waitForSelector('#sg-form');
-  await page.fill('#sg_phone', '050-9998877'); await page.locator('#sg_phone').blur();
+  await page.fill('#sg_find', '050-9998877'); await page.click('#sg-new-btn');
+  assert.equal(await page.inputValue('#sg_phone'), '050-9998877');
   await page.fill('#sg_name', 'רונית בדיקה');
+  await shot('s07-new-client', true);
   const [pop2] = await Promise.all([page.waitForEvent('popup'), page.click('#sg-send')]); await pop2.close();
   await page.waitForFunction(() => document.querySelectorAll('.sg-row').length === 2);
+  const draft = await page.evaluate(() => PL_TEST_DB._db.lead.find(l => l.is_draft));
+  assert.ok(draft, 'a draft lead was created'); assert.match(draft.notes, /נוצר מהחתמה/);
   page.once('dialog', d => d.accept());
   await page.locator('.sg-row', { hasText: '76774' }).locator('[data-a=cancel]').click();
   await page.waitForFunction(() => /בוטלה/.test(document.querySelector('#signing').innerText) && document.querySelectorAll('.sg-row').length === 2);
   assert.equal((await reqs()).find(r => r.no === 76774).status, 'cancelled');
-  ok('new client: contact created, second order 76774; "ביטול" cancels it');
+  ok('"+ לקוח חדש" (name + phone only): a draft lead is created, order 76774; "ביטול" cancels it');
+
+  // broker co-op
+  await page.click('#send-coop'); await page.waitForSelector('#sg-form');
+  assert.match(await page.locator('#sg-form h2').innerText(), /החתמת שת״פ/);
+  await page.click('#sg-send');
+  assert.match(await page.locator('#sg_type-err').innerText(), /סוג/);
+  assert.match(await page.locator('#sg_who-err').innerText(), /מתווך/);
+  ok('co-op sheet: type and broker are required');
+  await page.check('input[name=sg_type][value=shared]'); await page.fill('#sg_notes', '50% לכל צד');
+  await page.click('#sg-new-btn'); await page.fill('#sg_phone', '054-7770008'); await page.locator('#sg_phone').blur();
+  await page.fill('#sg_name', 'משה מתווך');
+  await shot('s08-coop-sheet', true);
+  const [pop3] = await Promise.all([page.waitForEvent('popup'), page.click('#sg-send')]);
+  await pop3.waitForURL(/wa\.me/);
+  const m3 = new URL(pop3.url()).searchParams.get('text'); await pop3.close();
+  assert.match(m3, /^היי משה, מצורף הסכם לחתימה\n\nלצפייה בהסכם: \S+sign\.html\?t=tok\S+\n\nלאחר החתימה, לחיצה על הלינק ⬆️ תעביר אותך להסכם החתום\.\n\nבברכה,\nליאה ארז$/);
+  const call3 = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.signing).at(-1).signing);
+  assert.deepEqual([call3.kind, call3.coop_type, call3.coop_notes, call3.contact.name], ['broker_coop', 'shared', '50% לכל צד', 'משה מתווך']);
+  await page.waitForFunction(() => document.querySelectorAll('.sg-row').length === 3);
+  const coopRow = page.locator('.sg-row', { hasText: '76775' });
+  assert.match(await coopRow.innerText(), /שת״פ · קופה משותפת[\s\S]*הערות: 50% לכל צד/);
+  assert.equal(await page.evaluate(() => PL_TEST_DB._db.lead.filter(l => l.is_draft).length), 1, 'a broker is not added to the leads');
+  ok('co-op: type + notes, new broker; WhatsApp in Galli\'s wording with the broker\'s name; row "שת״פ · קופה משותפת"');
+  const [pop4] = await Promise.all([page.waitForEvent('popup'), coopRow.locator('[data-a=wa]').click()]);
+  assert.match(new URL(pop4.url()).searchParams.get('text'), /^היי משה, מצורף הסכם לחתימה/); await pop4.close();
+  await page.click('#send-coop'); await page.waitForSelector('#sg-form');
+  await page.fill('#sg_find', 'משה'); await page.waitForSelector('#sg-results button:has-text("משה מתווך")');
+  await page.click('#sg-cancel');
+  ok('co-op: "שליחה שוב" uses the co-op wording; the broker is offered next time');
+  await page.evaluate(() => { const r = PL_TEST_DB._db.signing.find(x => x.agreement_no === 76775); PL_TEST_DB._sign(r.id, 'משה מתווך', '000000018', '7654321'); });
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(() => /רשיון 7654321/.test(document.querySelector('#signing')?.innerText || ''));
+  ok('co-op signed: the row shows the broker\'s licence');
+  await shot('s09-card-coop', true);
+
+  // drafts in the leads list
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
+  assert.match(await page.locator('.seg').innerText(), /טיוטות \(1\)/);
+  assert.equal(await page.locator('#rows li.deal-row.draft').count(), 1);
+  await page.click('label:has-text("טיוטות")');
+  await page.waitForFunction(() => document.querySelectorAll('#rows li.deal-row').length === 1);
+  assert.match(await page.locator('#rows').innerText(), /רונית בדיקה[\s\S]*טיוטה/);
+  await shot('s10-drafts');
+  await page.click('#rows li.deal-row a'); await page.waitForSelector('.draft-note');
+  ok('leads list: "טיוטות (1)" filter, dashed draft row; the card explains how to complete it');
+  await page.evaluate(async () => { const l = PL_TEST_DB._db.lead.find(x => x.is_draft); const c = PL_TEST_DB._db.contacts.find(x => x.id === l.contact_id);
+    await PL_TEST_DB.saveDeal('lead', { ...l, contact: { phone: c.phone, name: c.name, entity_type: 'private' } }); await reload(); render(); });
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
+  assert.ok(!/טיוטות/.test(await page.locator('.seg').innerText()));
+  ok('saving the lead clears the draft mark and the filter');
 
   // owners list search
   await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows');
@@ -130,7 +190,7 @@ try {
   ok('owners search: by agreement no., signer ID and client name; unsigned hit opens the card section');
 
   // lead card of the same contact shows the order
-  const leadId = await page.evaluate(() => PL_TEST_DB._db.lead.find(l => l.contact_id === PL_TEST_DB._db.signing[0].contact_id).id);
+  const leadId = await page.evaluate(() => PL_TEST_DB._db.signing[0].lead_deal_id);
   await page.goto(BASE + '#/m/lead/' + leadId); await page.waitForSelector('#signing');
   assert.match(await page.locator('#signing').innerText(), /76773/);
   assert.equal(await page.locator('#send-sign').count(), 0);

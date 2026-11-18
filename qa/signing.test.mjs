@@ -12,7 +12,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { handle, validIsraeliId } from '../supabase/functions/signing-public/handler.js';
+import { handle, validIsraeliId, validIdOrCompany } from '../supabase/functions/signing-public/handler.js';
 import { ALEF_REGULAR, ALEF_BOLD } from '../supabase/functions/signing-public/fonts.js';
 import { renderPdfPages } from './pdf-render.mjs';
 
@@ -39,7 +39,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   insert into auth.users values ('${LEAH}', 'leah@example.com');`);
 await db.exec(sql('schema.sql').replace('LEAH_EMAIL@example.com', 'leah@example.com'));
-for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql'])
+for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql', '010_signing2.sql'])
   await db.exec(sql(f).replace('LEAH_EMAIL@example.com', 'leah2@example.com'));
 const q = (s, p) => db.query(s, p).then(r => r.rows);
 async function as(role, uid, fn) {
@@ -52,13 +52,13 @@ const rpc = (name, args) => (lock = lock.then(() => as('service_role', null, asy
   const r = await q(`select public.${name}(${keys.map((k, i) => `${k} => $${i + 1}${cast[k] || ''}`).join(', ')}) r`, keys.map(k => args[k]));
   return r[0].r;
 })));
-const create = (phone, name, teaser) => as('authenticated', LEAH, async () =>
-  (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: OWNER, teaser_text: teaser, contact: { phone, name } }]))[0].r);
+const create = (phone, name, teaser, extra = {}) => as('authenticated', LEAH, async () =>
+  (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: OWNER, teaser_text: teaser, contact: { phone, name }, ...extra }]))[0].r);
 const address = (await q('select address from owner_deals where id=$1', [OWNER]))[0].address;
 const addrParts = (await as('authenticated', LEAH, () => q('select address_parts($1) p', [address])))[0].p;
 
 /* ── server: sign.html + the function at /api + stored files at /files ── */
-const store = new Map();
+const store = new Map(), sent = { email: [], whatsapp: [] };
 let BASE;
 const deps = {
   rpc,
@@ -68,6 +68,8 @@ const deps = {
   fonts: { regular: Buffer.from(ALEF_REGULAR, 'base64'), bold: Buffer.from(ALEF_BOLD, 'base64') }, pdfLib, fontkit,
   b64decode: (s) => Buffer.from(s, 'base64'),
   sha256: async (b) => createHash('sha256').update(b).digest(),
+  async sendEmail(m) { sent.email.push(m); },
+  async sendWhatsApp(m) { if (m.text.includes('FAIL')) throw new Error('down'); sent.whatsapp.push(m); },
 };
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
@@ -99,6 +101,7 @@ let pass = 0;
 const ok = (n) => { pass++; console.log('  ✓', n); };
 const shot = async (name, full = true) => { if (shots) { await mkdir(SHOTS, { recursive: true }); await page.waitForTimeout(300); await page.screenshot({ path: SHOTS + name + '.png', fullPage: full }); } };
 const draw = async () => {
+  await page.locator('#pad').evaluate(el => el.scrollIntoView({ block: 'center' })); await page.waitForTimeout(150);
   const b = await page.locator('#pad').boundingBox();
   await page.mouse.move(b.x + 30, b.y + b.height * 0.6); await page.mouse.down();
   for (let i = 0; i <= 30; i++) await page.mouse.move(b.x + 30 + i * (b.width - 60) / 30, b.y + b.height * (0.5 + 0.25 * Math.sin(i / 3)), { steps: 2 });
@@ -108,7 +111,8 @@ const draw = async () => {
 try {
   assert.equal(validIsraeliId('000000018'), true); assert.equal(validIsraeliId('18'), true); assert.equal(validIsraeliId('123456789'), false);
   assert.equal(validIsraeliId('000000000'), false); assert.equal(validIsraeliId('12a456789'), false);
-  ok('ID check digit: valid, short (left-padded), wrong digit, zeros, letters');
+  assert.equal(validIdOrCompany('515555555'), true); assert.equal(validIdOrCompany('580123456'), true); assert.equal(validIdOrCompany('123456789'), false);
+  ok('ID check digit: valid, short (left-padded), wrong digit, zeros, letters; a ח.פ. (9 digits, starts with 5) is accepted');
 
   const r1 = await create('054-7770001', 'דנה לקוחה', 'חנות בחזית רחבה, חניה צמודה');
   await page.goto(`${BASE}?t=${r1.token}`);
@@ -150,6 +154,17 @@ try {
   assert.ok(dl.equals(pdf));
   ok('stored: signer, ID, IP, signature PNG + PDF; SHA-256 matches; the download link returns the same PDF');
 
+  assert.equal(sent.email.length, 1); assert.equal(sent.whatsapp.length, 1);
+  const em = sent.email[0], wa = sent.whatsapp[0];
+  assert.equal(em.to, 'liaherez@gmail.com'); assert.match(em.subject, /^דנה לקוחה חתם\/ה על הזמנת שירותי תיווך · הסכם 76773$/);
+  assert.ok(Buffer.from(em.pdf).equals(pdf), 'the email carries the signed PDF'); assert.match(em.filename, /76773\.pdf$/);
+  for (const s of ['000000018', '76773', address, '#/m/owner/' + OWNER]) assert.ok(em.html.includes(s), 'email missing ' + s);
+  assert.equal(wa.phone, '972505544524');
+  for (const s of ['דנה לקוחה חתם/ה', '000000018', '76773', 'https://waives-io.github.io/prime-location-crm/#/m/owner/' + OWNER]) assert.ok(wa.text.includes(s), 'whatsapp missing ' + s);
+  const log = (await q('select notified_email_at, notified_whatsapp_at, notify_error from signing_requests where id=$1', [r1.id]))[0];
+  assert.ok(log.notified_email_at && log.notified_whatsapp_at && !log.notify_error);
+  ok('Leah notified: email with the signed PDF attached + WhatsApp (name, ID, number, time, link to the property card); both logged');
+
   await mkdir(SHOTS, { recursive: true });
   const rendered = await renderPdfPages(pdf, [SHOTS + 'c04-pdf-1.png', SHOTS + 'c04-pdf-2.png', SHOTS + 'c04-pdf-3.png'], { browser });
   assert.ok(rendered.pages >= 2, 'pages ' + rendered.pages);
@@ -187,6 +202,47 @@ try {
     body: JSON.stringify({ token: r6.token, full_name: 'נעילה', id_number: '18', home_address: 'רחוב 1, עיר', consent: true, signature: sigPng }) }).then(r => r.json());
   assert.equal(good.state, 'signed');
   ok('12 junk posts do not count as attempts: the real client can still sign');
+
+  // a company number signs
+  const rc = await create('054-7770007', 'חברה בע״מ', null);
+  const co = await fetch(BASE + 'api', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: rc.token, full_name: 'חברה בע״מ', id_number: '515555555', home_address: 'רחוב 1, עיר', consent: true, signature: sigPng }) }).then(r => r.json());
+  assert.equal(co.state, 'signed');
+  ok('a company (ח.פ. 515555555) can sign');
+
+  // broker cooperation, through the page
+  const rb = await create('054-7770008', 'משה מתווך', 'חזית רחבה', { kind: 'broker_coop', coop_type: 'shared', coop_notes: '50% לכל צד' });
+  await page.goto(`${BASE}?t=${rb.token}`); await page.waitForSelector('#to-sign');
+  const bodyText = await page.locator('#app').innerText();
+  assert.match(bodyText, /הסכם שת"פ בין מתווכים/); assert.match(bodyText, /קופה משותפת/); assert.match(bodyText, /הערות \(אחוזים\): 50% לכל צד/);
+  assert.match(bodyText, /נוסח ההסכם/);
+  for (const part of addrParts) assert.ok(!bodyText.includes(part), 'broker page leaks ' + part);
+  await shot('c06-coop-teaser');
+  await page.click('#to-sign'); await page.waitForSelector('#license');
+  assert.match(await page.locator('#sign-form').innerText(), /ת״ז \/ ח\.פ\.[\s\S]*מספר רשיון תיווך[\s\S]*קראתי ואני מאשר\/ת את הסכם שיתוף הפעולה/);
+  await page.fill('#full_name', 'משה מתווך'); await page.fill('#id_number', '000000018'); await page.fill('#home_address', 'הנשיא 3, אשקלון');
+  await draw(); await page.check('#consent'); await page.click('#submit');
+  assert.match(await page.locator('#license-err').innerText(), /רשיון/);
+  await page.fill('#license', '7654321');
+  await shot('c07-coop-form');
+  await page.click('#submit'); await page.waitForSelector('#address');
+  assert.match(await page.locator('#app').innerText(), /ההסכם נחתם בהצלחה/);
+  const rowB = (await q('select status, signer_license, pdf_path from signing_requests where id=$1', [rb.id]))[0];
+  assert.deepEqual([rowB.status, rowB.signer_license], ['signed', '7654321']);
+  const pdfB = await renderPdfPages(store.get(rowB.pdf_path), [SHOTS + 'c08-coop-pdf-1.png'], { browser });
+  for (const s of ['7654321', '50%']) assert.ok(pdfB.text.includes(s), 'coop PDF missing ' + s);
+  const emB = sent.email.at(-1);
+  assert.match(emB.subject, /^משה מתווך חתם\/ה על הסכם שת״פ/); assert.ok(emB.html.includes('7654321'));
+  ok('broker co-op: type + notes in section 3, no address before signing, licence required, signed → PDF with licence and 50%, email "חתם/ה על הסכם שת״פ"');
+
+  // a WhatsApp failure is logged and does not touch the signature
+  const rf = await create('054-7770009', 'FAIL', null);
+  const fr = await fetch(BASE + 'api', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: rf.token, full_name: 'FAIL', id_number: '18', home_address: 'רחוב 1, עיר', consent: true, signature: sigPng }) }).then(r => r.json());
+  assert.equal(fr.state, 'signed');
+  const lf = (await q('select status, notified_email_at, notified_whatsapp_at, notify_error from signing_requests where id=$1', [rf.id]))[0];
+  assert.ok(lf.status === 'signed' && lf.notified_email_at && !lf.notified_whatsapp_at); assert.match(lf.notify_error, /whatsapp: down/);
+  ok('a WhatsApp failure is logged on the request; the signature and the email are not affected');
 
   // cancelled and expired links
   const r4 = await create('054-7770004', 'מבוטל', null);

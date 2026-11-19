@@ -71,7 +71,7 @@ try {
   await page.click('button[type=submit]');
   await page.waitForSelector('.home-btn');
   const counts = await page.locator('.home-btn small').allInnerTexts();
-  assert.deepEqual(counts.map(s => s.replace(/\s+/g, ' ')), ['2 פעילות', '1 פעילות']);
+  assert.deepEqual(counts.map(s => s.replace(/\s+/g, ' ')), ['2 פעילות', '1 פעילות', '1 התאמות']);
   ok('home: two module buttons with active counts');
   await shot('02-home');
   await page.reload(); await page.waitForSelector('.home-btn');

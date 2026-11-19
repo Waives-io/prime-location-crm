@@ -13,8 +13,11 @@
   };
   const seedOpts = { lead_need: ['לקנות', 'לשכור', 'להשכיר', 'להשקעה'],
     lead_purpose: ['תעשייה קלה', 'תעשייה כבדה', 'משרדים', 'מסחר / חנות', 'פרטי', 'מרלוג', 'מחסן'],
-    owner_purpose: ['מחסן', 'תעשייה', 'מסחר', 'חנות'] };
-  const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [] };
+    owner_purpose: ['מחסן', 'תעשייה', 'מסחר', 'חנות'],
+    category: ['רכב', 'לוגיסטיקה / אחסנה', 'אופנה', 'בנקים', 'בתי קפה', 'קוסמטיקה', 'הנעלה', 'חברים', 'חד״כ', 'חניונים', 'חשמל', 'יזמים - בניה', 'סטוקים'],
+    lead_source: ['פייסבוק', 'חבר המליץ', 'גוגל', 'יד 2', 'מדלן', 'מניבים', 'ChatGPT'] };
+  const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [], dismissals: [],
+    matchSettings: { version: 1, weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 }, must: { deal_type: true, category: false, area: false, purpose: false } } };
   let agreementNo = 76773;
   for (const [k, vs] of Object.entries(seedOpts)) vs.forEach((v, i) => db.options.push({ id: id(), list_key: k, value: v, sort: (i + 1) * 10, created_at: now() }));
   const opt = (k, v) => db.options.find(o => o.list_key === k && o.value === v).id;
@@ -42,6 +45,7 @@
     Object.assign(row, { name: c.name.trim(), entity_type: t, company_name: t === 'company' ? c.company_name.trim() : null,
       company_number: t === 'company' ? (('company_number' in c) ? c.company_number : row.company_number) || null : null,
       broker_license: t === 'broker' ? (('broker_license' in c) ? c.broker_license : row.broker_license) || null : null });
+    if ('lead_source_id' in c) row.lead_source_id = c.lead_source_id || null;
     return row.id;
   };
   const delay = () => new Promise(r => setTimeout(r, 60));
@@ -95,6 +99,12 @@
       db.notifications.push({ id: id(), type: 'signing_sent', title: `נוצר קישור להחתמה עבור ${c.name}`, body: null,
         link: `#/m/owner/${deal.id}`, signing_request_id: r.id, read_at: null, created_at: now() });
       return { id: r.id, token: r.token, agreement_no: r.agreement_no, contact_id: c.id, lead_id: lead?.id || null, draft_created: draft }; },
+    async loadMatches() { await delay(); return { matchSettings: clone(db.matchSettings), dismissals: clone(db.dismissals) }; },
+    async saveMatchSettings(v) { await delay(); this.calls.push({ matchSettings: clone(v) });
+      const sum = Object.values(v.weights).reduce((a, b) => a + b, 0); if (sum !== 100) throw new Error('סכום המשקלים חייב להיות 100');
+      db.matchSettings = clone(v); return clone(v); },
+    async dismissMatch(l, o, reason) { await delay(); db.dismissals = db.dismissals.filter(x => !(x.lead_deal_id === l && x.owner_deal_id === o)); db.dismissals.push({ lead_deal_id: l, owner_deal_id: o, reason }); },
+    async restoreMatch(l, o) { await delay(); db.dismissals = db.dismissals.filter(x => !(x.lead_deal_id === l && x.owner_deal_id === o)); },
     async cancelSigning(rid) { await delay(); const r = db.signing.find(x => x.id === rid); if (r && r.status !== 'signed') r.status = 'cancelled'; },
     async markNotificationsRead() { await delay(); db.notifications.forEach(n => { n.read_at ||= now(); }); },
     async signedPdfUrl(path) { this.calls.push({ pdf: path }); return 'about:blank#' + path; },

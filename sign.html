@@ -11,17 +11,18 @@
 <link rel="icon" href="icons/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --yellow:#FFD400; --ink:#1A1A1A; --charcoal:#3C3C3B; --muted:#5A5A58;
   --bg:#FFFFFF; --surface:#F6F6F4; --line:#E6E6E2; --error:#B3261E; --ok:#1E6B3A;
-  --radius:16px; --tap:48px; --font:'Heebo',system-ui,sans-serif;
+  --radius:16px; --tap:48px; --font-head:'Fredoka',sans-serif; --font-body:'IBM Plex Sans Hebrew',sans-serif;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.55}
 body{min-height:100dvh}
 button,input,textarea{font:inherit;color:inherit}
+h1,h2,h3,.btn,.addr,.done .badge{font-family:var(--font-head)}
 [hidden]{display:none!important}
 bdi{unicode-bidi:isolate}
 .num{font-variant-numeric:tabular-nums}

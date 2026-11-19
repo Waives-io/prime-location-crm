@@ -6,11 +6,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
 import * as pdfLib from 'npm:pdf-lib@1.17.1';
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1';
 import { handle } from './handler.js';
-import { ALEF_REGULAR, ALEF_BOLD } from './fonts.js';
+import { BODY_REGULAR, BODY_BOLD, HEADING } from './fonts.js';
 
 const b64decode = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const b64encode = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
-const fonts = { regular: b64decode(ALEF_REGULAR), bold: b64decode(ALEF_BOLD) };
+const fonts = { regular: b64decode(BODY_REGULAR), bold: b64decode(BODY_BOLD), heading: b64decode(HEADING) };
 const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const sb = createClient(Deno.env.get('SUPABASE_URL') ?? '', key, { auth: { persistSession: false, autoRefreshToken: false } });
 const timeout = (ms: number) => AbortSignal.timeout(ms);

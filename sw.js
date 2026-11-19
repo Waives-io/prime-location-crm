@@ -1,7 +1,7 @@
 // Minimal service worker: makes the app installable and opens the last loaded shell offline.
 // Network first, so a new deploy is always picked up. Supabase / map requests are never cached.
-const CACHE = 'pl-shell-v1';
-const SHELL = ['./', './index.html', './manifest.json', './assets/logo.png', './assets/pin.png',
+const CACHE = 'pl-shell-v2';
+const SHELL = ['./', './index.html', './match.js', './manifest.json', './assets/logo.png', './assets/pin.png',
   './assets/photo-building.jpg', './assets/photo-warehouse.jpg', './icons/icon-192.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {

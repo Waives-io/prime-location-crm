@@ -76,6 +76,7 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
   doc.registerFontkit(fontkit);
   const reg = await doc.embedFont(fonts.regular, { subset: true });
   const bold = await doc.embedFont(fonts.bold, { subset: true });
+  const head = fonts.heading ? await doc.embedFont(fonts.heading, { subset: true }) : bold;   // Fredoka for headings
   doc.setTitle(`${title} ${agreementNo}`); doc.setAuthor(office.office_name); doc.setLanguage('he');
   const W = 595.28, H = 841.89, M = 46, R = W - M, INK = rgb(0.1, 0.1, 0.1), GREY = rgb(0.38, 0.38, 0.38), YELLOW = rgb(1, 0.83, 0);
   let page, y;
@@ -89,8 +90,8 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
     y -= gap;
   };
   const heading = (text) => {
-    need(40); y -= 6; right(text, { font: bold, size: 12.5 });
-    page.drawRectangle({ x: R - bold.widthOfTextAtSize(text, 12.5), y: y - 5, width: bold.widthOfTextAtSize(text, 12.5), height: 2, color: YELLOW });
+    need(40); y -= 6; right(text, { font: head, size: 13 });
+    page.drawRectangle({ x: R - head.widthOfTextAtSize(text, 13), y: y - 5, width: head.widthOfTextAtSize(text, 13), height: 2, color: YELLOW });
     y -= 22;
   };
   const kv = (label, value, size = 10.5) => {
@@ -103,9 +104,9 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
   newPage();
   // header
   page.drawRectangle({ x: 0, y: H - 10, width: W, height: 10, color: YELLOW });
-  right(office.office_name, { font: bold, size: 20 }); y -= 22;
+  right(office.office_name, { font: head, size: 20 }); y -= 22;
   right(`${office.broker_name} · רשיון תיווך: ${office.broker_license}`, { size: 11, color: GREY }); y -= 30;
-  right(title, { font: bold, size: 15.5 }); y -= 20;
+  right(title, { font: head, size: 16 }); y -= 20;
   right(`מספר הסכם: ${agreementNo}`, { size: 11.5 }); y -= 18;
 
   heading('פרטי הנכס');

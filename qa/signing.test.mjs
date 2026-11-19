@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { handle, validIsraeliId, validIdOrCompany } from '../supabase/functions/signing-public/handler.js';
-import { ALEF_REGULAR, ALEF_BOLD } from '../supabase/functions/signing-public/fonts.js';
+import { BODY_REGULAR, BODY_BOLD, HEADING } from '../supabase/functions/signing-public/fonts.js';
 import { renderPdfPages } from './pdf-render.mjs';
 
 const sql = (f) => readFileSync(new URL(`../supabase/${f}`, import.meta.url), 'utf8');
@@ -65,7 +65,7 @@ const deps = {
   async upload(bucket, path, bytes) { if (store.has(path)) throw new Error('exists'); store.set(path, Buffer.from(bytes)); },
   async signedUrl(bucket, path) { return `${BASE}files/${path}`; },
   async remove(bucket, paths) { paths.forEach(p => store.delete(p)); },
-  fonts: { regular: Buffer.from(ALEF_REGULAR, 'base64'), bold: Buffer.from(ALEF_BOLD, 'base64') }, pdfLib, fontkit,
+  fonts: { regular: Buffer.from(BODY_REGULAR, 'base64'), bold: Buffer.from(BODY_BOLD, 'base64'), heading: Buffer.from(HEADING, 'base64') }, pdfLib, fontkit,
   b64decode: (s) => Buffer.from(s, 'base64'),
   sha256: async (b) => createHash('sha256').update(b).digest(),
   async sendEmail(m) { sent.email.push(m); },

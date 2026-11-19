@@ -14,6 +14,7 @@ const multiSql = readFileSync(new URL('../supabase/007_multi_need.sql', import.m
 const purposeSql = readFileSync(new URL('../supabase/008_multi_purpose.sql', import.meta.url), 'utf8');
 const signingSql = readFileSync(new URL('../supabase/009_signing.sql', import.meta.url), 'utf8');
 const signing2Sql = readFileSync(new URL('../supabase/010_signing2.sql', import.meta.url), 'utf8');
+const matchesSql = readFileSync(new URL('../supabase/011_matches.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -550,5 +551,78 @@ assert.equal((await q('select broker_license from contacts where id=$1', [s3.con
 for (const f of ['signing_public_notify_info($1)', 'signing_public_notified($1, null, null)'])
   for (const role of ['anon', 'authenticated']) await as(role, role === 'anon' ? null : LEAH, () => fails(() => q(`select ${f}`, [s3.id]), /denied/));
 ok('010: broker co-op — type required; broker saved as a broker contact (not a lead); section 3 shows the type + notes; licence kept; "חתם/ה על הסכם שת״פ"; notify info + log; closed to anon and Leah');
+
+// ---- 011: categories, lead source, matches settings + dismissals (applied on top of the data above, twice)
+const before = (await q('select (select count(*)::int from lead_deals) l, (select count(*)::int from owner_deals) o, (select count(*)::int from contacts) c'))[0];
+await db.exec(matchesSql); await db.exec(matchesSql);
+const after = (await q('select (select count(*)::int from lead_deals) l, (select count(*)::int from owner_deals) o, (select count(*)::int from contacts) c'))[0];
+assert.deepEqual(after, before);
+assert.equal((await q(`select count(*)::int n from option_lists where list_key='category'`))[0].n, 13);
+assert.equal((await q(`select count(*)::int n from option_lists where list_key='lead_source'`))[0].n, 7);
+assert.equal((await q(`select count(*)::int n from lead_deals where category_ids <> '{}'`))[0].n, 0);
+ok('011: runs twice on existing data; nothing deleted; 13 categories + 7 sources; existing deals have no category');
+
+await as('authenticated', LEAH, async () => {
+  const opt = async (k, v) => (await q('select id from option_lists where list_key=$1 and value=$2', [k, v]))[0].id;
+  const car = await opt('category', 'רכב'), fashion = await opt('category', 'אופנה'), google = await opt('lead_source', 'גוגל');
+  const need = await opt('lead_need', 'לשכור'), purpose = await opt('lead_purpose', 'מחסן'), oPurpose = await opt('owner_purpose', 'מחסן');
+  const lid = '55555555-5555-4555-8555-555555555551', oid = '55555555-5555-4555-8555-555555555552';
+  const lead = { id: lid, contact: { phone: '0547555001', name: 'מתעניין קטגוריה', entity_type: 'private', lead_source_id: google },
+    need_ids: [need], purpose_ids: [purpose], category_ids: [car, fashion, car], size_min: 300, size_max: 500, size_unit: 'sqm' };
+  const r = (await q('select save_lead_deal($1::jsonb) r', [lead]))[0].r;
+  const row = (await q('select category_ids, is_draft from lead_deals where id=$1', [lid]))[0];
+  assert.deepEqual(row.category_ids, [car, fashion]);
+  assert.equal((await q('select lead_source_id from contacts where id=$1', [r.contact_id]))[0].lead_source_id, google);
+  // an older app (no category_ids, no lead_source_id) keeps both
+  await q('select save_lead_deal($1::jsonb)', [{ id: lid, contact: { phone: '0547555001', name: 'מתעניין קטגוריה', entity_type: 'private' }, need_ids: [need], purpose_ids: [purpose] }]);
+  assert.deepEqual((await q('select category_ids from lead_deals where id=$1', [lid]))[0].category_ids, [car, fashion]);
+  assert.equal((await q('select lead_source_id from contacts where id=$1', [r.contact_id]))[0].lead_source_id, google);
+  // explicit clear
+  await q('select save_lead_deal($1::jsonb)', [{ ...lead, category_ids: null, contact: { ...lead.contact, lead_source_id: null } }]);
+  assert.deepEqual((await q('select category_ids from lead_deals where id=$1', [lid]))[0].category_ids, []);
+  assert.equal((await q('select lead_source_id from contacts where id=$1', [r.contact_id]))[0].lead_source_id, null);
+  // wrong list rejected
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ ...lead, category_ids: [need] }]));
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ ...lead, contact: { ...lead.contact, lead_source_id: car } }]));
+  // owner
+  await q('select save_owner_deal($1::jsonb)', [{ id: oid, v: 1, contact: { phone: '0547555002', name: 'בעלים קטגוריה', entity_type: 'private' },
+    purpose_id: oPurpose, built_sqm: 400, deal_kind: 'rent', asking_price: 20000, category_ids: [fashion] }]);
+  assert.deepEqual((await q('select category_ids from owner_deals where id=$1', [oid]))[0].category_ids, [fashion]);
+  // one shared list: a value added once is there for both
+  const added = (await q(`select (add_option('category', 'מזון')).list_key k`))[0].k;
+  assert.equal(added, 'category');
+});
+ok('011: categories (multi, deduped) + lead source saved; an older app keeps them; [] / null clears; other lists rejected; one shared list');
+
+await as('authenticated', LEAH, async () => {
+  const cur = (await q(`select value from app_settings where key='match_settings'`))[0].value;
+  assert.deepEqual(cur.weights, { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 });
+  assert.equal(cur.must.deal_type, true);
+  const good = { version: 1, weights: { category: 30, area: 20, purpose: 20, size: 15, budget: 15, height: 0 }, must: { deal_type: true, category: true, area: false, purpose: false } };
+  await q('select save_match_settings($1::jsonb)', [good]);
+  assert.equal((await q(`select value from app_settings where key='match_settings'`))[0].value.weights.category, 30);
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...good, weights: { ...good.weights, category: 35 } }]), /100/);
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...good, weights: { ...good.weights, category: 12.5, area: 37.5 } }]));
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...good, weights: { ...good.weights, extra: 0 } }]));
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...good, version: 2 }]));
+  await fails(() => q(`update app_settings set value='{}' where key='match_settings' returning key`).then(r => { if (!r.length) throw new Error('blocked'); }));
+  const l = '55555555-5555-4555-8555-555555555551', o = '55555555-5555-4555-8555-555555555552';
+  await q('select dismiss_match($1, $2, $3)', [l, o, 'מחיר']); await q('select dismiss_match($1, $2, $3)', [l, o, 'אזור']);
+  const d = await q('select reason from match_dismissals');
+  assert.deepEqual(d.map(x => x.reason), ['אזור']);
+  await q('select restore_match($1, $2)', [l, o]);
+  assert.equal((await q('select count(*)::int n from match_dismissals'))[0].n, 0);
+  await q('select dismiss_match($1, $2, null)', [l, o]);
+});
+for (const role of ['anon', 'authenticated']) {
+  const uid = role === 'anon' ? null : OTHER;
+  await as(role, uid, async () => {
+    await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: { category: 100, area: 0, purpose: 0, size: 0, budget: 0, height: 0 }, must: { deal_type: true, category: false, area: false, purpose: false } }]));
+    await fails(() => q('select dismiss_match($1, $2, null)', ['55555555-5555-4555-8555-555555555551', '55555555-5555-4555-8555-555555555552']));
+    const seen = await q('select * from match_dismissals').catch(() => []);
+    assert.equal(seen.length, 0);
+  });
+}
+ok('011: weights must sum to 100 (whole numbers, known keys, version 1); only through the function; dismiss / restore; anon and non-members get nothing');
 
 console.log(`\nDB tests passed: ${pass}`);

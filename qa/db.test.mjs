@@ -15,6 +15,7 @@ const purposeSql = readFileSync(new URL('../supabase/008_multi_purpose.sql', imp
 const signingSql = readFileSync(new URL('../supabase/009_signing.sql', import.meta.url), 'utf8');
 const signing2Sql = readFileSync(new URL('../supabase/010_signing2.sql', import.meta.url), 'utf8');
 const matchesSql = readFileSync(new URL('../supabase/011_matches.sql', import.meta.url), 'utf8');
+const colorsSql = readFileSync(new URL('../supabase/012_match_colors.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -624,5 +625,29 @@ for (const role of ['anon', 'authenticated']) {
   });
 }
 ok('011: weights must sum to 100 (whole numbers, known keys, version 1); only through the function; dismiss / restore; anon and non-members get nothing');
+
+// ---- 012: score colours
+await db.exec(colorsSql); await db.exec(colorsSql);
+let ms = (await q(`select value from app_settings where key='match_settings'`))[0].value;
+assert.deepEqual(ms.colors, { green: 75, yellow: 50 }); assert.equal(ms.weights.category, 30, 'saved weights kept');
+assert.equal((await q('select count(*)::int n from match_dismissals'))[0].n, 1, 'nothing deleted');
+await as('authenticated', LEAH, async () => {
+  const base = { version: 1, weights: ms.weights, must: ms.must };
+  await q('select save_match_settings($1::jsonb)', [{ ...base, colors: { green: 85, yellow: 60 } }]);
+  assert.deepEqual((await q(`select value from app_settings where key='match_settings'`))[0].value.colors, { green: 85, yellow: 60 });
+  await q('select save_match_settings($1::jsonb)', [base]);   // older app: no colours → kept
+  assert.deepEqual((await q(`select value from app_settings where key='match_settings'`))[0].value.colors, { green: 85, yellow: 60 });
+  const w5 = { ...base.weights }; delete w5.height;
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...base, weights: { ...w5, extra: 0 } }]));   // 6 keys, one misspelled
+  const m3 = { ...base.must }; delete m3.purpose;
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...base, must: { ...m3, other: true } }]));
+  for (const colors of [{ green: 75, red: 50 }, { green: 50, yellow: 60 }, { green: 60, yellow: 60 }, { green: 101, yellow: 50 }, { green: 75.5, yellow: 50 }, { green: 75 }, { green: 75, yellow: 50, red: 10 }, 'x'])
+    await fails(() => q('select save_match_settings($1::jsonb)', [{ ...base, colors }]));
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ ...base, weights: { ...base.weights, category: 35 }, colors: { green: 75, yellow: 50 } }]), /100/);
+});
+await as('authenticated', OTHER, async () => {
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: ms.weights, must: ms.must, colors: { green: 90, yellow: 10 } }]));
+});
+ok('012: colours 75 / 50 added to the stored settings (weights kept, runs twice); saved when green > yellow (whole 0–100); an older app keeps them; non-members blocked');
 
 console.log(`\nDB tests passed: ${pass}`);

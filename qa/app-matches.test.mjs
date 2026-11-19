@@ -80,7 +80,15 @@ try {
   const score = +(await row.locator('.match-score strong').innerText());
   assert.ok(score > 0 && score < 100, String(score));
   assert.match(await row.innerText(), /✓ קטגוריה: אופנה/);
-  ok(`lead card: "התאמות" section, the property scores ${score} with its reasons`);
+  assert.equal(await row.locator('.match-what .name').innerText(), 'מירב כהן');
+  assert.match(await row.locator('.match-what .addr').innerText(), /שדרות לכיש 40/);
+  assert.equal(await row.getAttribute('data-band'), score >= 75 ? 'green' : score >= 50 ? 'yellow' : 'orange');
+  assert.match(await row.getAttribute('class'), /is-partial/);   // rent: budget unknown
+  ok(`lead card: "התאמות" section, the property scores ${score} with its reasons; owner name + address; colour band; partial flagged`);
+  assert.equal(await page.locator('.card-head .card-tools a', { hasText: 'עריכה' }).count(), 1);
+  assert.equal(await page.locator('.card-head .card-tools #close-deal').count(), 1);
+  assert.equal(await page.locator('.content > .actions a', { hasText: 'עריכה' }).count(), 0);
+  ok('card: עריכה / שכפול / סגירת עסקה at the top, next to the name');
   await shot('m03-lead-card', true);
 
   // why + WhatsApp (no address)
@@ -101,6 +109,18 @@ try {
   await page.goto(BASE + '#/matches'); await page.waitForSelector('#m-rows');
   assert.equal(await page.locator('#m-rows .match-row').count(), 1);
   await shot('m05-dashboard', true);
+  await page.click('#m-rows .match-what'); await page.waitForSelector('.card-head');
+  assert.equal(await page.locator('.card-head h2').innerText(), 'מירב כהן');
+  assert.equal(await page.getAttribute('.topbar .back', 'href'), '#/matches');
+  await page.click(`.card-tools a:has-text("עריכה")`); await page.waitForSelector('#deal-form');
+  await page.click('.topbar .back'); await page.waitForSelector('.card-head');
+  assert.equal(await page.getAttribute('.topbar .back', 'href'), '#/matches', 'still back to matches after the edit form');
+  await page.click('.topbar .back'); await page.waitForSelector('#m-rows .match-row');
+  ok('a property opened from the matches: its owner\'s card; "חזרה" returns to the matches (also after edit)');
+  await page.goto(BASE + '#/'); await page.waitForSelector('.hero-top');
+  await page.goto(BASE + `#/m/owner/${owner}`); await page.waitForSelector('.card-head');
+  assert.equal(await page.getAttribute('.topbar .back', 'href'), '#/m/owner');
+  await page.goto(BASE + '#/matches'); await page.waitForSelector('#m-rows .match-row');
   await page.selectOption('#m-min', '85');
   assert.equal(await page.locator('#m-rows .match-row').count(), 0);
   await page.selectOption('#m-min', '0');
@@ -121,22 +141,32 @@ try {
 
   // category filter on the dashboard and in the leads list
   await page.click('#cat-btn'); await page.waitForSelector('.cat-sheet');
+  assert.match(await page.locator('.cat-opt', { hasText: 'אופנה' }).innerText(), /אופנה \(1\)/);
+  assert.match(await page.locator('.cat-opt', { hasText: 'מזון' }).innerText(), /מזון \(1\)/);
+  assert.match(await page.locator('.cat-opt', { hasText: 'רכב' }).innerText(), /רכב \(0\)/);
   await page.fill('#cat-q', 'רכ'); assert.equal(await page.locator('.cat-opt:visible').count(), 1);
   await page.click('.cat-opt:visible'); await page.click('#cat-apply');
   assert.equal(await page.locator('#m-rows .match-row').count(), 0);
   await page.click('.cat-chip'); await page.waitForSelector('#m-rows .match-row');
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows .deal-row');
-  await page.click('#cat-btn'); await page.locator('.cat-opt', { hasText: 'אופנה' }).click(); await page.click('#cat-apply');
+  await page.click('#cat-btn'); assert.match(await page.locator('.cat-opt', { hasText: 'אופנה' }).innerText(), /\(1\)/);
+  await page.locator('.cat-opt', { hasText: 'אופנה' }).click(); await page.click('#cat-apply');
   await page.waitForFunction(() => document.querySelectorAll('#rows .deal-row').length === 1);
   assert.match(await page.locator('.cat-chip').innerText(), /אופנה ✕/);
   await shot('m07-list-filter');
   await page.click('.cat-chip'); await page.waitForFunction(() => document.querySelectorAll('#rows .deal-row').length === 2);
-  ok('category filter: sheet with search; chosen shown as chips with ✕; works on the dashboard and in the lists');
+  ok('category filter: sheet with search and a count per category; chosen shown as chips with ✕; dashboard and lists');
+
+  const lead2 = await page.evaluate(() => PL_TEST_DB._db.lead[1].id);
+  await page.goto(BASE + `#/m/lead/${lead2}`); await page.waitForSelector('#matches');
+  assert.match(await page.locator('#matches .m-missing').innerText(), /כדי לראות התאמות, חסר: קטגוריה/);
+  ok('a card without matches says what is missing ("כדי לראות התאמות, חסר: קטגוריה")');
 
   // settings
-  await page.goto(BASE); await page.click('.hero-settings'); await page.waitForSelector('.settings-list');
-  await page.click('.settings-item'); await page.waitForSelector('#ms-form');
+  await page.goto(BASE); await page.click('.hero-settings'); await page.waitForSelector('#ms-form');
   assert.match(await page.locator('#ms-total').innerText(), /100%/);
+  assert.equal(await page.locator('.sticky-save #ms-total').count(), 1);
+  assert.deepEqual([await page.inputValue('#c-green'), await page.inputValue('#c-yellow')], ['75', '50']);
   await page.click('[data-k=category] [data-d="5"]');
   assert.match(await page.locator('#ms-total').innerText(), /105%[\s\S]*להוריד 5%/);
   assert.equal(await page.isDisabled('#ms-save'), true);
@@ -144,14 +174,33 @@ try {
   await page.click('[data-k=area] [data-d="-5"]');
   assert.equal(await page.isDisabled('#ms-save'), false);
   await page.check('input[name=must][value=category]');
-  await page.click('#ms-save'); await page.waitForSelector('.settings-list');
+  await page.fill('#c-yellow', '80');
+  assert.match(await page.locator('#c-err').innerText(), /מעל הצהוב/); assert.equal(await page.isDisabled('#ms-save'), true);
+  await page.fill('#c-yellow', '60'); assert.equal(await page.locator('#c-orange').innerText(), '60');
+  await page.fill('#c-green', '85');
+  assert.equal(await page.isDisabled('#ms-save'), false);
+  await page.click('#ms-save'); await page.waitForSelector('#toast:has-text("נשמרו")');
   const saved = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.matchSettings).at(-1).matchSettings);
-  assert.deepEqual([saved.weights.category, saved.weights.area, saved.must.category], [30, 20, true]);
-  ok('settings → התאמות: −/+ by 5, live total, "שמירה" only at 100%; must-conditions saved');
+  assert.deepEqual([saved.weights.category, saved.weights.area, saved.must.category, saved.colors.green, saved.colors.yellow], [30, 20, true, 85, 60]);
+  ok('settings (one screen): −/+ by 5, total next to "שמירה", save only at 100%; must-conditions; colours (green above yellow) saved');
   await page.goto(BASE + '#/settings/matches'); await page.waitForSelector('#ms-form');
+  assert.equal(await page.inputValue('#c-green'), '85');
   await page.click('#ms-reset'); assert.match(await page.locator('#w-category').innerText(), /25%/);
+  assert.equal(await page.inputValue('#c-green'), '75');
   await shot('m09-settings', true);
-  ok('"שחזור ברירת המחדל" brings back 25/25/20/15/15/0');
+  ok('"שחזור ברירת המחדל" brings back 25/25/20/15/15/0 and 75 / 50; the old link opens the same screen');
+  await page.setViewportSize({ width: 1280, height: 860 });
+  page.once('dialog', d => d.accept());   // reset without saving → "לצאת בלי לשמור?"
+  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
+  assert.equal(await page.locator('.side-nav a[href="#/matches"]').isVisible(), true);
+  assert.equal(await page.locator('.side-nav a[href="#/settings"]').isVisible(), true);
+  await page.click('.side-nav a[href="#/matches"]'); await page.waitForSelector('#m-rows');
+  assert.equal(await page.getAttribute('.side-nav a[href="#/matches"]', 'aria-current'), 'page');
+  await shot('m10-desktop-matches');
+  await page.goto(BASE + '#/settings'); await page.waitForSelector('#ms-form'); await shot('m11-desktop-settings');
+  const box = await page.locator('#ms-total').boundingBox(), sv = await page.locator('#ms-save').boundingBox();
+  assert.ok(Math.abs((box.y + box.height / 2) - (sv.y + sv.height / 2)) < 40, 'total sits next to "שמירה"');
+  ok('desktop: side menu has "התאמות" and "הגדרות"; the total sits next to "שמירה"');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));
   ok('no JS errors');

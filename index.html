@@ -23,6 +23,7 @@
 :root{
   --yellow:#FFD400; --ink:#1A1A1A; --charcoal:#3C3C3B;
   --bg:#FFFFFF; --surface:#F6F6F4; --line:#E6E6E2; --error:#C62828;
+  --band-green:#176B3A; --band-yellow:#FFD400; --band-orange:#B43F00; --band-none:#E6E6E2;
   --radius:16px; --tap:44px;
   --font-head:'Fredoka',sans-serif; --font-body:'IBM Plex Sans Hebrew',sans-serif;
   --font:var(--font-body);
@@ -126,8 +127,12 @@ textarea.input{min-height:90px;resize:vertical}
 .dl dt{color:var(--charcoal)}
 .dl dd{margin:0;font-weight:500}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.card-head{display:flex;flex-direction:column;gap:12px}
 .card-head h2{margin:0;font-size:1.5rem;font-weight:800}
-.card-head p{margin:2px 0 8px;color:var(--charcoal)}
+.card-head p{margin:2px 0 0;color:var(--charcoal)}
+.card-title{min-width:0}
+.card-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;width:100%}
+.card-tools .btn{min-width:0;min-height:42px;padding-inline:8px;border-width:1.5px;background:var(--surface);box-shadow:2px 2px 0 var(--ink);font-size:.78rem;line-height:1.1;text-align:center}
 
 /* ── home & login ── */
 .hero{min-height:100dvh;display:flex;flex-direction:column;padding:16px}
@@ -214,7 +219,7 @@ body[data-screen=form],body[data-screen=form] .main{background:var(--surface)}bo
 
 /* deal card */
 body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;border-bottom:1px solid var(--line)}.card-head h2{font-size:2rem;line-height:1.1;letter-spacing:-.04em;margin-top:10px}.chip{padding:5px 13px;border:1px solid #d4b100}
-.actions{gap:10px;margin:18px 0}.card-head+.actions .btn{flex:1;min-width:120px}.card-head+.actions .btn:nth-child(2){background:var(--yellow)}
+.actions{gap:10px;margin:18px 0}body[data-screen=card] .content>.actions .btn{flex:1;min-width:120px}body[data-screen=card] .content>.actions .btn:not(.primary){background:#fff}
 .dl{grid-template-columns:minmax(92px,auto) 1fr;gap:0;margin:6px 0 24px;border-top:1px solid var(--line)}.dl dt,.dl dd{padding:11px 0;border-bottom:1px solid var(--line)}.dl dt{padding-inline-end:16px;font-size:.92rem}.dl dd{font-weight:700;text-align:start}
 .map.small+.actions .btn{min-height:44px;padding-inline:17px;font-size:.94rem;background:#fff}
 
@@ -228,6 +233,10 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
   .side-nav{width:272px;padding:26px 22px 22px;gap:10px;border-inline-end:1px solid var(--line);background:#f7f7f5;box-shadow:-8px 0 24px rgba(26,26,26,.04)}
   .side-nav::before{content:"ניהול עסקאות";font-size:.78rem;font-weight:700;color:#6a6a66;margin:10px 14px 2px}.brand-side{display:block;padding:4px 8px 22px;border-bottom:1px solid var(--line);margin-bottom:8px}.brand-side img{display:block;width:176px!important;margin:auto}
   .side-nav a.mod{position:relative;min-height:52px;padding-inline:18px;border:2px solid transparent}.side-nav a.mod::after{content:"←";position:absolute;inset-inline-end:16px;opacity:0}.side-nav a.mod:hover{background:#fff;border-color:var(--line)}.side-nav a.mod[aria-current=page]{background:var(--yellow);border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}.side-nav a.mod[aria-current=page]::after{opacity:1}
+  .side-nav .mod-matches{margin-top:8px;border-top-color:#c9c9c4}
+  .card-head{flex-direction:row;align-items:flex-end;justify-content:space-between;gap:20px}
+  .card-tools{display:flex;justify-content:flex-end;width:auto;flex:0 0 auto}
+  .card-tools .btn{min-height:40px;padding-inline:12px;font-size:.8rem;white-space:nowrap}
   .topbar{padding-inline:32px}.topbar::after{inset-inline-start:32px}.content{padding:32px 36px 100px;max-width:900px}body[data-screen=form] .content{padding-bottom:128px}.sticky-save{inset-inline:auto;left:0;right:272px;padding-inline:36px}.sticky-save .btn{max-width:828px}
   .hero{padding:34px 48px}.hero-logo{width:150px}
 }
@@ -428,6 +437,8 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .cat-opt{display:flex;align-items:center;gap:9px;min-height:46px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);font-weight:500;cursor:pointer}
 .cat-opt:has(input:checked){border:2px solid var(--ink);background:#fff8c9;box-shadow:2px 2px 0 var(--ink)}
 .cat-opt input{width:21px;height:21px;flex:0 0 21px;margin:0;accent-color:var(--ink)}
+.cat-n{color:var(--charcoal);font-size:.8rem;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cat-n.is-zero{opacity:.42}
 .cat-sheet>.hint{margin:0;padding:8px 18px;border-top:1px solid var(--line);background:#fff}
 .cat-sheet>.stack{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:12px 18px max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff}
 
@@ -441,17 +452,21 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 
 /* Match scorecards. A visible label and geometry reinforce the colour band. */
 .match-list{list-style:none;margin:0;padding:0;display:grid;gap:14px}
-.match-row{--score-bg:#ECECE8;--score-fg:var(--ink);display:grid;grid-template-columns:76px minmax(0,1fr);gap:13px;padding:15px 14px;border:2px solid var(--ink);border-inline-start-width:7px;border-radius:15px;background:#fff;box-shadow:4px 4px 0 var(--ink);overflow:hidden}
-.match-row.score-high{--score-bg:#176B3A;--score-fg:#fff;border-inline-start-color:#176B3A}
-.match-row.score-mid{--score-bg:var(--yellow);--score-fg:var(--ink);border-inline-start-color:#B89500}
-.match-row.score-low{--score-bg:#E6E6E2;--score-fg:var(--ink);border-inline-start-color:#686863;border-style:solid dashed solid solid}
+.match-row{--score-bg:var(--band-none);--score-fg:var(--ink);--score-band:#686863;display:grid;grid-template-columns:76px minmax(0,1fr);gap:13px;padding:15px 14px;border:2px solid var(--ink);border-inline-start:7px solid var(--score-band);border-radius:15px;background:#fff;box-shadow:4px 4px 0 var(--ink);overflow:hidden}
+.match-row[data-band=green]{--score-bg:var(--band-green);--score-fg:#fff;--score-band:var(--band-green)}
+.match-row[data-band=yellow]{--score-bg:var(--band-yellow);--score-fg:var(--ink);--score-band:#9A7900}
+.match-row[data-band=orange]{--score-bg:var(--band-orange);--score-fg:#fff;--score-band:var(--band-orange)}
+.match-row[data-band=none]{--score-bg:var(--band-none);--score-fg:var(--ink);--score-band:#686863}
+.match-row.score-high,.match-row.score-mid,.match-row.score-low,.match-row.score-none{color:inherit}
 .match-score{align-self:start;width:76px;min-height:76px;padding:7px 4px;border:2px solid var(--ink);border-radius:13px;background:var(--score-bg);color:var(--score-fg);box-shadow:3px 3px 0 var(--ink);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+.match-row.is-partial .match-score{border-width:3px;border-style:dashed}
 .match-score strong{font-size:2.05rem;font-weight:700;letter-spacing:-.04em}
 .match-score small{margin-top:5px;padding:3px 5px;border-radius:4px;background:var(--ink);color:#fff;font:500 .63rem/1.1 var(--font-body);white-space:nowrap}
-.score-high .match-score small{background:#fff;color:var(--ink)}
+.match-row[data-band=green] .match-score small,.match-row[data-band=orange] .match-score small{background:#fff;color:var(--ink)}
 .match-score:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .match-body{min-width:0}.match-who,.match-what{display:block;text-decoration:none;padding:1px 0 7px;border-bottom:1px solid var(--line)}
 .match-what{padding-top:7px}.match-who .name,.match-what .name{display:block;font-weight:700;line-height:1.2;overflow-wrap:anywhere}
+.match-what .addr{display:block;margin-top:3px;color:var(--charcoal);font-size:.9rem;font-weight:500;line-height:1.35;overflow-wrap:anywhere}
 .match-who .meta,.match-what .meta{display:block;margin-top:2px;color:var(--charcoal);font-size:.84rem;line-height:1.35;overflow-wrap:anywhere}
 .match-reasons{list-style:none;margin:9px 0 0;padding:0;font-size:.84rem;line-height:1.35}
 .match-reasons li{margin:3px 0;font-weight:500;overflow-wrap:anywhere}
@@ -475,13 +490,8 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .dismiss-reasons .btn:focus,.dismiss-reasons .btn:hover{background:var(--yellow)}
 
 /* Settings. */
-.settings-list{list-style:none;margin:0;padding:0}
-.settings-list li{margin:0 0 14px}
-.settings-item{position:relative;display:flex;flex-direction:column;justify-content:center;min-height:92px;padding:17px 68px 17px 18px;border:2px solid var(--ink);border-radius:15px;background:var(--yellow);box-shadow:5px 5px 0 var(--ink);text-decoration:none}
-.settings-item::before{content:"⚙";position:absolute;inset-inline-start:19px;top:50%;transform:translateY(-50%);font:600 2rem/1 var(--font-head)}
-.settings-item::after{content:"←";position:absolute;inset-inline-end:18px;top:50%;transform:translateY(-50%);font:700 1.3rem/1 var(--font-head)}
-.settings-item strong{font:700 1.35rem/1.1 var(--font-head)}.settings-item .meta{margin-top:5px;color:var(--ink);font-size:.9rem}
-.ms-form{padding-bottom:154px}
+.ms-form{padding-bottom:188px}
+.ms-intro{margin:0 0 18px;padding:12px 14px;border-inline-start:5px solid var(--yellow);background:var(--surface);color:var(--charcoal);font-weight:500}
 .ms-must{display:flex;align-items:center;gap:12px;min-height:52px;padding:9px 11px;margin:8px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);font-weight:700;cursor:pointer}
 .ms-must:has(input:checked){border:2px solid var(--ink);background:#fff8c9;box-shadow:2px 2px 0 var(--ink)}
 .ms-must input{width:23px;height:23px;flex:0 0 23px;accent-color:var(--ink)}
@@ -490,10 +500,20 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .ms-label{font-weight:700;line-height:1.25}.ms-label small{display:block;margin-top:2px;color:var(--charcoal);font:400 .72rem/1.25 var(--font-body)}
 .ms-step{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;background:#fff;font-size:1.45rem;box-shadow:2px 2px 0 var(--ink)}
 .ms-val{display:flex;align-items:center;justify-content:center;min-height:40px;border-block:2px solid var(--ink);font-size:1.15rem;font-weight:700}
-.ms-total{position:sticky;bottom:76px;z-index:2;margin:15px 0 0;padding:12px;border:2px solid var(--ink);border-radius:10px;background:#E1F2E7;text-align:center;font-size:1.25rem;font-weight:700}
+.ms-colors{display:grid;gap:8px;margin-top:14px}
+.ms-color{display:flex;align-items:center;gap:10px;min-height:52px;margin:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);font-weight:700}
+.ms-swatch{width:30px;height:30px;flex:0 0 30px;border:2px solid var(--ink);border-radius:8px;box-shadow:2px 2px 0 var(--ink)}
+.ms-color[data-band=green] .ms-swatch{background:var(--band-green)}
+.ms-color[data-band=yellow] .ms-swatch{background:var(--band-yellow)}
+.ms-color[data-band=orange] .ms-swatch{background:var(--band-orange)}
+.ms-color .input{width:4.5rem;min-height:40px;margin-inline-start:auto;padding:6px 8px;text-align:center;font-variant-numeric:tabular-nums}
+.ms-color[data-band=orange]>span:nth-child(2){display:flex;align-items:center;gap:6px;flex:1}
+.ms-color strong{margin-inline-start:auto;padding:5px 10px;border:1.5px solid var(--ink);border-radius:8px;background:#fff;font-variant-numeric:tabular-nums}
+.field-error{margin:8px 0 0;padding:8px 10px;border-inline-start:4px solid var(--error);background:#FFF1F1;color:var(--error);font-size:.88rem;font-weight:700}
+.ms-total{margin:0;padding:8px 10px;border:2px solid var(--ink);border-radius:10px;background:#E1F2E7;text-align:center;font-size:1rem;font-weight:700;line-height:1.15;white-space:nowrap}
 .ms-total.bad{background:#FDE6E3;color:#8F1D1D;border-color:#8F1D1D}
-.ms-form .sticky-save{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
-.ms-form .sticky-save .btn{width:100%;max-width:none;margin:0}.ms-form .sticky-save .link{padding-inline:10px;white-space:nowrap}
+.ms-form .sticky-save{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 10px;align-items:center}
+.ms-form .sticky-save .btn{width:100%;max-width:none;margin:0;min-height:48px}.ms-form .sticky-save .link{grid-column:1/-1;min-height:36px;padding:0 10px;white-space:normal;justify-self:center}
 
 @media (max-width:420px){
   .hero-top{gap:7px}.hero-user{font-size:.78rem;white-space:nowrap}.hero-top .bell{margin-inline-start:0}.hero-logo{width:91px}
@@ -501,12 +521,14 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
   .cat-list{grid-template-columns:1fr}.match-row{grid-template-columns:68px minmax(0,1fr);gap:11px;padding:13px 10px}.match-score{width:68px;min-height:72px}.match-score strong{font-size:1.85rem}
   .match-acts{margin-inline-start:-79px}.match-acts .btn{flex:1 1 145px}.match-acts .link{flex:0 0 auto}
   .ms-row{grid-template-columns:minmax(0,1fr) 44px 54px 44px;gap:5px}.ms-val{font-size:1.05rem}
-  .ms-form .sticky-save{grid-template-columns:1fr}.ms-form .sticky-save .link{min-height:36px;padding:0}.ms-total{bottom:112px}
+  .ms-form .sticky-save{grid-template-columns:auto minmax(0,1fr)}
 }
 @media (min-width:900px){
   dialog:has(.cat-sheet){margin:auto}.cat-list{grid-template-columns:repeat(3,1fr)}
   .matches{max-width:920px}.match-row{grid-template-columns:86px minmax(0,1fr)}.match-score{width:82px}
-  .ms-form .sticky-save{right:272px;grid-template-columns:minmax(0,720px) auto;justify-content:center}
+  .ms-form{padding-bottom:144px}
+  .ms-form .sticky-save{right:272px;grid-template-columns:auto minmax(280px,620px) auto;justify-content:center}
+  .ms-form .sticky-save .link{grid-column:auto;white-space:nowrap}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
@@ -803,7 +825,7 @@ function lightbox(photos, start = 0) {
 function parseRoute() {
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (p[0] === 'notifications' && FEATURES.signing) return { name: 'notifications' };
-  if (p[0] === 'settings') return { name: p[1] === 'matches' ? 'match-settings' : 'settings' };
+  if (p[0] === 'settings') return { name: 'settings' };   // #/settings/matches (older links) → the same screen
   if (p[0] === 'matches') return { name: 'matches', lead: p[1] === 'lead' ? p[2] : null, owner: p[1] === 'owner' ? p[2] : null };
   if (p[0] !== 'm' || !MODULES[p[1]]) return { name: 'home' };
   const module = p[1];
@@ -816,11 +838,21 @@ const go = (hash) => { if (location.hash === hash) render(); else location.hash 
 // Leaving a form with unsaved typing asks first (in-app links, back button, and tab close/refresh).
 const Dirty = { on: false, hash: '' };
 const LEAVE_MSG = 'לצאת בלי לשמור? מה שהוקלד בטופס יימחק.';
-window.addEventListener('hashchange', () => {
+// card hash → the screen it was opened from, when that was the matches screen or another card
+const Back = {};
+const isCardHash = (h) => /^#\/m\/(lead|owner)\/(?!new\b)[^/]+$/.test(h);
+function noteBack(from, to) {
+  if (!isCardHash(to) || from.startsWith(to + '/') || Back[from] === to) return;   // own edit form / going back: keep
+  const chainHas = (h) => { for (let x = from, i = 0; x && i < 50; x = Back[x], i++) if (x === to) return true; return false; };
+  if (chainHas()) return;   // "to" is already behind us: keep its own way back
+  if (from.startsWith('#/matches') || (isCardHash(from) && from !== to)) Back[to] = from; else delete Back[to];
+}
+window.addEventListener('hashchange', (e) => {
   if (Dirty.on && location.hash !== Dirty.hash) {
     if (!confirm(LEAVE_MSG)) { history.pushState(null, '', Dirty.hash); return; }
     Dirty.on = false;
   }
+  try { noteBack(new URL(e.oldURL).hash, location.hash); } catch {}
   render();
 });
 window.addEventListener('beforeunload', (e) => { if (Dirty.on) { e.preventDefault(); e.returnValue = ''; } });
@@ -841,7 +873,7 @@ async function render() {
   if (r.name === 'home') return renderHome(app);
   const inner = r.name === 'list' ? listView(r.module) : r.name === 'card' ? cardView(r.module, r.id)
     : r.name === 'notifications' ? notificationsView() : r.name === 'matches' ? matchesView(r)
-    : r.name === 'settings' ? settingsView() : r.name === 'match-settings' ? matchSettingsView() : formView(r);
+    : r.name === 'settings' ? settingsView() : formView(r);
   app.innerHTML = shell(r, inner.html);
   window.scrollTo(0, 0);
   inner.mount?.();
@@ -850,11 +882,14 @@ async function render() {
 function shell(r, html) {
   const navLinks = (cls) => Object.entries(MODULES).map(([k, m]) =>
     `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}>${m.title}</a>`).join('');
+  const sideExtra = `<a class="mod mod-matches" href="#/matches" ${r.name === 'matches' ? 'aria-current="page"' : ''}>התאמות</a>
+      <a class="mod mod-settings" href="#/settings" ${r.name === 'settings' ? 'aria-current="page"' : ''}>הגדרות</a>`;
   const bottom = r.name !== 'form';
   return `<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
     <nav class="side-nav" aria-label="מודולים">
       <a href="#/" class="brand-side"><img src="assets/logo.png" alt="פריים לוקיישן – לדף הבית" style="width:150px"></a>
       ${navLinks('mod')}
+      ${sideExtra}
       <div class="spacer"></div>
       <button class="link" data-act="password">שינוי סיסמה</button>
       <button class="link" data-act="logout">יציאה</button>
@@ -1000,13 +1035,14 @@ function listView(module) {
     const draw = () => {
       const q = st.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
       // a search looks in all records (active + archive); without a search the tab filters
-      const rows = deals(module)
+      let rows = deals(module)
         .filter(d => q || (st.tab === 'drafts' ? d.is_draft && d.status === 'active' : (st.tab === 'active') === (d.status === 'active')))
-        .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)))
-        .filter(d => catsMatch(d, st.cats))
+        .filter(d => !q || dealSearchText(d).includes(q) || (qd.length >= 3 && dealSearchText(d).includes(qd)));
+      const base = rows;
+      rows = rows.filter(d => catsMatch(d, st.cats))
         .sort((a, b) => (dealDate(module, b) + b.created_at).localeCompare(dealDate(module, a) + a.created_at));
       const ul = $('#rows'); if (!ul) return; // list no longer on screen (e.g. undo from elsewhere)
-      $('#cat-filter').innerHTML = catFilterHTML(st.cats); mountCatFilter(st, draw);
+      $('#cat-filter').innerHTML = catFilterHTML(st.cats); mountCatFilter(st, draw, () => base.map(catIds));
       const hits = module === 'owner' ? signingHits(q) : [];
       if (!rows.length && !hits.length) {
         ul.innerHTML = `<li class="state">${st.cats.length ? 'אין תוצאות בקטגוריות שנבחרו.' : q ? `לא נמצאו תוצאות ל־"${esc(st.q)}"` : st.tab === 'archive' ? 'אין עסקאות בארכיון.' : `${M.empty} לחצי על "+ חדש" כדי להוסיף.`}</li>`;
@@ -1045,12 +1081,13 @@ const catIds = (d) => d?.category_ids || [];
 const catText = (d) => catIds(d).map(optText).filter(Boolean).join(', ');
 const catsMatch = (d, picked) => !picked.length || catIds(d).some(c => picked.includes(c));
 // "קטגוריה" button → sheet with search + checkboxes; onDone(newIds)
-function categorySheet(current, onDone) {
+function categorySheet(current, onDone, counts = null) {
   const dlg = $('#dlg'); dlg.oninput = null;
   const all = opts(LISTS.category);
+  const n = (id) => counts ? ` <span class="cat-n num${(counts[id] || 0) === 0 ? ' is-zero' : ''}">(${counts[id] || 0})</span>` : '';
   dlg.innerHTML = `<form id="cat-form" class="cat-sheet"><h2>סינון לפי קטגוריה</h2>
     <input class="input" id="cat-q" type="search" autocomplete="off" placeholder="חיפוש קטגוריה" aria-label="חיפוש קטגוריה">
-    <div class="cat-list" id="cat-list" role="group" aria-label="קטגוריות">${all.map(o => `<label class="cat-opt"><input type="checkbox" value="${o.id}" ${current.includes(o.id) ? 'checked' : ''}><span>${esc(o.value)}</span></label>`).join('')}</div>
+    <div class="cat-list" id="cat-list" role="group" aria-label="קטגוריות">${all.map(o => `<label class="cat-opt"><input type="checkbox" value="${o.id}" ${current.includes(o.id) ? 'checked' : ''}><span>${esc(o.value)}${n(o.id)}</span></label>`).join('')}</div>
     <p class="hint">מוצג מי שיש לו לפחות אחת מהקטגוריות שנבחרו.</p>
     <div class="stack"><button class="btn primary" type="submit" id="cat-apply">הצגה</button>
       <button class="link" type="button" id="cat-clear">ניקוי הבחירה</button></div></form>`;
@@ -1063,8 +1100,10 @@ function categorySheet(current, onDone) {
 // button + chosen chips; mount wires them
 const catFilterHTML = (picked) => `<div class="cat-filter"><button type="button" class="btn cat-btn" id="cat-btn">קטגוריה${picked.length ? ` (${picked.length})` : ''}</button>
   ${picked.map(id => `<button type="button" class="chip cat-chip" data-cat="${id}" aria-label="הסרת ${esc(optText(id))}">${esc(optText(id))} ✕</button>`).join('')}</div>`;
-function mountCatFilter(state, redraw) {
-  $('#cat-btn')?.addEventListener('click', () => categorySheet(state.cats, (v) => { state.cats = v; redraw(); }));
+// countOf(): the items before the category filter; each is a list of category ids (counted once per item)
+const catCounts = (items) => items.reduce((acc, ids) => { new Set(ids).forEach(id => acc[id] = (acc[id] || 0) + 1); return acc; }, {});
+function mountCatFilter(state, redraw, countOf = null) {
+  $('#cat-btn')?.addEventListener('click', () => categorySheet(state.cats, (v) => { state.cats = v; redraw(); }, countOf ? catCounts(countOf()) : null));
   $$('.cat-chip').forEach(b => b.onclick = () => { state.cats = state.cats.filter(x => x !== b.dataset.cat); redraw(); });
 }
 
@@ -1085,11 +1124,12 @@ function matchWaText(l, o) {
 }
 function matchRowHTML(m, { show = 'both' } = {}) {
   const { lead: l, owner: o } = m;
-  return `<li class="match-row score-${m.score >= 75 ? 'high' : m.score >= 50 ? 'mid' : 'low'}" data-key="${m.key}">
+  const b = Match.band(m.score, S.data?.matchSettings);
+  return `<li class="match-row ${b ? `score-${{ green: 'high', yellow: 'mid', orange: 'low' }[b]}` : 'score-none'}${m.partial ? ' is-partial' : ''}" data-band="${b || 'none'}" data-key="${m.key}">
     <button type="button" class="match-score" data-a="why" aria-label="ציון ${m.score}, למה ההתאמה הזו?"><strong class="num">${m.score ?? '—'}</strong>${m.partial ? '<small>מידע חלקי</small>' : ''}</button>
     <div class="match-body">
       ${show !== 'owner' ? `<a class="match-who" href="#/m/lead/${l.id}"><span class="name">${esc(l.contact?.name)}</span> <span class="meta">${esc(leadShort(l))}</span></a>` : ''}
-      ${show !== 'lead' ? `<a class="match-what" href="#/m/owner/${o.id}"><span class="name">${esc(o.address || o.contact?.name || 'נכס')}</span> <span class="meta">${esc(ownerShort(o))}</span></a>` : ''}
+      ${show !== 'lead' ? `<a class="match-what" href="#/m/owner/${o.id}"><span class="name">${esc(o.contact?.name || 'בעלים')}</span>${o.address ? ` <span class="addr">${esc(o.address)}</span>` : ''} <span class="meta">${esc(ownerShort(o))}</span></a>` : ''}
       <ul class="match-reasons">${m.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
       <div class="match-acts">
         <button type="button" class="btn" data-a="wa">WhatsApp ל${esc(firstName(l.contact?.name))}</button>
@@ -1106,7 +1146,7 @@ function whyDialog(m) {
       <span class="why-v">${p.value === null ? 'לא ידוע' : `${Math.round(p.value * 100)}%`}</span>
       <span class="why-t">${esc(p.why)}</span></li>`).join('')}</ul>
     ${s.must.deal_type ? '<p class="hint">תנאי חובה: סוג עסקה (שכירות / קנייה) מתאים.</p>' : ''}
-    <div class="stack"><a class="link" href="#/settings/matches" onclick="document.getElementById('dlg').close()">שינוי המשקלים</a><button class="btn" type="button" id="why-close">סגירה</button></div></div>`;
+    <div class="stack"><a class="link" href="#/settings" onclick="document.getElementById('dlg').close()">שינוי המשקלים</a><button class="btn" type="button" id="why-close">סגירה</button></div></div>`;
   $('#why-close').onclick = () => dlg.close();
   dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
   dlg.showModal();
@@ -1155,7 +1195,7 @@ function matchesView(r) {
   const sub = focus.lead ? `התאמות ל${focus.lead.contact?.name || 'מתעניין'}` : focus.owner ? `התאמות ל${focus.owner.address || focus.owner.contact?.name || 'נכס'}` : 'התאמות';
   const html = `${topbar(sub, focus.lead ? `#/m/lead/${focus.lead.id}` : focus.owner ? `#/m/owner/${focus.owner.id}` : '#/')}
   <div class="content matches">
-    <p class="note">ההתאמות עדיין בכיול: הציון מחושב לפי המשקלים ב<a href="#/settings/matches">הגדרות</a>.</p>
+    <p class="note">ההתאמות עדיין בכיול: הציון מחושב לפי המשקלים ב<a href="#/settings">הגדרות</a>.</p>
     <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
       <label><input type="radio" name="mtab" value="open" ${MS.tab === 'open' ? 'checked' : ''}><span>מומלצות</span></label>
       <label><input type="radio" name="mtab" value="dismissed" ${MS.tab === 'dismissed' ? 'checked' : ''}><span>נדחו</span></label></div></div>
@@ -1167,7 +1207,8 @@ function matchesView(r) {
     const draw = () => {
       $('#m-filters').innerHTML = `${catFilterHTML(MS.cats)}
         <label class="m-min">ציון מינימלי <select class="input" id="m-min">${[0, 50, 70, 85].map(v => `<option value="${v}" ${MS.min === v ? 'selected' : ''}>${v ? v + '+' : 'הכול'}</option>`).join('')}</select></label>`;
-      mountCatFilter(MS, draw);
+      mountCatFilter(MS, draw, () => matchList({ ...focus, showDismissed: MS.tab === 'dismissed' }).filter(m => (m.score ?? 0) >= MS.min)
+        .map(m => [...catIds(m.lead), ...catIds(m.owner)]));
       $('#m-min').onchange = (e) => { MS.min = +e.target.value; draw(); };
       current = matchList({ ...focus, showDismissed: MS.tab === 'dismissed' }).map(m => ({ ...m, dismissed: MS.tab === 'dismissed' }))
         .filter(m => (m.score ?? 0) >= MS.min && (catsMatch(m.lead, MS.cats) || catsMatch(m.owner, MS.cats)));
@@ -1188,7 +1229,13 @@ function matchSectionHTML(module, d) {
   return `<section class="m-section" id="matches" aria-labelledby="matches-h"><div class="m-head"><h3 id="matches-h">התאמות</h3>
     ${list.length > 3 ? `<a class="link" href="#/matches/${module}/${d.id}">הצגת הכול (${list.length})</a>` : ''}</div>
     ${list.length ? `<ul class="match-list" id="m-card">${list.slice(0, 3).map(m => matchRowHTML(m, { show: module === 'lead' ? 'owner' : 'lead' })).join('')}</ul>`
-      : `<p class="hint">אין עדיין ${module === 'lead' ? 'נכסים מתאימים' : 'מתעניינים מתאימים'}. ככל שימולאו קטגוריה, ייעוד, מיקום וגודל, יופיעו כאן התאמות.</p>`}</section>`;
+      : emptyMatchHint(module, d)}</section>`;
+}
+function emptyMatchHint(module, d) {
+  const miss = Match.ownMissing(d, module, optText);
+  return miss.length
+    ? `<p class="hint m-missing">כדי לראות התאמות, חסר: <strong>${miss.join(', ')}</strong>. <a class="link" href="#/m/${module}/${d.id}/edit">השלמת פרטים</a></p>`
+    : `<p class="hint">אין כרגע ${module === 'lead' ? 'נכסים מתאימים' : 'מתעניינים מתאימים'}.</p>`;
 }
 function mountMatchSection(module, d) {
   const ul = $('#m-card'); if (!ul) return;
@@ -1196,17 +1243,12 @@ function mountMatchSection(module, d) {
 }
 
 /* ════════════ settings ════════════ */
+// הגדרות: one screen (Galli, round 5): match must-conditions, weights and score colours
 function settingsView() {
-  const html = `${topbar('הגדרות', '#/')}
-  <div class="content"><ul class="settings-list">
-    <li><a class="settings-item" href="#/settings/matches"><strong>התאמות</strong><span class="meta">משקל לכל קריטריון ותנאי חובה</span></a></li>
-  </ul></div>`;
-  return { html };
-}
-function matchSettingsView() {
   const s = structuredClone(matchSettings());
-  const html = `${topbar('הגדרות התאמות', '#/settings')}
+  const html = `${topbar('הגדרות', '#/')}
   <form class="content ms-form" id="ms-form" novalidate>
+    <p class="ms-intro">הגדרות ההתאמות בין מתעניינים לנכסים.</p>
     <section class="form-section"><h2>תנאי חובה</h2>
       <p class="hint">התאמה שלא עומדת בתנאי חובה לא תוצג בכלל.</p>
       ${Match.MUSTS.map(([k, label]) => `<label class="ms-must"><input type="checkbox" name="must" value="${k}" ${s.must[k] ? 'checked' : ''}><span>${label}</span></label>`).join('')}
@@ -1218,20 +1260,37 @@ function matchSettingsView() {
         <button type="button" class="btn ms-step" data-d="-5" aria-label="הורדת ${label}">−</button>
         <output class="ms-val num" id="w-${k}">${s.weights[k]}%</output>
         <button type="button" class="btn ms-step" data-d="5" aria-label="העלאת ${label}">+</button></div>`).join('')}</div>
-      <p class="ms-total" id="ms-total" aria-live="polite"></p>
     </section>
-    <div class="sticky-save"><button class="btn primary block" type="submit" id="ms-save">שמירה</button>
+    <section class="form-section"><h2>צבע לפי ציון</h2>
+      <p class="hint">הצבע של כל התאמה לפי הציון שלה.</p>
+      <div class="ms-colors">
+        <label class="ms-color" data-band="green"><span class="ms-swatch" aria-hidden="true"></span><span>ירוק מ־</span>
+          <input class="input num" id="c-green" type="number" inputmode="numeric" min="1" max="100" step="1" value="${s.colors.green}"></label>
+        <label class="ms-color" data-band="yellow"><span class="ms-swatch" aria-hidden="true"></span><span>צהוב מ־</span>
+          <input class="input num" id="c-yellow" type="number" inputmode="numeric" min="0" max="99" step="1" value="${s.colors.yellow}"></label>
+        <p class="ms-color" data-band="orange"><span class="ms-swatch" aria-hidden="true"></span><span>כתום: מתחת ל־<strong class="num" id="c-orange">${s.colors.yellow}</strong></span></p>
+      </div>
+      <p class="field-error" id="c-err" hidden></p>
+    </section>
+    <div class="sticky-save"><p class="ms-total" id="ms-total" aria-live="polite"></p>
+      <button class="btn primary block" type="submit" id="ms-save">שמירה</button>
       <button class="link" type="button" id="ms-reset">שחזור ברירת המחדל</button></div>
   </form>`;
   const mount = () => {
     const form = $('#ms-form');
     const total = () => Object.values(s.weights).reduce((a, b) => a + b, 0);
+    const colorErr = () => {
+      const g = s.colors.green, y = s.colors.yellow, ok = (x) => Number.isInteger(x) && x >= 0 && x <= 100;
+      return !ok(g) || !ok(y) ? 'יש להזין מספר שלם בין 0 ל־100' : g <= y ? 'הירוק צריך להתחיל מעל הצהוב' : '';
+    };
     const draw = () => {
       for (const [k] of Match.CRITERIA) $(`#w-${k}`).textContent = s.weights[k] + '%';
-      const t = total();
+      const t = total(), ce = colorErr();
       $('#ms-total').textContent = t === 100 ? 'סה״כ 100% ✓' : `סה״כ ${t}%: ${t > 100 ? `צריך להוריד ${t - 100}%` : `צריך להוסיף ${100 - t}%`}`;
       $('#ms-total').classList.toggle('bad', t !== 100);
-      $('#ms-save').disabled = t !== 100;
+      $('#c-orange').textContent = Number.isInteger(s.colors.yellow) ? s.colors.yellow : '—';
+      $('#c-err').textContent = ce; $('#c-err').hidden = !ce;
+      $('#ms-save').disabled = t !== 100 || !!ce;
     };
     form.addEventListener('click', (e) => {
       const b = e.target.closest('.ms-step'); if (!b) return;
@@ -1239,14 +1298,19 @@ function matchSettingsView() {
       s.weights[k] = Math.min(100, Math.max(0, s.weights[k] + +b.dataset.d)); Dirty.on = true; draw();
     });
     form.addEventListener('change', (e) => { if (e.target.name === 'must') { s.must[e.target.value] = e.target.checked; Dirty.on = true; } });
+    form.addEventListener('input', (e) => {
+      const k = e.target.id === 'c-green' ? 'green' : e.target.id === 'c-yellow' ? 'yellow' : null; if (!k) return;
+      const v = e.target.value.trim(); s.colors[k] = v === '' ? NaN : +v; Dirty.on = true; draw();
+    });
     $('#ms-reset').onclick = () => {
-      Object.assign(s.weights, Match.DEFAULTS.weights); Object.assign(s.must, Match.DEFAULTS.must);
-      $$('input[name=must]', form).forEach(i => { i.checked = s.must[i.value]; }); Dirty.on = true; draw();
+      Object.assign(s.weights, Match.DEFAULTS.weights); Object.assign(s.must, Match.DEFAULTS.must); Object.assign(s.colors, Match.DEFAULTS.colors);
+      $$('input[name=must]', form).forEach(i => { i.checked = s.must[i.value]; });
+      $('#c-green').value = s.colors.green; $('#c-yellow').value = s.colors.yellow; Dirty.on = true; draw();
     };
     form.onsubmit = async (e) => {
-      e.preventDefault(); if (total() !== 100) return;
+      e.preventDefault(); if (total() !== 100 || colorErr()) return;
       const btn = $('#ms-save'); btn.disabled = true;
-      try { S.data.matchSettings = await DB.saveMatchSettings(s); Dirty.on = false; toast('ההגדרות נשמרו'); go('#/settings'); }
+      try { S.data.matchSettings = await DB.saveMatchSettings(s); Dirty.on = false; toast('ההגדרות נשמרו'); draw(); }
       catch (ex) { console.error(ex); toast('השמירה נכשלה. נסי שוב.'); btn.disabled = false; }
     };
     Dirty.hash = location.hash; draw();
@@ -1315,11 +1379,18 @@ function cardView(module, id) {
     add(esc(f.label), v == null || v === '' ? '' : f.type === 'date' ? fmt.ltr(fmt.date(v)) : f.type === 'number' ? fmt.ltr(fmt.num(v)) : esc(v));
   }
   const rows = SECTIONS.flatMap(k => groups[k]);
-  const html = `${topbar(c.name || M.one, `#/m/${module}`)}
+  const html = `${topbar(c.name || M.one, Back[location.hash] || `#/m/${module}`)}
   <div class="content">
     <div class="card-head">
-      <span class="chip ${active ? 'active' : 'archived'}">${statusText}</span>
-      <h2>${esc(c.name)}</h2>${c.company_name ? `<p>${esc(c.company_name)}</p>` : ''}
+      <div class="card-title">
+        <span class="chip ${active ? 'active' : 'archived'}">${statusText}</span>
+        <h2>${esc(c.name)}</h2>${c.company_name ? `<p>${esc(c.company_name)}</p>` : ''}
+      </div>
+      <div class="card-tools" role="group" aria-label="פעולות">
+        <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
+        <a class="btn" href="#/m/${module}/new/dup/${d.id}">שכפול</a>
+        ${active ? `<button class="btn" id="close-deal">סגירת עסקה</button>` : `<button class="btn" id="restore-deal">החזרה לפעילות</button>`}
+      </div>
     </div>
     ${d.is_draft ? `<p class="draft-note"><span class="chip draft">טיוטה</span> נוצר מהחתמה עם שם וטלפון בלבד. השלימי את שאר הפרטים ב"עריכה" ושמרי, והסימון יוסר.</p>` : ''}
     <div class="actions">
@@ -1330,11 +1401,6 @@ function cardView(module, id) {
     ${has(d.lat) && has(d.lng) ? '<div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>' : ''}
     ${matchSectionHTML(module, d)}
     ${signingSectionHTML(module, d)}
-    <div class="actions">
-      <a class="btn" href="#/m/${module}/${d.id}/edit">עריכה</a>
-      <a class="btn" href="#/m/${module}/new/dup/${d.id}">שכפול</a>
-      ${active ? `<button class="btn" id="close-deal">סגירת עסקה</button>` : `<button class="btn" id="restore-deal">החזרה לפעילות</button>`}
-    </div>
   </div>`;
   const mount = () => {
     if (window.L && $('#card-map')) {
@@ -2412,7 +2478,7 @@ async function boot() {
   if (S.session) await afterLogin(); else render();
   DB.onAuth((s) => { if (!s && S.session) { S.session = null; S.data = null; render(); } });
   document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible' && S.session && S.data && parseRoute().name !== 'form') { await reload(); render(); }
+    if (document.visibilityState === 'visible' && S.session && S.data && parseRoute().name !== 'form' && !Dirty.on) { await reload(); render(); }
   });
 }
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -6,6 +6,7 @@
     version: 1,
     weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 },
     must: { deal_type: true, category: false, area: false, purpose: false },
+    colors: { green: 75, yellow: 50 },   // ≥ green → ירוק, ≥ yellow → צהוב, below → כתום
   });
   const CRITERIA = [
     ['category', 'קטגוריה'], ['area', 'אזור'], ['purpose', 'ייעוד'], ['size', 'גודל'], ['budget', 'תקציב'], ['height', 'גובה'],
@@ -32,8 +33,32 @@
     const weights = {}, must = {};
     for (const [k] of CRITERIA) weights[k] = Number.isInteger(s.weights?.[k]) ? s.weights[k] : DEFAULTS.weights[k];
     for (const [k] of MUSTS) must[k] = typeof s.must?.[k] === 'boolean' ? s.must[k] : DEFAULTS.must[k];
-    if (Object.values(weights).reduce((a, b) => a + b, 0) !== 100) return { version: 1, weights: { ...DEFAULTS.weights }, must };
-    return { version: 1, weights, must };
+    const c = s.colors || {}, okC = (x) => Number.isInteger(x) && x >= 0 && x <= 100;
+    const colors = okC(c.green) && okC(c.yellow) && c.green > c.yellow ? { green: c.green, yellow: c.yellow } : { ...DEFAULTS.colors };
+    if (Object.values(weights).reduce((a, b) => a + b, 0) !== 100) return { version: 1, weights: { ...DEFAULTS.weights }, must, colors };
+    return { version: 1, weights, must, colors };
+  }
+  // colour band of a score: 'green' | 'yellow' | 'orange' (null score → null)
+  function band(score, settings) {
+    if (score === null || score === undefined) return null;
+    const { colors } = settingsOf(settings);
+    return score >= colors.green ? 'green' : score >= colors.yellow ? 'yellow' : 'orange';
+  }
+  // what this deal itself lacks for matching (shown in its card when it has no matches)
+  function ownMissing(deal, side, text) {
+    const out = [], n = (v) => v !== null && v !== undefined && v !== '' && isFinite(+v);
+    if (!ids(deal.category_ids).length) out.push('קטגוריה');
+    if (!n(deal.lat) || !n(deal.lng) || (side === 'lead' && !(+deal.radius_m > 0))) out.push('מיקום');
+    if (side === 'lead') {
+      if (!ids(deal.purpose_ids, deal.purpose_id).length) out.push('ייעוד');
+      if (!n(deal.size_min) && !n(deal.size_max) && !n(deal.size_value)) out.push('גודל');
+      if (!ids(deal.need_ids, deal.need_id).some(id => NEED_KIND[text(id)])) out.push('צורך (לשכור / לקנות)');
+    } else {
+      if (!deal.purpose_id) out.push('ייעוד');
+      if (!(+deal.built_sqm > 0) && !(+deal.plot_sqm > 0)) out.push('גודל');
+      if (!deal.deal_kind) out.push('סוג עסקה');
+    }
+    return out;
   }
 
   function dealType(lead, owner, text) {
@@ -133,6 +158,6 @@
     return out.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || Number(!!a.partial) - Number(!!b.partial));
   }
 
-  const Match = { DEFAULTS, CRITERIA, LABEL, MUSTS, settingsOf, score, all, km };
+  const Match = { DEFAULTS, CRITERIA, LABEL, MUSTS, settingsOf, band, ownMissing, score, all, km };
   if (typeof module !== 'undefined' && module.exports) module.exports = Match; else window.Match = Match;
 })();

@@ -102,6 +102,7 @@
     async loadMatches() { await delay(); return { matchSettings: clone(db.matchSettings), dismissals: clone(db.dismissals) }; },
     async saveMatchSettings(v) { await delay(); this.calls.push({ matchSettings: clone(v) });
       const sum = Object.values(v.weights).reduce((a, b) => a + b, 0); if (sum !== 100) throw new Error('סכום המשקלים חייב להיות 100');
+      if (v.colors && !(v.colors.green > v.colors.yellow)) throw new Error('ירוק חייב להיות מעל צהוב');
       db.matchSettings = clone(v); return clone(v); },
     async dismissMatch(l, o, reason) { await delay(); db.dismissals = db.dismissals.filter(x => !(x.lead_deal_id === l && x.owner_deal_id === o)); db.dismissals.push({ lead_deal_id: l, owner_deal_id: o, reason }); },
     async restoreMatch(l, o) { await delay(); db.dismissals = db.dismissals.filter(x => !(x.lead_deal_id === l && x.owner_deal_id === o)); },

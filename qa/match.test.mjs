@@ -78,12 +78,20 @@ try {
   ok('a must that fails hides the pair; missing data for a must → "חסרים פרטים"; under half the weight known → "חסרים פרטים"');
 
   // settings
-  assert.deepEqual(Match.settingsOf(null), { version: 1, weights: S.weights, must: S.must });
+  assert.deepEqual(Match.settingsOf(null), { version: 1, weights: S.weights, must: S.must, colors: { green: 75, yellow: 50 } });
+  assert.deepEqual(Match.settingsOf({ colors: { green: 50, yellow: 60 } }).colors, { green: 75, yellow: 50 });   // green must be above yellow
+  assert.deepEqual([Match.band(75, S), Match.band(74, S), Match.band(50, S), Match.band(49, S), Match.band(null, S)], ['green', 'yellow', 'yellow', 'orange', null]);
+  assert.equal(Match.band(80, { ...S, colors: { green: 85, yellow: 60 } }), 'yellow');
   assert.deepEqual(Match.settingsOf({ weights: { category: 90 } }).weights, S.weights);   // broken sum → defaults
   const w = { category: 50, area: 50, purpose: 0, size: 0, budget: 0, height: 0 };
   r = Match.score(lead({ category_ids: ['c1', 'c2'] }), owner(), { version: 1, weights: w, must: S.must }, text);
   assert.equal(r.score, 75);
-  ok('settings: missing / broken values fall back to defaults; weights change the score (50/50 → 75)');
+  ok('settings: missing / broken values fall back to defaults; weights change the score (50/50 → 75); colour bands 75 / 50 editable');
+
+  assert.deepEqual(Match.ownMissing(lead(), 'lead', text), []);
+  assert.deepEqual(Match.ownMissing(lead({ category_ids: [], lat: null, need_ids: ['n4'] }), 'lead', text), ['קטגוריה', 'מיקום', 'צורך (לשכור / לקנות)']);
+  assert.deepEqual(Match.ownMissing(owner({ purpose_id: null, built_sqm: null, plot_sqm: null, deal_kind: null }), 'owner', text), ['ייעוד', 'גודל', 'סוג עסקה']);
+  ok('ownMissing: what a lead / owner lacks for matching (for the empty card hint)');
 
   // all(): sorting + dismissed
   const owners = [owner({ id: 'A' }), owner({ id: 'B', category_ids: ['c2'] }), owner({ id: 'C', deal_kind: 'sale' })];

@@ -25,7 +25,7 @@
     return 2 * R * Math.asin(Math.sqrt(h));
   };
   const oneDec = (x) => (Math.round(x * 10) / 10).toLocaleString('he-IL');
-  const pct = (x) => Math.round(x * 100);
+  const pct = (x) => (Math.round(x * 1000 + 1e-9) / 10).toLocaleString('he-IL');   // 0.075 → "7.5", 0.15 → "15"
 
   // settings from the database, completed with defaults (an older or partial value never breaks the screen)
   function settingsOf(v) {

@@ -39,6 +39,7 @@ try {
   const sale = (price, x = {}) => Match.score(lead({ need_ids: ['n2'], ...x }), owner({ deal_kind: 'sale', asking_price: price }), S, text).parts.find(p => p.key === 'budget');
   assert.equal(sale(3000000).value, 1); assert.equal(sale(3450000).value, 0.5); assert.equal(sale(4000000).value, 0);
   assert.match(sale(3450000).why, /15%/);
+  assert.equal(sale(3225000).why, 'מעל התקציב ב־7.5%'); assert.equal(sale(3225000).value, 0.75);   // shown as 7.5%, not 7%
   assert.equal(sale(3000000, { budget_kind: 'per_sqm', budget_value: 6000 }).value, 1);            // 3M / 500 = 6000/sqm
   assert.equal(sale(3000000, { budget_kind: 'per_sqm', budget_value: 5000 }).value, 0.333);
   assert.equal(sale(3000000, { budget_currency: 'USD' }).value, null);

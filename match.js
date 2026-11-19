@@ -4,12 +4,13 @@
 (function () {
   const DEFAULTS = Object.freeze({
     version: 1,
-    weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 },
+    weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0, yield: 0 },
     must: { deal_type: true, category: false, area: false, purpose: false },
     colors: { green: 75, yellow: 50 },   // ≥ green → ירוק, ≥ yellow → צהוב, below → כתום
   });
   const CRITERIA = [
     ['category', 'קטגוריה'], ['area', 'אזור'], ['purpose', 'ייעוד'], ['size', 'גודל'], ['budget', 'תקציב'], ['height', 'גובה'],
+    ['yield', 'מושכר / תשואה (למשקיעים)'],
   ];
   const LABEL = Object.fromEntries(CRITERIA);
   const MUSTS = [['deal_type', 'סוג עסקה (שכירות / קנייה)'], ['category', 'קטגוריה'], ['area', 'אזור'], ['purpose', 'ייעוד']];
@@ -116,6 +117,15 @@
       return over <= 0 ? { value: 1, why: 'בתוך התקציב' } : { value: Math.max(0, 1 - over / 0.3), why: `מעל התקציב ב־${pct(over)}%` };
     },
     height() { return { value: null, why: 'אין שדה גובה בנכסים' }; },
+    // only for a lead who wants to invest: a property that is already rented scores
+    yield(lead, owner, text) {
+      const invest = ids(lead.need_ids, lead.need_id).some(id => text(id) === 'להשקעה');
+      if (!invest) return { value: null, why: 'לא רלוונטי (לא מחפש להשקעה)' };
+      if (owner.deal_kind !== 'sale' || owner.is_rented === null || owner.is_rented === undefined) return { value: null, why: 'לא ידוע אם הנכס מושכר' };
+      if (!owner.is_rented) return { value: 0, why: 'הנכס לא מושכר' };
+      const y = num(owner.yield_pct);
+      return { value: 1, why: y ? `מושכר, תשואה ${(Math.round(y * 10) / 10).toLocaleString('he-IL')}%` : 'מושכר' };
+    },
   };
 
   // → { status: 'ok' | 'blocked' | 'missing', score, parts, partial, missing: [labels], reasons: [3 short lines] }

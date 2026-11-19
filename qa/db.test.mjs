@@ -16,6 +16,7 @@ const signingSql = readFileSync(new URL('../supabase/009_signing.sql', import.me
 const signing2Sql = readFileSync(new URL('../supabase/010_signing2.sql', import.meta.url), 'utf8');
 const matchesSql = readFileSync(new URL('../supabase/011_matches.sql', import.meta.url), 'utf8');
 const colorsSql = readFileSync(new URL('../supabase/012_match_colors.sql', import.meta.url), 'utf8');
+const yieldSql = readFileSync(new URL('../supabase/013_match_yield.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -649,5 +650,21 @@ await as('authenticated', OTHER, async () => {
   await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: ms.weights, must: ms.must, colors: { green: 90, yellow: 10 } }]));
 });
 ok('012: colours 75 / 50 added to the stored settings (weights kept, runs twice); saved when green > yellow (whole 0–100); an older app keeps them; non-members blocked');
+
+// ---- 013: 7th criterion "yield"
+await db.exec(yieldSql); await db.exec(yieldSql);
+ms = (await q(`select value from app_settings where key='match_settings'`))[0].value;
+assert.equal(ms.weights.yield, 0); assert.equal(Object.keys(ms.weights).length, 7); assert.deepEqual(ms.colors, { green: 85, yellow: 60 });
+await as('authenticated', LEAH, async () => {
+  const w7 = { category: 20, area: 25, purpose: 20, size: 15, budget: 15, height: 0, yield: 5 };
+  await q('select save_match_settings($1::jsonb)', [{ version: 1, weights: w7, must: ms.must, colors: ms.colors }]);
+  assert.equal((await q(`select value from app_settings where key='match_settings'`))[0].value.weights.yield, 5);
+  // older app: 6 weights summing to 95 + the stored 5 = 100 → accepted, yield kept
+  await q('select save_match_settings($1::jsonb)', [{ version: 1, weights: { category: 20, area: 25, purpose: 20, size: 15, budget: 15, height: 0 }, must: ms.must }]);
+  assert.equal((await q(`select value from app_settings where key='match_settings'`))[0].value.weights.yield, 5);
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: { ...w7, yield: 10 }, must: ms.must }]), /100/);
+  await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: { ...w7, extra: 0 }, must: ms.must }]));
+});
+ok('013: "yield" weight added at 0 (runs twice, colours kept); 7 weights saved; an older app (6 weights) keeps the stored yield; sum still 100');
 
 console.log(`\nDB tests passed: ${pass}`);

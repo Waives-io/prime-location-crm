@@ -412,13 +412,13 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto}
 
 /* Matches: a compact broker's scorecard, optimized for one-handed scanning. */
 .hero-settings{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex:0 0 44px;border:2px solid var(--ink);border-radius:50%;background:var(--yellow);box-shadow:3px 3px 0 var(--ink);text-decoration:none;transition:.14s}
+.hero-settings[hidden]{display:none}
 .hero-settings svg{width:23px;height:23px}
 .hero-settings:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--ink)}
 .hero-settings:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
 .hero-settings:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
-.home-matches{background:#fff;border-width:3px;position:relative}
-.home-matches::after{content:"";display:block;position:absolute;inset-inline-start:18px;width:11px;height:11px;border-radius:50%;background:var(--yellow);border:2px solid var(--ink)}
-.home-matches strong{padding-inline-start:24px}
+.home-matches,.home-settings{background:#fff;border-width:3px}
+.home-matches::after{content:none;display:none}
 
 /* Long multi-selects stay readable without turning the form into a wall of pills. */
 #category_ids{max-height:188px;overflow:auto;align-content:flex-start;padding:4px 3px 8px;margin-inline:-3px;scrollbar-width:thin;scrollbar-color:var(--ink) var(--surface)}
@@ -499,6 +499,7 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .ms-weights{margin-top:14px;border-top:2px solid var(--ink)}
 .ms-row{display:grid;grid-template-columns:minmax(0,1fr) 44px 62px 44px;gap:7px;align-items:center;min-height:68px;padding:10px 0;border-bottom:1px solid var(--line)}
 .ms-label{font-weight:700;line-height:1.25}.ms-label small{display:block;margin-top:2px;color:var(--charcoal);font:400 .72rem/1.25 var(--font-body)}
+.ms-row[data-k=yield] .ms-label{min-width:0;overflow-wrap:anywhere}
 .ms-step{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;background:#fff;font-size:1.45rem;box-shadow:2px 2px 0 var(--ink)}
 .ms-val{display:flex;align-items:center;justify-content:center;min-height:40px;border-block:2px solid var(--ink);font-size:1.15rem;font-weight:700}
 .ms-colors{display:grid;gap:8px;margin-top:14px}
@@ -518,6 +519,13 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .ms-form .sticky-save .btn{width:100%;max-width:none;margin:0;min-height:48px}.ms-form .sticky-save .link{min-height:36px;padding:0 10px;white-space:nowrap;justify-self:center}
 
 @media (max-width:420px){
+  body[data-screen=list] .topbar{gap:4px;padding-inline:10px}
+  body[data-screen=list] .topbar::after{inset-inline-start:10px}
+  body[data-screen=list] .topbar .back{min-height:40px;padding-inline:4px;font-size:.84rem}
+  body[data-screen=list] .topbar h1{min-width:0;font-size:1.08rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body[data-screen=list] .topbar .new-top{display:none}   /* mobile: "+ חדש" lives in the bottom bar (one control per action) */
+  body[data-screen=list] .topbar .bell{width:40px;height:40px}
+  body[data-screen=list] .topbar .brand-mini{width:34px;height:34px;flex-basis:34px;margin-inline-start:0}
   .hero-top{gap:7px}.hero-user{font-size:.78rem;white-space:nowrap}.hero-top .bell{margin-inline-start:0}.hero-logo{width:91px}
   .home-buttons{max-width:286px;gap:16px;padding-block:28px}.home-btn{min-height:66px;padding-inline:20px}.home-btn strong{font-size:1.22rem}
   .cat-list{grid-template-columns:1fr}.match-row{grid-template-columns:68px minmax(0,1fr);gap:11px;padding:13px 10px}.match-score{width:68px;min-height:72px}.match-score strong{font-size:1.85rem}
@@ -857,12 +865,25 @@ function noteBack(from, to) {
   if (chainHas()) return;   // "to" is already behind us: keep its own way back
   if (from.startsWith('#/matches') || (isCardHash(from) && from !== to)) Back[to] = from; else delete Back[to];
 }
+// scroll position: kept when the same screen is redrawn (data reload when coming back to the app),
+// restored when going back to a screen visited earlier in this trail (list → card → "חזרה")
+const Scroll = { pos: {}, trail: [location.hash || '#/'], restore: false, going_back: false, last: null };
+function noteScroll(from, to) {
+  Scroll.pos[from] = window.scrollY;
+  const i = Scroll.trail.lastIndexOf(to);
+  Scroll.restore = i >= 0 && Scroll.going_back;   // only "חזרה" or the phone's back button, not a new tap
+  Scroll.going_back = false;
+  if (Scroll.restore) Scroll.trail.length = i + 1; else { Scroll.trail.push(to); if (Scroll.trail.length > 50) Scroll.trail.shift(); }
+}
+document.addEventListener('click', (e) => { if (e.target.closest('.topbar a.back')) Scroll.going_back = true; }, true);
+window.navigation?.addEventListener('navigate', (e) => { if (e.navigationType === 'traverse') Scroll.going_back = true; });
 window.addEventListener('hashchange', (e) => {
   if (Dirty.on && location.hash !== Dirty.hash) {
     if (!confirm(LEAVE_MSG)) { history.pushState(null, '', Dirty.hash); return; }
     Dirty.on = false;
   }
-  try { noteBack(new URL(e.oldURL).hash, location.hash); } catch {}
+  let from = ''; try { from = new URL(e.oldURL).hash || '#/'; noteBack(from, location.hash); } catch {}
+  noteScroll(from, location.hash || '#/');
   render();
 });
 window.addEventListener('beforeunload', (e) => { if (Dirty.on) { e.preventDefault(); e.returnValue = ''; } });
@@ -877,6 +898,7 @@ async function render() {
   if (!S.data && !S.loadError) { app.innerHTML = `<div class="state"><span class="spinner"></span> טוען…</div>`; await reload(); }
   if (S.loadError) return renderLoadError(app);
   const r = parseRoute();
+  const here = location.hash || '#/', y0 = window.scrollY, same = Scroll.last === here; Scroll.last = here;
   document.body.dataset.screen = r.name;
   if (r.name !== 'form' && formDiscard) { formDiscard(); formDiscard = null; }
   if (r.name !== 'form') Dirty.on = false;
@@ -885,8 +907,9 @@ async function render() {
     : r.name === 'notifications' ? notificationsView() : r.name === 'matches' ? matchesView(r)
     : r.name === 'settings' ? settingsView() : formView(r);
   app.innerHTML = shell(r, inner.html);
-  window.scrollTo(0, 0);
   inner.mount?.();
+  window.scrollTo({ top: same ? y0 : Scroll.restore ? (Scroll.pos[here] || 0) : 0, behavior: 'instant' });   // no smooth glide
+  Scroll.restore = false;
 }
 
 function shell(r, html) {
@@ -1005,13 +1028,14 @@ function renderHome(app) {
   app.innerHTML = `<main class="hero">
     <div class="hero-top">
       <span class="hero-user"><button class="link" data-act="password">שינוי סיסמה</button> · <button class="link" data-act="logout">יציאה</button></span>${bellHTML()}
-      <a class="hero-settings" href="#/settings" aria-label="הגדרות"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.57 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.57a1.7 1.7 0 0 0 1.03-1.56V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.99 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg></a>
+      <a class="hero-settings" hidden href="#/settings" aria-label="הגדרות"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.57 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.57a1.7 1.7 0 0 0 1.03-1.56V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.99 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg></a>
       <img class="hero-logo" src="assets/logo.png" alt="פריים לוקיישן">
     </div>
     <div class="home-buttons">
       ${Object.entries(MODULES).map(([k, m]) => `<a class="home-btn" href="#/m/${k}">
         <strong>${m.title}</strong><small><bdi class="num">${count(k)}</bdi> פעילות</small>${icon(k)}</a>`).join('')}
       <a class="home-btn home-matches" href="#/matches"><strong>התאמות</strong><small><bdi class="num">${matchList().length}</bdi> התאמות</small>${icon('matches')}</a>
+      <a class="home-btn home-settings" href="#/settings"><strong>הגדרות</strong>${icon('settings')}</a>
     </div></main>`;
 }
 
@@ -1029,7 +1053,7 @@ const dealDate = (module, d) => module === 'lead' ? d.lead_date : String(d.creat
 const draftCount = () => deals('lead').filter(d => d.is_draft && d.status === 'active').length;
 function listView(module) {
   const st = S.list[module], M = MODULES[module];
-  const html = `${topbar(M.title, '', '', `<a class="btn primary new-top" href="#/m/${module}/new">+ חדש</a>`)}
+  const html = `${topbar(M.title, '#/', 'חזרה', `<a class="btn primary new-top" href="#/m/${module}/new">+ חדש</a>`)}
   <div class="content">
     <input class="input search" id="q" type="search" placeholder="${module === 'owner' && FEATURES.signing ? 'חיפוש: שם, טלפון, חברה, כתובת, מס׳ הסכם' : 'חיפוש: שם, טלפון, חברה, כתובת'}" value="${esc(st.q)}" aria-label="חיפוש">
     <div class="tabs"><div class="seg" role="radiogroup" aria-label="סינון">
@@ -1266,7 +1290,7 @@ function settingsView() {
     <section class="form-section"><h2>משקל לכל קריטריון</h2>
       <p class="hint">כמה כל קריטריון שווה בציון. הסכום חייב להיות 100%.</p>
       <div class="ms-weights">${Match.CRITERIA.map(([k, label]) => `<div class="ms-row" data-k="${k}">
-        <span class="ms-label">${label}${k === 'height' ? ' <small>(אין עדיין שדה גובה בנכסים)</small>' : k === 'budget' ? ' <small>(כרגע רק בנכסים למכירה)</small>' : ''}</span>
+        <span class="ms-label">${label}${k === 'height' ? ' <small>(אין עדיין שדה גובה בנכסים)</small>' : k === 'budget' ? ' <small>(כרגע רק בנכסים למכירה)</small>' : k === 'yield' ? ' <small>(רק למתעניינים להשקעה: נכס מושכר עולה בציון)</small>' : ''}</span>
         <button type="button" class="btn ms-step" data-d="-5" aria-label="הורדת ${label}">−</button>
         <output class="ms-val num" id="w-${k}">${s.weights[k]}%</output>
         <button type="button" class="btn ms-step" data-d="5" aria-label="העלאת ${label}">+</button></div>`).join('')}</div>
@@ -1279,7 +1303,7 @@ function settingsView() {
           <input class="input num" id="c-green" type="number" inputmode="numeric" min="1" max="100" step="1" value="${s.colors.green}" aria-label="ירוק מציון"><span>ומעלה</span></label>
         <label class="ms-color" data-band="yellow"><span class="ms-swatch" aria-hidden="true"></span><span>צהוב: מ־</span>
           <input class="input num" id="c-yellow" type="number" inputmode="numeric" min="0" max="99" step="1" value="${s.colors.yellow}" aria-label="צהוב מציון"><span>עד <strong class="num" id="c-yellow-to">${s.colors.green - 1}</strong></span></label>
-        <p class="ms-color" data-band="orange"><span class="ms-swatch" aria-hidden="true"></span><span>כתום: <strong class="num" id="c-orange">${s.colors.yellow - 1}</strong> ומטה</span></p>
+        <p class="ms-color" data-band="orange"><span class="ms-swatch" aria-hidden="true"></span><span>אדום: <strong class="num" id="c-orange">${s.colors.yellow - 1}</strong> ומטה</span></p>
       </div>
       <p class="field-error" id="c-err" hidden></p>
     </section>

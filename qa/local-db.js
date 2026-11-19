@@ -17,7 +17,7 @@
     category: ['רכב', 'לוגיסטיקה / אחסנה', 'אופנה', 'בנקים', 'בתי קפה', 'קוסמטיקה', 'הנעלה', 'חברים', 'חד״כ', 'חניונים', 'חשמל', 'יזמים - בניה', 'סטוקים'],
     lead_source: ['פייסבוק', 'חבר המליץ', 'גוגל', 'יד 2', 'מדלן', 'מניבים', 'ChatGPT'] };
   const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [], dismissals: [],
-    matchSettings: { version: 1, weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 }, must: { deal_type: true, category: false, area: false, purpose: false } } };
+    matchSettings: { version: 1, weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0, yield: 0 }, must: { deal_type: true, category: false, area: false, purpose: false } } };
   let agreementNo = 76773;
   for (const [k, vs] of Object.entries(seedOpts)) vs.forEach((v, i) => db.options.push({ id: id(), list_key: k, value: v, sort: (i + 1) * 10, created_at: now() }));
   const opt = (k, v) => db.options.find(o => o.list_key === k && o.value === v).id;

@@ -94,6 +94,14 @@ try {
   assert.deepEqual(Match.ownMissing(owner({ purpose_id: null, built_sqm: null, plot_sqm: null, deal_kind: null }), 'owner', text), ['ייעוד', 'גודל', 'סוג עסקה']);
   ok('ownMissing: what a lead / owner lacks for matching (for the empty card hint)');
 
+  const yld = (need, o) => Match.score(lead({ need_ids: need }), owner({ deal_kind: 'sale', asking_price: 2800000, ...o }), S, text).parts.find(p => p.key === 'yield');
+  assert.equal(S.weights.yield, 0);
+  assert.equal(yld(['n2'], { is_rented: true }).value, null);                      // not an investor → not counted
+  assert.deepEqual([yld(['n3'], { is_rented: true, yield_pct: 6.5 }).value, yld(['n3'], { is_rented: true, yield_pct: 6.5 }).why], [1, 'מושכר, תשואה 6.5%']);
+  assert.equal(yld(['n3'], { is_rented: false }).value, 0); assert.equal(yld(['n3'], { is_rented: null }).value, null);
+  assert.deepEqual(Match.settingsOf({ version: 1, weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0 }, must: S.must }).weights.yield, 0);   // stored before 013
+  ok('"מושכר / תשואה (למשקיעים)": only for investors, rented → 1 with the yield; 0% by default; older stored settings get 0');
+
   // all(): sorting + dismissed
   const owners = [owner({ id: 'A' }), owner({ id: 'B', category_ids: ['c2'] }), owner({ id: 'C', deal_kind: 'sale' })];
   const list = Match.all([lead()], owners, S, text);

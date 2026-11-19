@@ -42,9 +42,10 @@ try {
   await page.fill('#email', 'qa@prime.test'); await page.fill('#password', 'qa-pass-1234');
   await page.click('button[type=submit]'); await page.waitForSelector('.hero-top');
   assert.match(await page.locator('.home-matches').innerText(), /התאמות[\s\S]*1/);
-  assert.equal(await page.locator('.hero-settings').count(), 1);
-  for (const k of ['lead', 'owner', 'matches']) assert.equal(await page.locator(`.home-btn .ico-${k}`).count(), 1, k);
-  ok('home: "התאמות" button with the count, settings icon; an icon on every button');
+  assert.equal(await page.locator('.hero-settings:visible').count(), 0);
+  for (const k of ['lead', 'owner', 'matches', 'settings']) assert.equal(await page.locator(`.home-btn .ico-${k}`).count(), 1, k);
+  assert.match(await page.locator('.home-btn.home-settings').innerText(), /הגדרות/);
+  ok('home: "התאמות" with the count, then a "הגדרות" button; an icon on every button');
   await shot('m01-home');
 
   const { owner, lead } = await ids();
@@ -164,7 +165,9 @@ try {
   ok('a card without matches says what is missing ("כדי לראות התאמות, חסר: קטגוריה")');
 
   // settings
-  await page.goto(BASE); await page.click('.hero-settings'); await page.waitForSelector('#ms-form');
+  await page.goto(BASE); await page.click('.home-settings'); await page.waitForSelector('#ms-form');
+  assert.equal(await page.locator('[data-k=yield]').count(), 1); assert.match(await page.locator('#w-yield').innerText(), /^0%/);
+  assert.match(await page.locator('.ms-color[data-band=orange]').innerText(), /אדום/);
   assert.match(await page.locator('#ms-total').innerText(), /100%/);
   assert.equal(await page.locator('.ms-weights + #ms-total').count(), 1);   // right under the weights
   assert.equal(await page.locator('.sticky-save #ms-total').count(), 0);
@@ -194,7 +197,8 @@ try {
   ok('"שחזור ברירת המחדל" brings back 25/25/20/15/15/0 and 75 / 50; the old link opens the same screen');
   await page.setViewportSize({ width: 1280, height: 860 });
   page.once('dialog', d => d.accept());   // reset without saving → "לצאת בלי לשמור?"
-  await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
+  await page.goto(BASE + '#/m/lead');
+  assert.equal(await page.getAttribute('.topbar .back', 'href'), '#/'); await page.waitForSelector('#rows');
   assert.equal(await page.locator('.side-nav a[href="#/matches"]').isVisible(), true);
   assert.equal(await page.locator('.side-nav a[href="#/settings"]').isVisible(), true);
   await page.click('.side-nav a[href="#/matches"]'); await page.waitForSelector('#m-rows');
@@ -203,6 +207,21 @@ try {
   await page.goto(BASE + '#/settings'); await page.waitForSelector('#ms-form'); await shot('m11-desktop-settings');
   for (const k of ['lead', 'owner', 'matches', 'settings']) assert.equal(await page.locator(`.side-nav .ico-${k}`).count(), 1, k);
   ok('desktop: side menu has "התאמות" and "הגדרות", each item with its icon');
+
+  // scroll position: kept on a data reload (coming back to the app), restored on "חזרה" from a card
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.goto(BASE + '#/'); await page.waitForSelector('.hero-top');
+  await page.evaluate(() => { location.hash = '#/m/lead/' + PL_TEST_DB._db.lead[0].id; }); await page.waitForSelector('#matches');
+  await page.evaluate(() => window.scrollTo({ top: 400, behavior: 'instant' })); const y1 = await page.evaluate(() => scrollY); assert.ok(y1 > 300, String(y1));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => scrollY), y1, 'same place after coming back to the app');
+  await page.evaluate(() => { location.hash = '#/m/lead'; }); await page.waitForSelector('#rows .deal-row');
+  await page.evaluate(() => window.scrollTo({ top: 9999, behavior: 'instant' })); const y2 = await page.evaluate(() => scrollY); assert.ok(y2 > 10, String(y2));
+  await page.evaluate(() => [...document.querySelectorAll('#rows .deal-row a')].at(-1).click());   // the row in view (a Playwright click would scroll first) await page.waitForSelector('.card-head');
+  assert.equal(await page.evaluate(() => scrollY), 0, 'a new screen starts at the top');
+  await page.click('.topbar .back'); await page.waitForSelector('#rows .deal-row');
+  assert.equal(await page.evaluate(() => scrollY), y2, '"חזרה" returns to the same place in the list');
+  ok('scroll: same place after coming back to the app; "חזרה" from a card returns to the same place in the list; new screens start at the top');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));
   ok('no JS errors');

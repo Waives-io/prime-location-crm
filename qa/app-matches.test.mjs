@@ -43,7 +43,8 @@ try {
   await page.click('button[type=submit]'); await page.waitForSelector('.hero-top');
   assert.match(await page.locator('.home-matches').innerText(), /התאמות[\s\S]*1/);
   assert.equal(await page.locator('.hero-settings').count(), 1);
-  ok('home: "התאמות" button with the count, settings icon');
+  for (const k of ['lead', 'owner', 'matches']) assert.equal(await page.locator(`.home-btn .ico-${k}`).count(), 1, k);
+  ok('home: "התאמות" button with the count, settings icon; an icon on every button');
   await shot('m01-home');
 
   const { owner, lead } = await ids();
@@ -165,7 +166,9 @@ try {
   // settings
   await page.goto(BASE); await page.click('.hero-settings'); await page.waitForSelector('#ms-form');
   assert.match(await page.locator('#ms-total').innerText(), /100%/);
-  assert.equal(await page.locator('.sticky-save #ms-total').count(), 1);
+  assert.equal(await page.locator('.ms-weights + #ms-total').count(), 1);   // right under the weights
+  assert.equal(await page.locator('.sticky-save #ms-total').count(), 0);
+  assert.deepEqual([await page.locator('#c-yellow-to').innerText(), await page.locator('#c-orange').innerText()], ['74', '49']);
   assert.deepEqual([await page.inputValue('#c-green'), await page.inputValue('#c-yellow')], ['75', '50']);
   await page.click('[data-k=category] [data-d="5"]');
   assert.match(await page.locator('#ms-total').innerText(), /105%[\s\S]*להוריד 5%/);
@@ -176,13 +179,13 @@ try {
   await page.check('input[name=must][value=category]');
   await page.fill('#c-yellow', '80');
   assert.match(await page.locator('#c-err').innerText(), /מעל הצהוב/); assert.equal(await page.isDisabled('#ms-save'), true);
-  await page.fill('#c-yellow', '60'); assert.equal(await page.locator('#c-orange').innerText(), '60');
-  await page.fill('#c-green', '85');
+  await page.fill('#c-yellow', '60'); assert.equal(await page.locator('#c-orange').innerText(), '59');
+  await page.fill('#c-green', '85'); assert.equal(await page.locator('#c-yellow-to').innerText(), '84');
   assert.equal(await page.isDisabled('#ms-save'), false);
   await page.click('#ms-save'); await page.waitForSelector('#toast:has-text("נשמרו")');
   const saved = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.matchSettings).at(-1).matchSettings);
   assert.deepEqual([saved.weights.category, saved.weights.area, saved.must.category, saved.colors.green, saved.colors.yellow], [30, 20, true, 85, 60]);
-  ok('settings (one screen): −/+ by 5, total next to "שמירה", save only at 100%; must-conditions; colours (green above yellow) saved');
+  ok('settings (one screen): −/+ by 5, total under the weights, save only at 100%; must-conditions; colours as ranges (75+ / 50–74 / 49−), green above yellow, saved');
   await page.goto(BASE + '#/settings/matches'); await page.waitForSelector('#ms-form');
   assert.equal(await page.inputValue('#c-green'), '85');
   await page.click('#ms-reset'); assert.match(await page.locator('#w-category').innerText(), /25%/);
@@ -198,9 +201,8 @@ try {
   assert.equal(await page.getAttribute('.side-nav a[href="#/matches"]', 'aria-current'), 'page');
   await shot('m10-desktop-matches');
   await page.goto(BASE + '#/settings'); await page.waitForSelector('#ms-form'); await shot('m11-desktop-settings');
-  const box = await page.locator('#ms-total').boundingBox(), sv = await page.locator('#ms-save').boundingBox();
-  assert.ok(Math.abs((box.y + box.height / 2) - (sv.y + sv.height / 2)) < 40, 'total sits next to "שמירה"');
-  ok('desktop: side menu has "התאמות" and "הגדרות"; the total sits next to "שמירה"');
+  for (const k of ['lead', 'owner', 'matches', 'settings']) assert.equal(await page.locator(`.side-nav .ico-${k}`).count(), 1, k);
+  ok('desktop: side menu has "התאמות" and "הגדרות", each item with its icon');
 
   assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));
   ok('no JS errors');

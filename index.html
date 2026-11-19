@@ -181,12 +181,11 @@ input[dir=ltr],bdi[dir=ltr]{direction:ltr}
 .topbar h1{font-size:1.55rem;line-height:1.1;letter-spacing:-.035em}
 .brand-mini{width:42px;height:42px;flex:0 0 42px}
 .back{border-radius:999px;padding-inline:10px;white-space:nowrap}.back::before{font-size:1.3rem}
-.bottom-nav{min-height:70px;padding:0 10px env(safe-area-inset-bottom);gap:6px;border-top:1px solid var(--line);box-shadow:0 -8px 28px rgba(26,26,26,.06)}
-.bottom-nav a{position:relative;min-width:0;min-height:60px;border-radius:12px 12px 0 0;font-size:.95rem;white-space:nowrap}
-.bottom-nav a::before{content:"";width:7px;height:7px;margin-inline-end:8px;border:2px solid currentColor;border-radius:50%}
-.bottom-nav a[aria-current=page]{box-shadow:inset 0 4px 0 var(--yellow);background:#fffdf3}.bottom-nav a[aria-current=page]::before{background:var(--yellow)}
-.bottom-nav a.nav-new{flex:0 0 76px;align-self:center;min-height:48px;margin-top:-12px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow);color:var(--ink);box-shadow:4px 4px 0 var(--ink);white-space:nowrap}
-.bottom-nav a.nav-new::before{display:none}
+.bottom-nav{min-height:64px;padding:0 6px env(safe-area-inset-bottom);gap:4px;border-top:1px solid var(--line);box-shadow:0 -8px 28px rgba(26,26,26,.06)}
+.bottom-nav a{position:relative;min-width:0;min-height:56px;gap:4px;padding-inline:5px;border-radius:12px 12px 0 0;font-size:.78rem;line-height:1.1;white-space:nowrap}
+.bottom-nav a .ico{width:20px;height:20px;flex:0 0 20px}
+.bottom-nav a[aria-current=page]{box-shadow:inset 0 4px 0 var(--yellow);background:#fff8c9;color:var(--ink)}
+.bottom-nav a.nav-new{flex:0 0 64px;align-self:center;min-height:46px;margin-top:-10px;padding-inline:8px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow);color:var(--ink);box-shadow:4px 4px 0 var(--ink);font-size:.82rem;white-space:nowrap}
 .bottom-nav a.nav-new:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--ink)}
 .bottom-nav a.nav-new:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
 .has-bottom-nav .main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}.content{padding:24px 20px 112px;max-width:800px}
@@ -232,7 +231,7 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
 @media (min-width:900px){
   .side-nav{width:272px;padding:26px 22px 22px;gap:10px;border-inline-end:1px solid var(--line);background:#f7f7f5;box-shadow:-8px 0 24px rgba(26,26,26,.04)}
   .side-nav::before{content:"ניהול עסקאות";font-size:.78rem;font-weight:700;color:#6a6a66;margin:10px 14px 2px}.brand-side{display:block;padding:4px 8px 22px;border-bottom:1px solid var(--line);margin-bottom:8px}.brand-side img{display:block;width:176px!important;margin:auto}
-  .side-nav a.mod{position:relative;min-height:52px;padding-inline:18px;border:2px solid transparent}.side-nav a.mod::after{content:"←";position:absolute;inset-inline-end:16px;opacity:0}.side-nav a.mod:hover{background:#fff;border-color:var(--line)}.side-nav a.mod[aria-current=page]{background:var(--yellow);border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}.side-nav a.mod[aria-current=page]::after{opacity:1}
+  .side-nav a.mod{position:relative;justify-content:space-between;gap:12px;min-height:52px;padding-inline:18px;border:2px solid transparent}.side-nav a.mod span{flex:1;min-width:0;text-align:start}.side-nav a.mod .ico{width:20px;height:20px;flex:0 0 20px}.side-nav a.mod:hover{background:#fff;border-color:var(--line)}.side-nav a.mod[aria-current=page]{background:var(--yellow);border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}
   .side-nav .mod-matches{margin-top:8px;border-top-color:#c9c9c4}
   .card-head{flex-direction:row;align-items:flex-end;justify-content:space-between;gap:20px}
   .card-tools{display:flex;justify-content:flex-end;width:auto;flex:0 0 auto}
@@ -269,7 +268,9 @@ body[data-screen=card] .content{padding-top:28px}.card-head{padding:0 0 18px;bor
 .home-buttons{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:18px;width:100%;max-width:278px;margin:0 auto;padding:40px 0}
 .home-btn{display:flex;width:100%;min-height:70px;flex:0 0 auto;align-items:center;justify-content:space-between;padding:0 24px;background:var(--yellow);color:var(--ink);border:2px solid var(--ink);border-radius:999px;box-shadow:5px 5px 0 var(--ink);text-align:center;text-decoration:none}
 .home-btn::before,.home-btn::after{display:none}
-.home-btn strong{font-size:1.31rem;line-height:1.1;font-weight:800}.home-btn small{margin-inline-start:12px;font-size:.75rem;font-weight:600;white-space:nowrap}
+.ico{display:block;flex:0 0 auto}
+.home-btn .ico{width:26px;height:26px;flex:0 0 26px}
+.home-btn strong{font-size:1.31rem;line-height:1.1;font-weight:800}.home-btn small{font-size:.75rem;font-weight:600;white-space:nowrap}
 .home-btn:hover{background:#ffe043;box-shadow:3px 3px 0 var(--ink)}
 .home-btn:active{box-shadow:1px 1px 0 var(--ink)}
 
@@ -501,19 +502,20 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 .ms-step{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;background:#fff;font-size:1.45rem;box-shadow:2px 2px 0 var(--ink)}
 .ms-val{display:flex;align-items:center;justify-content:center;min-height:40px;border-block:2px solid var(--ink);font-size:1.15rem;font-weight:700}
 .ms-colors{display:grid;gap:8px;margin-top:14px}
-.ms-color{display:flex;align-items:center;gap:10px;min-height:52px;margin:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);font-weight:700}
+.ms-color{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-height:52px;margin:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface);font-weight:700}
 .ms-swatch{width:30px;height:30px;flex:0 0 30px;border:2px solid var(--ink);border-radius:8px;box-shadow:2px 2px 0 var(--ink)}
 .ms-color[data-band=green] .ms-swatch{background:var(--band-green)}
 .ms-color[data-band=yellow] .ms-swatch{background:var(--band-yellow)}
 .ms-color[data-band=orange] .ms-swatch{background:var(--band-orange)}
-.ms-color .input{width:4.5rem;min-height:40px;margin-inline-start:auto;padding:6px 8px;text-align:center;font-variant-numeric:tabular-nums}
-.ms-color[data-band=orange]>span:nth-child(2){display:flex;align-items:center;gap:6px;flex:1}
-.ms-color strong{margin-inline-start:auto;padding:5px 10px;border:1.5px solid var(--ink);border-radius:8px;background:#fff;font-variant-numeric:tabular-nums}
+.ms-color>span:nth-child(2){flex:0 0 5.5rem}
+.ms-color .input{width:4.5ch;min-width:4.5ch;min-height:40px;margin:0;padding:6px 4px;text-align:center;font-variant-numeric:tabular-nums}
+.ms-color[data-band=orange]>span:nth-child(2){display:flex;align-items:center;gap:6px;flex:0 1 auto}
+.ms-color strong{display:inline-block;margin:0;padding:0 2px;font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums}
 .field-error{margin:8px 0 0;padding:8px 10px;border-inline-start:4px solid var(--error);background:#FFF1F1;color:var(--error);font-size:.88rem;font-weight:700}
-.ms-total{margin:0;padding:8px 10px;border:2px solid var(--ink);border-radius:10px;background:#E1F2E7;text-align:center;font-size:1rem;font-weight:700;line-height:1.15;white-space:nowrap}
+.ms-total{position:static;width:100%;margin:8px 0 0;padding:11px 12px;border:2px solid var(--ink);border-radius:10px;background:#E1F2E7;box-shadow:3px 3px 0 var(--ink);text-align:center;font-size:1rem;font-weight:700;line-height:1.2;white-space:normal}
 .ms-total.bad{background:#FDE6E3;color:#8F1D1D;border-color:#8F1D1D}
-.ms-form .sticky-save{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 10px;align-items:center}
-.ms-form .sticky-save .btn{width:100%;max-width:none;margin:0;min-height:48px}.ms-form .sticky-save .link{grid-column:1/-1;min-height:36px;padding:0 10px;white-space:normal;justify-self:center}
+.ms-form .sticky-save{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;align-items:center}
+.ms-form .sticky-save .btn{width:100%;max-width:none;margin:0;min-height:48px}.ms-form .sticky-save .link{min-height:36px;padding:0 10px;white-space:nowrap;justify-self:center}
 
 @media (max-width:420px){
   .hero-top{gap:7px}.hero-user{font-size:.78rem;white-space:nowrap}.hero-top .bell{margin-inline-start:0}.hero-logo{width:91px}
@@ -521,14 +523,13 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
   .cat-list{grid-template-columns:1fr}.match-row{grid-template-columns:68px minmax(0,1fr);gap:11px;padding:13px 10px}.match-score{width:68px;min-height:72px}.match-score strong{font-size:1.85rem}
   .match-acts{margin-inline-start:-79px}.match-acts .btn{flex:1 1 145px}.match-acts .link{flex:0 0 auto}
   .ms-row{grid-template-columns:minmax(0,1fr) 44px 54px 44px;gap:5px}.ms-val{font-size:1.05rem}
-  .ms-form .sticky-save{grid-template-columns:auto minmax(0,1fr)}
+  .ms-form .sticky-save{grid-template-columns:1fr}.ms-form .sticky-save .link{white-space:normal}
 }
 @media (min-width:900px){
   dialog:has(.cat-sheet){margin:auto}.cat-list{grid-template-columns:repeat(3,1fr)}
   .matches{max-width:920px}.match-row{grid-template-columns:86px minmax(0,1fr)}.match-score{width:82px}
   .ms-form{padding-bottom:144px}
-  .ms-form .sticky-save{right:272px;grid-template-columns:auto minmax(280px,620px) auto;justify-content:center}
-  .ms-form .sticky-save .link{grid-column:auto;white-space:nowrap}
+  .ms-form .sticky-save{right:272px;grid-template-columns:minmax(280px,620px) auto;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
@@ -820,6 +821,15 @@ function lightbox(photos, start = 0) {
   draw(); dlg.showModal();
 }
 
+/* ════════════ icons (Tabler outline, MIT) ════════════ */
+const ICON_PATHS = {
+  lead: '<path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>',
+  owner: '<path d="M3 21l18 0"/><path d="M9 8l1 0"/><path d="M9 12l1 0"/><path d="M9 16l1 0"/><path d="M14 8l1 0"/><path d="M14 12l1 0"/><path d="M14 16l1 0"/><path d="M5 21v-16a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v16"/>',
+  matches: '<path d="M7 10h14l-4 -4"/><path d="M17 14h-14l4 4"/>',
+  settings: '<path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/>',
+};
+const icon = (k) => `<svg class="ico ico-${k}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[k]}</svg>`;
+
 /* ════════════ router ════════════ */
 // #/  ·  #/m/lead  ·  #/m/lead/new  ·  #/m/lead/new/dup/<id>  ·  #/m/lead/<id>  ·  #/m/lead/<id>/edit
 function parseRoute() {
@@ -881,9 +891,9 @@ async function render() {
 
 function shell(r, html) {
   const navLinks = (cls) => Object.entries(MODULES).map(([k, m]) =>
-    `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}>${m.title}</a>`).join('');
-  const sideExtra = `<a class="mod mod-matches" href="#/matches" ${r.name === 'matches' ? 'aria-current="page"' : ''}>התאמות</a>
-      <a class="mod mod-settings" href="#/settings" ${r.name === 'settings' ? 'aria-current="page"' : ''}>הגדרות</a>`;
+    `<a class="${cls}" href="#/m/${k}" ${r.module === k ? 'aria-current="page"' : ''}><span>${m.title}</span>${icon(k)}</a>`).join('');
+  const sideExtra = `<a class="mod mod-matches" href="#/matches" ${r.name === 'matches' ? 'aria-current="page"' : ''}><span>התאמות</span>${icon('matches')}</a>
+      <a class="mod mod-settings" href="#/settings" ${r.name === 'settings' ? 'aria-current="page"' : ''}><span>הגדרות</span>${icon('settings')}</a>`;
   const bottom = r.name !== 'form';
   return `<div class="shell ${bottom ? 'has-bottom-nav' : ''}">
     <nav class="side-nav" aria-label="מודולים">
@@ -1000,8 +1010,8 @@ function renderHome(app) {
     </div>
     <div class="home-buttons">
       ${Object.entries(MODULES).map(([k, m]) => `<a class="home-btn" href="#/m/${k}">
-        <strong>${m.title}</strong><small><bdi class="num">${count(k)}</bdi> פעילות</small></a>`).join('')}
-      <a class="home-btn home-matches" href="#/matches"><strong>התאמות</strong><small><bdi class="num">${matchList().length}</bdi> התאמות</small></a>
+        <strong>${m.title}</strong><small><bdi class="num">${count(k)}</bdi> פעילות</small>${icon(k)}</a>`).join('')}
+      <a class="home-btn home-matches" href="#/matches"><strong>התאמות</strong><small><bdi class="num">${matchList().length}</bdi> התאמות</small>${icon('matches')}</a>
     </div></main>`;
 }
 
@@ -1260,19 +1270,20 @@ function settingsView() {
         <button type="button" class="btn ms-step" data-d="-5" aria-label="הורדת ${label}">−</button>
         <output class="ms-val num" id="w-${k}">${s.weights[k]}%</output>
         <button type="button" class="btn ms-step" data-d="5" aria-label="העלאת ${label}">+</button></div>`).join('')}</div>
+      <p class="ms-total" id="ms-total" aria-live="polite"></p>
     </section>
     <section class="form-section"><h2>צבע לפי ציון</h2>
       <p class="hint">הצבע של כל התאמה לפי הציון שלה.</p>
       <div class="ms-colors">
-        <label class="ms-color" data-band="green"><span class="ms-swatch" aria-hidden="true"></span><span>ירוק מ־</span>
-          <input class="input num" id="c-green" type="number" inputmode="numeric" min="1" max="100" step="1" value="${s.colors.green}"></label>
-        <label class="ms-color" data-band="yellow"><span class="ms-swatch" aria-hidden="true"></span><span>צהוב מ־</span>
-          <input class="input num" id="c-yellow" type="number" inputmode="numeric" min="0" max="99" step="1" value="${s.colors.yellow}"></label>
-        <p class="ms-color" data-band="orange"><span class="ms-swatch" aria-hidden="true"></span><span>כתום: מתחת ל־<strong class="num" id="c-orange">${s.colors.yellow}</strong></span></p>
+        <label class="ms-color" data-band="green"><span class="ms-swatch" aria-hidden="true"></span><span>ירוק: מ־</span>
+          <input class="input num" id="c-green" type="number" inputmode="numeric" min="1" max="100" step="1" value="${s.colors.green}" aria-label="ירוק מציון"><span>ומעלה</span></label>
+        <label class="ms-color" data-band="yellow"><span class="ms-swatch" aria-hidden="true"></span><span>צהוב: מ־</span>
+          <input class="input num" id="c-yellow" type="number" inputmode="numeric" min="0" max="99" step="1" value="${s.colors.yellow}" aria-label="צהוב מציון"><span>עד <strong class="num" id="c-yellow-to">${s.colors.green - 1}</strong></span></label>
+        <p class="ms-color" data-band="orange"><span class="ms-swatch" aria-hidden="true"></span><span>כתום: <strong class="num" id="c-orange">${s.colors.yellow - 1}</strong> ומטה</span></p>
       </div>
       <p class="field-error" id="c-err" hidden></p>
     </section>
-    <div class="sticky-save"><p class="ms-total" id="ms-total" aria-live="polite"></p>
+    <div class="sticky-save">
       <button class="btn primary block" type="submit" id="ms-save">שמירה</button>
       <button class="link" type="button" id="ms-reset">שחזור ברירת המחדל</button></div>
   </form>`;
@@ -1288,7 +1299,8 @@ function settingsView() {
       const t = total(), ce = colorErr();
       $('#ms-total').textContent = t === 100 ? 'סה״כ 100% ✓' : `סה״כ ${t}%: ${t > 100 ? `צריך להוריד ${t - 100}%` : `צריך להוסיף ${100 - t}%`}`;
       $('#ms-total').classList.toggle('bad', t !== 100);
-      $('#c-orange').textContent = Number.isInteger(s.colors.yellow) ? s.colors.yellow : '—';
+      $('#c-orange').textContent = Number.isInteger(s.colors.yellow) && s.colors.yellow > 0 ? s.colors.yellow - 1 : '—';
+      $('#c-yellow-to').textContent = Number.isInteger(s.colors.green) && s.colors.green > 0 ? s.colors.green - 1 : '—';
       $('#c-err').textContent = ce; $('#c-err').hidden = !ce;
       $('#ms-save').disabled = t !== 100 || !!ce;
     };

@@ -39,7 +39,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   insert into auth.users values ('${LEAH}', 'leah@example.com');`);
 await db.exec(sql('schema.sql').replace('LEAH_EMAIL@example.com', 'leah@example.com'));
-for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql', '010_signing2.sql', '011_matches.sql', '012_match_colors.sql', '013_match_yield.sql', '014_owner_share.sql'])
+for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql', '010_signing2.sql', '011_matches.sql', '012_match_colors.sql', '013_match_yield.sql', '014_owner_share.sql', '015_owner_fixes.sql'])
   await db.exec(sql(f).replace('LEAH_EMAIL@example.com', 'leah2@example.com'));
 const q = (s, p) => db.query(s, p).then(r => r.rows);
 async function as(role, uid, fn) {
@@ -262,6 +262,15 @@ try {
   await page.fill('#id_number', '515555555'); await page.fill('#home_address', 'הנשיא 3, אשקלון');
   await draw(); await page.check('#consent');
   await shot('c11-owner-form');
+  // the text changed while the page was open (e.g. past midnight): nothing is signed, the updated text is shown again
+  await page.evaluate(() => { D.body = D.body.replace(/\d\d\/\d\d\/\d{4}/, '01/01/2000'); });
+  await page.click('#submit'); await page.waitForSelector('#changed-note');
+  assert.ok(!(await page.locator('#app').innerText()).includes('01/01/2000'));
+  assert.equal((await q('select status from signing_requests where id=$1', [ro.id]))[0].status, 'opened');
+  ok('owner agreement: a text that changed since it was shown is not signed; the updated text is shown with a note');
+  await page.click('#to-sign'); await page.waitForSelector('#sign-form');
+  await page.fill('#id_number', '515555555'); await page.fill('#home_address', 'הנשיא 3, אשקלון');
+  await draw(); await page.check('#consent');
   await page.click('#submit'); await page.waitForSelector('#pdf');
   assert.match(await page.locator('#app').innerText(), /ההסכם נחתם בהצלחה/);
   await shot('c12-owner-done', false);

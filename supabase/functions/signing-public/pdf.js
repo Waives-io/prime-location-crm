@@ -193,17 +193,23 @@ export async function buildOwnerPdf({ pdfLib, fontkit, fonts, signaturePng, offi
     text(String(agreementNo), { font: bold, size: 14, x: M, align: 'left' });
     y -= 30;
   };
-  // a grey box of label / value columns, right to left (widths: parts of the full width)
+  // a grey box of label / value columns, right to left (widths: parts of the full width).
+  // A long value is never cut: it shrinks a little (down to 8pt), then wraps, and the box grows.
   const box = (heading, cols) => {
     text(heading, { font: bold, size: 10, color: ACCENT }); y -= 10;
-    const h = 44, top = y;
+    const inner = R - M - 20;
+    const cells = cols.map(([label, value, part]) => {
+      const w = inner * part - 8, v = String(value || '—');
+      let size = 10; while (size > 8 && bold.widthOfTextAtSize(toGlyphOrder(v), size) > w) size -= 0.5;
+      return { label, part, size, lines: wrap(v, bold, size, w) };
+    });
+    const rows = Math.max(...cells.map(c => c.lines.length)), h = 30 + rows * 12.5, top = y;
     page.drawRectangle({ x: M, y: top - h, width: R - M, height: h, color: BOX });
-    let x = R - 10; const inner = R - M - 20;
-    for (const [label, value, part] of cols) {
-      const w = inner * part;
-      y = top - 15; text(label, { size: 8.5, color: GREY, x });
-      y = top - 32; text(fit(value || '—', bold, 10, w - 8), { font: bold, size: 10, x });
-      x -= w;
+    let x = R - 10;
+    for (const c of cells) {
+      y = top - 15; text(c.label, { size: 8.5, color: GREY, x });
+      y = top - 32; c.lines.forEach(l => { text(l, { font: bold, size: c.size, x }); y -= 12.5; });
+      x -= inner * c.part;
     }
     y = top - h - 14;
   };

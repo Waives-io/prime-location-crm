@@ -776,4 +776,33 @@ for (const role of ['anon', 'authenticated']) {
 }
 ok('014: share — existing lead or a new phone (→ draft lead); only the property\'s own photos; public page gets purpose / size / deal / price + chosen photos, no address part, no owner name, no description; marks opened; archived property → closed and cannot be shared; closed to anon, non-members and Leah\'s login');
 
+// ---- 015: owner agreement only on an active property; rent fee up to 12 months; "חודש שכירות אחד"
+const fixesSql = readFileSync(new URL('../supabase/015_owner_fixes.sql', import.meta.url), 'utf8');
+const before15 = (await cnt())[0];
+await db.exec(fixesSql); await db.exec(fixesSql);
+assert.deepEqual((await cnt())[0], before15);
+let o3;
+await as('authenticated', LEAH, async () => {
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 13 }]), /עד 12/);
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order' }]), /דמי תיווך/);
+  o3 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 1 }]))[0].r;
+  assert.ok(o3.token);
+  await fails(() => q('select signing_create_014($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 1 }]), /denied/);
+});
+await as('authenticated', OTHER, () => fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 1 }])));
+await as('service_role', null, async () => {
+  const g = (await q('select signing_public_get($1) r', [o3.token]))[0].r;
+  assert.equal(g.state, 'open'); assert.ok(g.body.includes('בהשכרה: סך של חודש שכירות אחד'), 'one month, in words');
+  assert.ok((await q('select signing_public_get($1) r', [o2.token]))[0].r.body.includes('במכירה: סך של 2%'), 'sale fee unchanged');
+});
+await q(`update owner_deals set status = 'closed', closed_at = now() where id=$1`, [oRent]);
+await as('authenticated', LEAH, () => fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 1 }]), /אינו פעיל/));
+await as('service_role', null, async () => {
+  assert.equal((await q('select signing_public_begin($1) r', [o3.token]))[0].r.state, 'cancelled', 'a closed property cannot be signed');
+  assert.equal((await q('select signing_public_get($1) r', [o3.token]))[0].r.state, 'cancelled');
+  assert.equal((await q('select signing_public_get($1) r', [o1.token]))[0].r.state, 'signed', 'a signed agreement stays signed');
+});
+await q(`update owner_deals set status = 'active', closed_at = null where id=$1`, [oRent]);
+ok('015: runs twice; rent fee above 12 months refused; 1 month → "חודש שכירות אחד"; sale unchanged; no owner agreement for a closed property, and an open link to one is cancelled; signed stays signed; the old function is not callable');
+
 console.log(`\nDB tests passed: ${pass}`);

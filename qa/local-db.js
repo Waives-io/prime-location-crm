@@ -69,6 +69,7 @@
       const kind = p.kind || 'client_order', coop = kind === 'broker_coop', own = kind === 'owner_order';
       if (coop && !['shared', 'each_side', 'referral'].includes(p.coop_type)) throw new Error('coop_type required');
       if (own && !(p.fee_value > 0 && p.fee_value <= 100)) throw new Error('יש למלא דמי תיווך');
+      if (own && deal.deal_kind === 'rent' && p.fee_value > 12) throw new Error('דמי תיווך בהשכרה: עד 12 חודשי שכירות');
       const purpose = db.options.find(o => o.id === deal.purpose_id)?.value || null;
       const words = String(deal.address || '').split(/[\s,]+/).filter(w => w.length >= 3 && !/\d/.test(w));
       if (!own && p.teaser_text && words.some(w => p.teaser_text.includes(w))) throw new Error('הטקסט מכיל את הכתובת');

@@ -172,8 +172,14 @@ try {
   await page.click('#os-send');
   assert.match(await page.locator('#os_fee-err').innerText(), /דמי תיווך \(חודשי שכירות\)/);
   ok('owner sheet: three buttons (החתמת מתעניין · שת״פ · בעלים); the owner, phone and address shown; price prefilled; fee required');
-  await page.fill('#os_price', '13000'); await page.fill('#os_fee', '1');
-  assert.match(await page.locator('#os-line').innerText(), /בהשכרה: סך של 1 חודשי שכירות/);
+  await page.fill('#os_price', '13000'); await page.fill('#os_fee', '13');
+  await page.click('#os-send');
+  assert.match(await page.locator('#os_fee-err').innerText(), /עד 12 חודשי שכירות/);
+  await page.fill('#os_fee', '2');
+  assert.match(await page.locator('#os-line').innerText(), /בהשכרה: סך של 2 חודשי שכירות/);
+  await page.fill('#os_fee', '1');
+  assert.match(await page.locator('#os-line').innerText(), /בהשכרה: סך של חודש שכירות אחד/);
+  ok('owner fee: rent up to 12 months; 1 month reads "חודש שכירות אחד"');
   await shot('s11-owner-sheet', true);
   const [pop5] = await Promise.all([page.waitForEvent('popup'), page.click('#os-send')]);
   await pop5.waitForURL(/wa\.me/);
@@ -184,7 +190,7 @@ try {
   assert.deepEqual([call5.kind, call5.fee_value, call5.price], ['owner_order', 1, 13000]);
   await page.waitForFunction(() => document.querySelectorAll('.sg-row').length === 4);
   const ownRow = page.locator('.sg-row', { hasText: '76776' });
-  assert.match(await ownRow.innerText(), /הסכם בעלים[\s\S]*דמי תיווך: 1 חודשי שכירות[\s\S]*ממתינה לחתימה/);
+  assert.match(await ownRow.innerText(), /הסכם בעלים[\s\S]*דמי תיווך: חודש שכירות אחד[\s\S]*ממתינה לחתימה/);
   const [pop6] = await Promise.all([page.waitForEvent('popup'), ownRow.locator('[data-a=wa]').click()]);
   assert.match(new URL(pop6.url()).searchParams.get('text'), /^מצורף הסכם לחתימה בכתובת:\n\n1\. שדרות לכיש 40/); await pop6.close();
   assert.equal(await page.evaluate(() => PL_TEST_DB._db.lead.filter(l => l.is_draft).length), 1, 'an owner is not added to the leads');
@@ -245,6 +251,7 @@ try {
   assert.ok(await page.locator('#sh-again').isHidden());
   const [pop8] = await Promise.all([page.waitForEvent('popup'), page.click('#sh-send')]); await pop8.close();
   await page.waitForFunction(() => PL_TEST_DB._db.lead.some(l => l.is_draft && /נוצר משיתוף נכס/.test(l.notes)));
+  await page.waitForFunction(() => !document.querySelector('#dlg').open);   // the share has finished (reload + render)
   ok('share again to the same lead → "כבר שיתפת…" with the date; "+ מתעניין חדש" (name + phone) → a draft lead');
   const yossiLead = await page.evaluate(() => PL_TEST_DB._db.shares[0].lead_deal_id);
   await page.goto(BASE + '#/m/lead/' + yossiLead); await page.waitForSelector('#shares');

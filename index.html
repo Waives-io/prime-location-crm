@@ -541,31 +541,37 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
 }
 /* round 8: owner signing + sharing a property */
 .row-acts{flex-wrap:wrap}
-.row-share{display:inline-flex;align-items:center;gap:6px;background:var(--yellow);border-color:var(--ink)}
-.row-share .ico{width:18px;height:18px;flex:0 0 18px}
-.sg-kind.owner{display:inline-block;padding:1px 8px;border-radius:6px;background:#E3F0FF;color:var(--ink)}
-.os-owner{background:var(--surface);border-width:1.5px;border-color:var(--line);margin-bottom:14px}
-.os-owner .meta{color:var(--charcoal);font-size:.92rem}
-.os-fee{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.os-fee .input{flex:0 0 140px;width:140px}
-.os-fee span{font-weight:700}
-.os-line{margin:0 0 14px}
-.sh-photos-f{border:0;padding:0;margin:0 0 14px;min-width:0}
-.sh-photos-f legend{padding:0;margin-bottom:6px;font-weight:700}
-.sh-photos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:6px}
-.sh-ph{position:relative;display:block;aspect-ratio:1;border:2px solid var(--ink);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--surface);box-shadow:3px 3px 0 var(--ink);transition:opacity .15s,filter .15s,box-shadow .15s}
+.row-acts .row-act{min-width:76px}
+.row-share{display:inline-flex;align-items:center;gap:5px;background:var(--yellow);border-color:var(--ink);box-shadow:2px 2px 0 var(--ink)}
+.row-share .ico{width:17px;height:17px;flex:0 0 17px}
+.sg-head-acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:7px}
+.sg-head-acts .btn{min-width:0;padding-inline:7px;font-size:.82rem;line-height:1.15;text-align:center}
+.sg-kind.owner{display:inline-block;padding:2px 9px;border:1.5px solid var(--ink);border-radius:999px;background:#FFF6B8;color:var(--ink)}
+#os-form>.hint,#sh-form>.hint{margin:-4px 0 16px;line-height:1.5}
+.os-owner{background:#FFFBE0;border-width:2px;border-color:var(--ink);margin-bottom:18px;box-shadow:3px 3px 0 var(--ink)}
+.os-owner .meta{color:var(--charcoal);font-size:.92rem;overflow-wrap:anywhere}
+.os-fee{display:grid;grid-template-columns:minmax(96px,140px) minmax(0,1fr);align-items:center;gap:10px}
+.os-fee .input{width:100%;min-width:0}
+.os-fee span{font-weight:700;line-height:1.3}
+.os-line{margin:0 0 16px;border-inline-start:4px solid var(--yellow);background:#FFFBE0;font-weight:700;line-height:1.5}
+.sh-photos-f{border:0;padding:0;margin:0 0 16px;min-width:0}
+.sh-photos-f legend{padding:0;margin-bottom:9px;font-weight:700}
+.sh-photos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:8px}
+.sh-ph{position:relative;display:block;min-width:0;aspect-ratio:1;border:2px solid var(--ink);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--surface);box-shadow:3px 3px 0 var(--ink);transition:opacity .15s,filter .15s,box-shadow .15s,transform .15s}
 .sh-ph img{display:block;width:100%;height:100%;object-fit:cover}
 .sh-ph input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1}
-.sh-ph:not(:has(input:checked)){opacity:.4;filter:grayscale(1);box-shadow:none}
-.sh-ph:has(input:checked)::after{content:"✓";position:absolute;top:6px;inset-inline-start:6px;width:26px;height:26px;border:2px solid var(--ink);border-radius:50%;background:var(--yellow);color:var(--ink);font-weight:800;font-size:.95rem;line-height:22px;text-align:center}
-.sh-ph:has(input:focus-visible){outline:3px solid var(--ink);outline-offset:3px}
-.sh-again{margin:10px 0 0;padding:10px 12px;border:2px dashed #c9a400;border-radius:12px;background:#FFF4D6;font-weight:700;font-size:.95rem}
+.sh-ph:not(:has(input:checked)){opacity:.58;filter:grayscale(1);box-shadow:none;transform:translate(2px,2px)}
+.sh-ph:has(input:checked)::after{content:"✓";position:absolute;top:6px;inset-inline-start:6px;width:30px;height:30px;border:2px solid var(--ink);border-radius:50%;background:var(--yellow);color:var(--ink);font-weight:800;font-size:1rem;line-height:26px;text-align:center;box-shadow:1px 1px 0 var(--ink)}
+.sh-ph:has(input:focus-visible){outline:3px solid var(--yellow);outline-offset:3px}
+.sh-again{margin:12px 0 0;padding:11px 12px;border:2px dashed #9a7b00;border-radius:12px;background:#FFFBE0;font-weight:700;font-size:.92rem;line-height:1.45}
 .sh-pv{white-space:pre-line;font-size:.95rem;margin:8px 0 2px;overflow-wrap:anywhere}
-.sh-section{margin:22px 0 6px;padding-top:6px}
-.sh-section h3{margin:0 0 10px;font-size:1.1rem;font-weight:800}
-.sh-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.sh-list a{display:flex;flex-direction:column;gap:2px;min-height:var(--tap);padding:12px 14px;border:2px solid var(--ink);border-radius:12px;background:#fff;box-shadow:3px 3px 0 var(--ink);text-decoration:none;color:var(--ink)}
-.sh-list .meta{color:var(--charcoal);font-size:.9rem}
+.sh-section{margin:28px 0 6px;padding-top:18px;border-top:3px solid var(--yellow)}
+.sh-section h3{margin:0 0 12px;font-size:1.1rem;font-weight:800}
+.sh-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.sh-list a{display:flex;flex-direction:column;gap:3px;min-height:var(--tap);padding:13px 14px;border:2px solid var(--ink);border-radius:12px;background:#fff;box-shadow:3px 3px 0 var(--ink);text-decoration:none;color:var(--ink);overflow-wrap:anywhere}
+.sh-list a:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.sh-list .meta{color:var(--charcoal);font-size:.88rem;line-height:1.4}
+@media (min-width:560px){.sg-head-acts{width:auto;display:flex}.sg-head-acts .btn{padding-inline:14px;font-size:.9rem}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
@@ -1637,7 +1643,7 @@ function signingRowHTML(r, { showProperty } = {}) {
     .map(([k, v]) => `<span>${k} ${fmt.ltr(ilTime(v))}</span>`).join('');
   return `<li class="sg-row" data-id="${r.id}">
     <div class="sg-kind ${isCoopReq(r) ? 'coop' : isOwnerReq(r) ? 'owner' : ''}">${esc(kindLabel(r))}</div>
-    ${isOwnerReq(r) && r.fee_value ? `<div class="meta">דמי תיווך: ${fmt.bi(fmt.num(r.fee_value))} ${r.teaser_snapshot?.deal_kind === 'sale' ? '% מהמחיר' : 'חודשי שכירות'}</div>` : ''}
+    ${isOwnerReq(r) && r.fee_value ? `<div class="meta">דמי תיווך: ${r.teaser_snapshot?.deal_kind === 'sale' ? `${fmt.bi(fmt.num(r.fee_value))} % מהמחיר` : Number(r.fee_value) === 1 ? 'חודש שכירות אחד' : `${fmt.bi(fmt.num(r.fee_value))} חודשי שכירות`}</div>` : ''}
     <div class="r1"><span><strong>הסכם <bdi class="num">${r.agreement_no}</bdi></strong> · ${esc(r.signer_full_name || r.contact?.name || '')}</span>
       <span class="chip sg-${st}">${SIGN_STATUS[st]}</span></div>
     ${prop ? `<div class="meta">${esc(prop)}</div>` : ''}
@@ -1838,9 +1844,10 @@ function ownerSigningDialog(d) {
       <button class="link" type="button" id="os-cancel">ביטול</button></div></form>`;
   const price = $('#os_price'), fee = $('#os_fee');
   const setErr = (id, m) => { $(`#${id}-err`).textContent = m; dlg.querySelector(`[data-field=${id}]`)?.classList.toggle('invalid', !!m); return !m; };
-  const feeVal = () => { const v = parseNum(fee.value); return v != null && v > 0 && v <= 100 ? v : null; };
+  const feeMax = sale ? 100 : 12;   // % of the price, or months of rent (the server checks the same)
+  const feeVal = () => { const v = parseNum(fee.value); return v != null && v > 0 && v <= feeMax ? v : null; };
   const line = () => { const v = feeVal(), el = $('#os-line'); el.hidden = !v;
-    if (v) el.textContent = `כך זה ייכתב בהסכם: "${sale ? 'במכירה' : 'בהשכרה'}: סך של ${fmt.num(v)}${sale ? '% מהמחיר הכולל של הנכס' : ' חודשי שכירות'}" + מע״מ`; };
+    if (v) el.textContent = `כך זה ייכתב בהסכם: "${sale ? `במכירה: סך של ${fmt.num(v)}% מהמחיר הכולל של הנכס` : v === 1 ? 'בהשכרה: סך של חודש שכירות אחד' : `בהשכרה: סך של ${fmt.num(v)} חודשי שכירות`}" + מע״מ`; };
   fee.addEventListener('input', () => { line(); if (feeVal()) setErr('os_fee', ''); });
   price.addEventListener('blur', () => { const v = parseNum(price.value); if (v) price.value = fmt.num(v); });
   $('#os-cancel').onclick = () => dlg.close();
@@ -1848,7 +1855,7 @@ function ownerSigningDialog(d) {
   $('#os-form').onsubmit = async (e) => {
     e.preventDefault();
     const pv = parseNum(price.value), fv = feeVal();
-    const ok = [setErr('os_price', pv > 0 ? '' : 'יש למלא מחיר מבוקש'), setErr('os_fee', fv ? '' : `יש למלא דמי תיווך (${ownerFeeUnit(sale)})`)];
+    const ok = [setErr('os_price', pv > 0 ? '' : 'יש למלא מחיר מבוקש'), setErr('os_fee', fv ? '' : parseNum(fee.value) > feeMax ? `עד ${feeMax} ${sale ? '%' : 'חודשי שכירות'}` : `יש למלא דמי תיווך (${ownerFeeUnit(sale)})`)];
     if (ok.includes(false)) { dlg.querySelector('.invalid input')?.focus(); return; }
     const btn = $('#os-send'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> יוצרת קישור…'; $('#os-form-err').textContent = '';
     try {

@@ -106,6 +106,9 @@ export async function handle(req, deps) {
       if (begin.state === 'signed') return json(await signedBody(await deps.rpc('signing_public_get', { p_token: token }), deps));
       if (begin.state !== 'ok') return json({ state: begin.state }, begin.state === 'not_found' ? 404 : 410);
 
+      // the text the signer read must be the text that gets signed (e.g. the date moved past midnight while the page was open)
+      if (typeof b.shown_body === 'string' && b.shown_body !== begin.body)
+        return json({ state: 'changed', title: begin.title, body: begin.body }, 409);
       const r = begin.request, t = begin.template, signedAt = new Date(begin.now);
       const coop = r.kind === 'broker_coop', license = String(b.license || '').replace(/\D/g, '');
       if (coop && !/^\d{4,9}$/.test(license)) return json({ state: 'invalid', errors: { license: 'required' } }, 422);

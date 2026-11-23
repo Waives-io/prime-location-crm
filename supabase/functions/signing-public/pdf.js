@@ -148,3 +148,110 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
   });
   return await doc.save();
 }
+
+const shortTime = (iso) => { const s = ilTime(iso); return s === '—' ? s : s.slice(0, 16); };   // DD/MM/YYYY HH:mm
+
+/**
+ * The owner's agreement, in the layout of Leah's previous system: two pages (brokerage order, exclusivity), each with the
+ * broker line, the title and agreement number, the client and property boxes, the sections, and the one signature + date.
+ * body: page 1 text, then a line "## <title of page 2>", then page 2 text.
+ */
+export async function buildOwnerPdf({ pdfLib, fontkit, fonts, signaturePng, office, agreementNo, title, body, teaser, address, signer, audit }) {
+  const { PDFDocument, rgb } = pdfLib;
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const reg = await doc.embedFont(fonts.regular, { subset: true });
+  const bold = await doc.embedFont(fonts.bold, { subset: true });
+  const head = fonts.heading ? await doc.embedFont(fonts.heading, { subset: true }) : bold;
+  doc.setTitle(`${title} ${agreementNo}`); doc.setAuthor(office.office_name); doc.setLanguage('he');
+  const W = 595.28, H = 841.89, M = 42, R = W - M, INK = rgb(0.1, 0.1, 0.1), GREY = rgb(0.42, 0.42, 0.42),
+    BOX = rgb(0.95, 0.95, 0.94), ACCENT = rgb(0.86, 0.33, 0.42), YELLOW = rgb(1, 0.83, 0);
+  const png = await doc.embedPng(signaturePng);
+  let page, y;
+  const text = (t, { font = reg, size = 9.5, color = INK, x = R, align = 'right' } = {}) => {
+    const v = toGlyphOrder(String(t ?? '')), w = font.widthOfTextAtSize(v, size);
+    page.drawText(v, { x: align === 'right' ? x - w : align === 'center' ? x - w / 2 : x, y, size, font, color });
+  };
+  const fit = (t, font, size, width) => {
+    let s = String(t ?? ''); if (font.widthOfTextAtSize(s, size) <= width) return s;
+    while (s.length > 1 && font.widthOfTextAtSize(s + '...', size) > width) s = s.slice(0, -1);
+    return s + '...';
+  };
+  const pages = String(body || '').split(/\n(?=## )/);
+  const p1 = pages[0], p2 = pages[1] ? pages[1].replace(/^## /, '') : null;
+  const sections = (txt) => txt.split('\n').filter(l => l.trim());
+
+  const header = (pageTitle) => {
+    page = doc.addPage([W, H]); y = H - 10;
+    page.drawRectangle({ x: 0, y: H - 8, width: W, height: 8, color: YELLOW });
+    y = H - 46;
+    text(office.office_name, { font: head, size: 15 });
+    text(`${office.broker_name} • רשיון תיווך: ${office.broker_license}${office.phone ? ` • טלפון: ${office.phone}` : ''}`, { size: 9.5, color: GREY, x: R - head.widthOfTextAtSize(toGlyphOrder(office.office_name), 15) - 14 });
+    y -= 44;
+    text('מספר ההסכם', { size: 8.5, color: GREY, x: M, align: 'left' }); y -= 16;
+    text(pageTitle, { font: head, size: 15 });
+    text(String(agreementNo), { font: bold, size: 14, x: M, align: 'left' });
+    y -= 30;
+  };
+  // a grey box of label / value columns, right to left (widths: parts of the full width)
+  const box = (heading, cols) => {
+    text(heading, { font: bold, size: 10, color: ACCENT }); y -= 10;
+    const h = 44, top = y;
+    page.drawRectangle({ x: M, y: top - h, width: R - M, height: h, color: BOX });
+    let x = R - 10; const inner = R - M - 20;
+    for (const [label, value, part] of cols) {
+      const w = inner * part;
+      y = top - 15; text(label, { size: 8.5, color: GREY, x });
+      y = top - 32; text(fit(value || '—', bold, 10, w - 8), { font: bold, size: 10, x });
+      x -= w;
+    }
+    y = top - h - 14;
+  };
+  const details = () => {
+    box('פרטי לקוח', [['שם לקוח', signer.full_name, 0.25], ['ת.ז. / ח.פ.', signer.id_number, 0.2], ['כתובת', signer.home_address, 0.35], ['טלפון', signer.phone, 0.2]]);
+    const money = (n) => n == null || n === '' ? '-' : '₪ ' + Math.round(Number(n)).toLocaleString('en-US');
+    box('פרטי הנכס', [['כתובת', address, 0.5], ['מחיר מכירה מבוקש', teaser?.deal_kind === 'sale' ? money(teaser.sale_price) : '-', 0.25],
+      ['מחיר שכירות מבוקש', teaser?.deal_kind === 'rent' ? money(teaser.monthly_rent) : '-', 0.25]]);
+  };
+  const SIG_H = 92, FOOT = 50;
+  const paragraphs = (lines, pageTitle) => {
+    for (const para of lines) {
+      for (const line of wrap(para, reg, 9.2, R - M)) {
+        if (y - 13 < FOOT + 10) { header(pageTitle); }
+        text(line, { size: 9.2 }); y -= 12.9;
+      }
+      y -= 1.2;
+    }
+  };
+  const signature = (pageTitle) => {
+    if (y - SIG_H < FOOT) header(pageTitle);
+    y -= 14;
+    const bw = 170, bh = 52, top = y;
+    // signature box on the right, date and time on the left (as in the example)
+    page.drawRectangle({ x: R - bw, y: top - bh, width: bw, height: bh, color: BOX });
+    page.drawLine({ start: { x: R - bw, y: top - bh }, end: { x: R, y: top - bh }, thickness: 1.2, color: INK });
+    const sc = Math.min((bw - 20) / png.width, (bh - 8) / png.height, 1), sw = png.width * sc, sh = png.height * sc;
+    page.drawImage(png, { x: R - bw / 2 - sw / 2, y: top - bh / 2 - sh / 2, width: sw, height: sh });
+    page.drawRectangle({ x: M, y: top - bh, width: bw, height: bh, color: BOX });
+    page.drawLine({ start: { x: M, y: top - bh }, end: { x: M + bw, y: top - bh }, thickness: 1.2, color: INK });
+    y = top - bh / 2 - 5; text(shortTime(audit.signed_at), { font: bold, size: 12, x: M + bw / 2, align: 'center' });
+    y = top - bh - 16;
+    text('חתימה', { size: 10, x: R - bw / 2, align: 'center' }); text('תאריך ושעה', { size: 10, x: M + bw / 2, align: 'center' });
+    y -= 10;
+  };
+
+  header(title); details(); paragraphs(sections(p1), title); signature(title);
+  if (p2) { const lines = sections(p2); const t2 = lines.shift(); header(t2); details(); paragraphs(lines, t2); signature(t2); }
+
+  // every page: how it was signed + page numbers; the full record on the last page
+  const all = doc.getPages();
+  all.forEach((pg, i) => {
+    page = pg;
+    y = 38; text(`נחתם דיגיטלית באמצעות אפליקציית ${office.office_name} · עמוד ${i + 1} מתוך ${all.length} · הסכם ${agreementNo}`, { size: 8, color: GREY, x: W / 2, align: 'center' });
+    if (i === all.length - 1) {
+      y = 26; text(`קישור נוצר ${ilTime(audit.sent_at)} · נפתח ${ilTime(audit.opened_at)} · נחתם ${ilTime(audit.signed_at)} (שעון ישראל) · IP ${audit.ip || '—'} · נוסח ${audit.template_version}`, { size: 6.8, color: GREY, x: W / 2, align: 'center' });
+      y = 16; page.drawText(fit(`${audit.request_id} · ${audit.ua || ''}`, reg, 6.3, W - 2 * M), { x: M, y, size: 6.3, font: reg, color: GREY });
+    }
+  });
+  return await doc.save();
+}

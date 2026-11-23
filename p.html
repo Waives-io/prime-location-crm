@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="he" dir="rtl" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="google" content="notranslate">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#FFD400">
+<title>פריים לוקיישן · נכס</title>
+<link rel="icon" href="icons/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --yellow:#FFD400; --ink:#1A1A1A; --muted:#5A5A58; --bg:#FFFFFF; --surface:#F6F6F4; --line:#E6E6E2;
+  --radius:16px; --tap:48px; --font-head:'Fredoka',sans-serif; --font-body:'IBM Plex Sans Hebrew',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.55}
+body{min-height:100dvh}
+h1,h2,.btn,.price{font-family:var(--font-head)}
+[hidden]{display:none!important}
+bdi{unicode-bidi:isolate}
+.num{font-variant-numeric:tabular-nums}
+.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+.top::before{content:"";display:block;height:6px;background:var(--yellow)}
+.top-in{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:720px;margin-inline:auto;padding:10px 16px}
+.top-in img{height:52px;width:auto;display:block}
+main{max-width:720px;margin-inline:auto;padding:16px 16px 120px}
+.gallery{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px 16px;padding:0 16px;scrollbar-width:none}
+.gallery::-webkit-scrollbar{display:none}
+.gallery img{flex:0 0 88%;max-width:88%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius);scroll-snap-align:center;background:var(--surface);border:1px solid var(--line)}
+.gallery img:only-child{flex-basis:100%;max-width:100%}
+.dots{display:flex;justify-content:center;gap:6px;margin:-6px 0 14px}
+.dots span{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots span.on{background:var(--ink)}
+.gallery img{border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+.gallery{padding-bottom:8px}
+h1{font-size:1.65rem;line-height:1.2;margin:6px 0 10px;font-weight:700}
+.price{display:inline-block;font-size:1.4rem;font-weight:700;margin:0 0 18px;padding:6px 16px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow);box-shadow:3px 3px 0 var(--ink)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0 0 18px;padding:16px 18px;border:2px solid var(--ink);border-radius:var(--radius);box-shadow:4px 4px 0 var(--ink)}
+.more{border-inline-start:4px solid var(--yellow)}
+.btn{box-shadow:3px 3px 0 var(--ink)}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-weight:700}
+.more{background:var(--surface);border-radius:12px;padding:12px 14px;font-weight:700;margin:0}
+.sticky{position:fixed;inset-inline:0;bottom:0;z-index:10;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+.acts{display:flex;gap:10px;max-width:688px;margin-inline:auto}
+.btn{flex:1;min-height:var(--tap);padding:0 18px;border-radius:999px;border:2px solid var(--ink);background:var(--bg);color:var(--ink);font-weight:700;font-size:1.02rem;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn.primary{background:var(--yellow)}
+.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.state-msg{text-align:center;padding:40px 0}
+.spinner{width:22px;height:22px;border:3px solid currentColor;border-inline-end-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in"><img src="assets/logo.png" alt="פריים לוקיישן"></div></header>
+<main id="app" aria-live="polite"><div class="state-msg"><span class="spinner" aria-hidden="true"></span> טוען…</div></main>
+<div class="sticky" id="sticky" hidden></div>
+<script>
+'use strict';
+// A property Leah shared: chosen photos, purpose, size, deal type and price. Never the address or the owner (the server sends neither).
+const API = window.PL_SIGN_API || 'https://tbuhhxcgkxuovbdtebqv.supabase.co/functions/v1/signing-public';
+const ANON = 'sb_publishable_Ij-Epg5Zm1jcu9BOWckDow_OCa_QSTj';
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const money = (n) => '₪ ' + Math.round(Number(n)).toLocaleString('en-US');
+const token = new URLSearchParams(location.search).get('s') || '';
+const app = $('#app'), sticky = $('#sticky');
+const digits = (p) => String(p || '').replace(/\D/g, '');
+const waTo = (p) => 'https://wa.me/972' + digits(p).replace(/^0/, '');
+
+function contact(office) {
+  if (!office?.phone) return;
+  sticky.innerHTML = `<div class="acts">
+    <a class="btn primary" href="${waTo(office.phone)}?text=${encodeURIComponent('היי ליאה, ראיתי את הנכס ששלחת ואשמח לפרטים נוספים')}" target="_blank" rel="noopener">וואטסאפ לליאה</a>
+    <a class="btn" href="tel:${digits(office.phone)}">שיחה</a></div>`;
+  sticky.hidden = false;
+}
+function message(text, office) {
+  app.innerHTML = `<div class="state-msg"><h1>${text}</h1></div>`; contact(office);
+}
+
+function show(d) {
+  const p = d.property || {}, rent = p.deal_kind === 'rent';
+  const size = [p.built_sqm ? `<bdi class="num">${num(p.built_sqm)}</bdi> מ״ר בנוי` : '', p.plot_sqm ? `<bdi class="num">${num(p.plot_sqm)}</bdi> מ״ר מגרש` : ''].filter(Boolean).join(' · ');
+  const deal = rent ? 'להשכרה' : p.deal_kind === 'sale' ? 'למכירה' : '';
+  document.title = `פריים לוקיישן · ${[p.purpose, deal].filter(Boolean).join(' ')}`;
+  app.innerHTML = `${d.photos?.length ? `<div class="gallery" id="gallery">${d.photos.map((u, i) => `<img src="${esc(u)}" alt="תמונה ${i + 1} של הנכס" loading="${i ? 'lazy' : 'eager'}">`).join('')}</div>
+      ${d.photos.length > 1 ? `<div class="dots" aria-hidden="true">${d.photos.map((_, i) => `<span class="${i ? '' : 'on'}"></span>`).join('')}</div>` : ''}` : ''}
+    <h1>${esc([p.purpose, deal].filter(Boolean).join(' '))}</h1>
+    ${p.price ? `<p class="price"><bdi class="num" dir="ltr">${money(p.price)}</bdi>${rent ? ' לחודש' : ''}</p>` : ''}
+    <dl class="facts">${p.purpose ? `<dt>ייעוד</dt><dd>${esc(p.purpose)}</dd>` : ''}${size ? `<dt>שטח</dt><dd>${size}</dd>` : ''}${deal ? `<dt>סוג עסקה</dt><dd>${rent ? 'השכרה' : 'מכירה'}</dd>` : ''}</dl>
+    <p class="more">לפרטים נוספים ולתיאום ביקור, דברו עם ליאה</p>`;
+  contact(d.office);
+  const g = $('#gallery'), dots = [...document.querySelectorAll('.dots span')];
+  if (g && dots.length) g.addEventListener('scroll', () => {
+    const imgs = [...g.children], mid = g.getBoundingClientRect().left + g.clientWidth / 2;
+    let best = 0, bd = Infinity; imgs.forEach((im, i) => { const r = im.getBoundingClientRect(), dd = Math.abs(r.left + r.width / 2 - mid); if (dd < bd) { bd = dd; best = i; } });
+    dots.forEach((s, i) => s.classList.toggle('on', i === best));
+  }, { passive: true });
+}
+
+(async function start() {
+  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return message('הקישור אינו תקין');
+  try {
+    const r = await fetch(`${API}?s=${encodeURIComponent(token)}`, { headers: { apikey: ANON } });
+    let d = {}; try { d = await r.json(); } catch {}
+    if (d.state === 'open') return show(d);
+    if (d.state === 'closed') return message('הנכס הזה כבר לא זמין. ליאה תשמח להציע נכסים אחרים.', d.office);
+    return message('הקישור אינו תקין');
+  } catch (e) { console.error(e); message('לא הצלחנו לטעון את הנכס. בדקו את החיבור לאינטרנט ונסו שוב.'); }
+})();
+</script>
+</body>
+</html>

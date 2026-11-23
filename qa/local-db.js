@@ -16,7 +16,7 @@
     owner_purpose: ['מחסן', 'תעשייה', 'מסחר', 'חנות'],
     category: ['רכב', 'לוגיסטיקה / אחסנה', 'אופנה', 'בנקים', 'בתי קפה', 'קוסמטיקה', 'הנעלה', 'חברים', 'חד״כ', 'חניונים', 'חשמל', 'יזמים - בניה', 'סטוקים'],
     lead_source: ['פייסבוק', 'חבר המליץ', 'גוגל', 'יד 2', 'מדלן', 'מניבים', 'ChatGPT'] };
-  const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [], dismissals: [],
+  const db = { options: [], fields: [], contacts: [], lead: [], owner: [], signing: [], notifications: [], dismissals: [], shares: [],
     matchSettings: { version: 1, weights: { category: 25, area: 25, purpose: 20, size: 15, budget: 15, height: 0, yield: 0 }, must: { deal_type: true, category: false, area: false, purpose: false } } };
   let agreementNo = 76773;
   for (const [k, vs] of Object.entries(seedOpts)) vs.forEach((v, i) => db.options.push({ id: id(), list_key: k, value: v, sort: (i + 1) * 10, created_at: now() }));
@@ -66,13 +66,15 @@
         notifications: clone([...db.notifications].sort((a, b) => b.created_at.localeCompare(a.created_at))) }; },
     async createSigning(p) { await delay(); this.calls.push({ signing: clone(p) });
       const deal = db.owner.find(d => d.id === p.owner_deal_id); if (!deal) throw new Error('deal not found');
-      const kind = p.kind || 'client_order', coop = kind === 'broker_coop';
+      const kind = p.kind || 'client_order', coop = kind === 'broker_coop', own = kind === 'owner_order';
       if (coop && !['shared', 'each_side', 'referral'].includes(p.coop_type)) throw new Error('coop_type required');
+      if (own && !(p.fee_value > 0 && p.fee_value <= 100)) throw new Error('יש למלא דמי תיווך');
       const purpose = db.options.find(o => o.id === deal.purpose_id)?.value || null;
       const words = String(deal.address || '').split(/[\s,]+/).filter(w => w.length >= 3 && !/\d/.test(w));
-      if (p.teaser_text && words.some(w => p.teaser_text.includes(w))) throw new Error('הטקסט מכיל את הכתובת');
+      if (!own && p.teaser_text && words.some(w => p.teaser_text.includes(w))) throw new Error('הטקסט מכיל את הכתובת');
       let c, lead = null, draft = false;
-      if (!coop && p.lead_id) {
+      if (own) c = db.contacts.find(x => x.id === deal.contact_id);
+      else if (!coop && p.lead_id) {
         lead = db.lead.find(l => l.id === p.lead_id); if (!lead) throw new Error('lead not found');
         c = db.contacts.find(x => x.id === lead.contact_id);
       } else {
@@ -93,12 +95,33 @@
       const r = { id: id(), token: 'tok' + Math.random().toString(36).slice(2), agreement_no: agreementNo++, kind, coop_type: coop ? p.coop_type : null,
         coop_notes: coop ? p.coop_notes || null : null, owner_deal_id: deal.id, contact_id: c.id, lead_deal_id: lead?.id || null,
         status: 'sent', sent_at: now(), first_opened_at: null, signed_at: null, expires_at: new Date(Date.now() + 14 * 864e5).toISOString(),
-        signer_full_name: null, signer_id_number: null, signer_license: null, pdf_path: null,
-        teaser_snapshot: { purpose, built_sqm: deal.built_sqm, plot_sqm: deal.plot_sqm, deal_kind: deal.deal_kind, teaser_text: p.teaser_text } };
+        signer_full_name: null, signer_id_number: null, signer_license: null, pdf_path: null, fee_value: own ? p.fee_value : null, address_snapshot: deal.address,
+        teaser_snapshot: { purpose, built_sqm: deal.built_sqm, plot_sqm: deal.plot_sqm, deal_kind: deal.deal_kind, teaser_text: own ? null : p.teaser_text,
+          sale_price: deal.deal_kind === 'sale' ? (own ? p.price : deal.asking_price) : null, monthly_rent: deal.deal_kind === 'rent' ? (own ? p.price : deal.asking_price) : null } };
       db.signing.push(r);
       db.notifications.push({ id: id(), type: 'signing_sent', title: `נוצר קישור להחתמה עבור ${c.name}`, body: null,
         link: `#/m/owner/${deal.id}`, signing_request_id: r.id, read_at: null, created_at: now() });
       return { id: r.id, token: r.token, agreement_no: r.agreement_no, contact_id: c.id, lead_id: lead?.id || null, draft_created: draft }; },
+    // shares (014_owner_share.sql semantics: photos must belong to the property; a new phone → a draft lead)
+    async loadShares() { await delay(); return clone([...db.shares].sort((a, b) => b.created_at.localeCompare(a.created_at))); },
+    async createShare(p) { await delay(); this.calls.push({ share: clone(p) });
+      const deal = db.owner.find(d => d.id === p.owner_deal_id); if (!deal) throw new Error('deal not found');
+      if (deal.status !== 'active') throw new Error('הנכס בארכיון');
+      const paths = (deal.photos || []).map(x => x.path);
+      if ((p.photos || []).some(x => !paths.includes(x))) throw new Error('תמונה לא שייכת לנכס');
+      let lead = null, c, draft = false;
+      if (p.lead_id) { lead = db.lead.find(l => l.id === p.lead_id); if (!lead) throw new Error('lead not found'); c = db.contacts.find(x => x.id === lead.contact_id); }
+      else {
+        const phone = norm(p.contact.phone); c = db.contacts.find(x => x.phone === phone);
+        if (!c) { c = { id: id(), phone, name: p.contact.name.trim(), entity_type: 'private', company_name: null, created_at: now() }; db.contacts.push(c); }
+        lead = db.lead.find(l => l.contact_id === c.id);
+        if (!lead) { draft = true; lead = { id: id(), contact_id: c.id, lead_date: now().slice(0, 10), need_ids: [], purpose_ids: [], notes: `נוצר משיתוף נכס: ${deal.address}`,
+          status: 'active', closed_at: null, custom: {}, is_draft: true, created_at: now() }; db.lead.push(lead); }
+      }
+      const r = { id: id(), token: 'shr' + Math.random().toString(36).slice(2), owner_deal_id: deal.id, lead_deal_id: lead.id, contact_id: c.id,
+        photos: (p.photos || []).map(x => ({ path: x })), created_at: now(), first_opened_at: null };
+      db.shares.push(r);
+      return { id: r.id, token: r.token, lead_id: lead.id, contact_id: c.id, draft_created: draft }; },
     async loadMatches() { await delay(); return { matchSettings: clone(db.matchSettings), dismissals: clone(db.dismissals) }; },
     async saveMatchSettings(v) { await delay(); this.calls.push({ matchSettings: clone(v) });
       const sum = Object.values(v.weights).reduce((a, b) => a + b, 0); if (sum !== 100) throw new Error('סכום המשקלים חייב להיות 100');
@@ -113,7 +136,7 @@
     _sign(rid, name = 'ישראל ישראלי', idn = '000000018', license = null) { const r = db.signing.find(x => x.id === rid);
       Object.assign(r, { status: 'signed', signed_at: now(), first_opened_at: r.first_opened_at || now(), signer_full_name: name, signer_id_number: idn,
         signer_license: r.kind === 'broker_coop' ? license : null, pdf_path: `${r.owner_deal_id}/${r.id}.pdf` });
-      db.notifications.push({ id: id(), type: 'signing_signed', title: `${name} חתם/ה על ${r.kind === 'broker_coop' ? 'הסכם שת״פ' : 'הזמנת התיווך'}`, body: `הסכם ${r.agreement_no}`,
+      db.notifications.push({ id: id(), type: 'signing_signed', title: `${name} חתם/ה על ${r.kind === 'broker_coop' ? 'הסכם שת״פ' : r.kind === 'owner_order' ? 'הסכם הבעלים' : 'הזמנת התיווך'}`, body: `הסכם ${r.agreement_no}`,
         link: `#/m/owner/${r.owner_deal_id}`, signing_request_id: r.id, read_at: null, created_at: now() }); },
     _db: db,
     async findContact(phone) { return clone(db.contacts.find(c => c.phone === phone) || null); },

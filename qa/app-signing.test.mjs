@@ -48,7 +48,7 @@ try {
   const oid = await ownerId();
   await page.goto(BASE + '#/m/owner/' + oid); await page.waitForSelector('#signing');
   assert.match(await page.locator('#signing').innerText(), /עדיין לא נשלחו/);
-  ok('owner card: "הזמנות תיווך" section, empty state, "שליחה להחתמה"');
+  ok('owner card: "הזמנות תיווך" section, empty state, "החתמת מתעניין"');
   await shot('s01-card-empty', true);
 
   await page.click('#send-sign'); await page.waitForSelector('#sg-form');
@@ -162,6 +162,35 @@ try {
   ok('co-op signed: the row shows the broker\'s licence');
   await shot('s09-card-coop', true);
 
+  // owner signing (014): the property's owner, the fee Leah fills, the WhatsApp wording of the previous system
+  assert.deepEqual((await page.locator('.sg-head-acts button').allInnerTexts()).map(s => s.trim()), ['החתמת מתעניין', 'החתמת שת״פ', 'החתמת בעלים']);
+  await page.click('#send-owner'); await page.waitForSelector('#os-form');
+  assert.match(await page.locator('#os-form h2').innerText(), /החתמת בעלים/);
+  assert.match(await page.locator('.os-owner').innerText(), /מירב כהן[\s\S]*052-1110002[\s\S]*שדרות לכיש 40, קריית גת/);
+  assert.match(await page.locator('label[for=os_price]').innerText(), /מחיר שכירות מבוקש \(לחודש\)/);
+  assert.equal(await page.inputValue('#os_price'), '2,400,000');
+  await page.click('#os-send');
+  assert.match(await page.locator('#os_fee-err').innerText(), /דמי תיווך \(חודשי שכירות\)/);
+  ok('owner sheet: three buttons (החתמת מתעניין · שת״פ · בעלים); the owner, phone and address shown; price prefilled; fee required');
+  await page.fill('#os_price', '13000'); await page.fill('#os_fee', '1');
+  assert.match(await page.locator('#os-line').innerText(), /בהשכרה: סך של 1 חודשי שכירות/);
+  await shot('s11-owner-sheet', true);
+  const [pop5] = await Promise.all([page.waitForEvent('popup'), page.click('#os-send')]);
+  await pop5.waitForURL(/wa\.me/);
+  const w5 = new URL(pop5.url()); await pop5.close();
+  assert.equal(w5.pathname, '/972521110002');
+  assert.match(w5.searchParams.get('text'), /^מצורף הסכם לחתימה בכתובת:\n\n1\. שדרות לכיש 40, קריית גת\n\nלצפייה בהסכם: \S+sign\.html\?t=tok\S+\n\nלאחר החתימה, לחיצה על הלינק ⬆️ תעביר אותך להסכם החתום\.\n\nבברכה,\nפריים לוקיישן$/);
+  const call5 = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.signing).at(-1).signing);
+  assert.deepEqual([call5.kind, call5.fee_value, call5.price], ['owner_order', 1, 13000]);
+  await page.waitForFunction(() => document.querySelectorAll('.sg-row').length === 4);
+  const ownRow = page.locator('.sg-row', { hasText: '76776' });
+  assert.match(await ownRow.innerText(), /הסכם בעלים[\s\S]*דמי תיווך: 1 חודשי שכירות[\s\S]*ממתינה לחתימה/);
+  const [pop6] = await Promise.all([page.waitForEvent('popup'), ownRow.locator('[data-a=wa]').click()]);
+  assert.match(new URL(pop6.url()).searchParams.get('text'), /^מצורף הסכם לחתימה בכתובת:\n\n1\. שדרות לכיש 40/); await pop6.close();
+  assert.equal(await page.evaluate(() => PL_TEST_DB._db.lead.filter(l => l.is_draft).length), 1, 'an owner is not added to the leads');
+  ok('owner signing: WhatsApp to the owner in the previous system\'s wording (with the address); fee + price sent; row "הסכם בעלים" with the fee; "שליחה שוב" keeps the wording');
+  await shot('s12-card-owner', true);
+
   // drafts in the leads list
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
   assert.match(await page.locator('.seg').innerText(), /טיוטות \(1\)/);
@@ -177,6 +206,51 @@ try {
   await page.goto(BASE + '#/m/lead'); await page.waitForSelector('#rows');
   assert.ok(!/טיוטות/.test(await page.locator('.seg').innerText()));
   ok('saving the lead clears the draft mark and the filter');
+
+  // sharing a property with a lead (014)
+  await page.evaluate(async () => {
+    const o = PL_TEST_DB._db.owner[0], c = document.createElement('canvas'); c.width = 80; c.height = 60;
+    const g = c.getContext('2d'); g.fillStyle = '#FFD400'; g.fillRect(0, 0, 80, 60);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg'));
+    o.photos = [1, 2].map(i => ({ path: `${o.id}/p${i}.jpg`, thumb: `${o.id}/p${i}_t.jpg`, w: 80, h: 60 }));
+    for (const p of o.photos) { PL_TEST_DB.files.set(p.thumb, URL.createObjectURL(blob)); PL_TEST_DB.files.set(p.path, URL.createObjectURL(blob)); }
+    await reload();
+  });
+  await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows .row-share');
+  assert.match(await page.locator('#rows .row-share').innerText(), /שיתוף/);
+  assert.equal(await page.locator('#rows .row-share svg').count(), 1);
+  await page.click('#rows .row-share'); await page.waitForSelector('#sh-form');
+  assert.match(await page.locator('#sh-form').innerText(), /חנות · 120 מ״ר · השכרה[\s\S]*בלי כתובת ובלי שם הבעלים/);
+  assert.equal(await page.locator('.sh-ph input:checked').count(), 2);
+  await page.click('#sh-send');
+  assert.match(await page.locator('#sh_who-err').innerText(), /יש לבחור מתעניין/);
+  await page.fill('#sh_find', 'יוסי'); await page.click('#sh-results button >> nth=0');
+  await page.locator('.sh-ph input').nth(1).uncheck();
+  await shot('s13-share-sheet', true);
+  const [pop7] = await Promise.all([page.waitForEvent('popup'), page.click('#sh-send')]);
+  await pop7.waitForURL(/wa\.me/);
+  const w7 = new URL(pop7.url()); await pop7.close();
+  const t7 = w7.searchParams.get('text');
+  assert.equal(w7.pathname, '/972541110001');
+  assert.match(t7, /^היי יוסי, יש לי נכס שיכול להתאים לך: חנות · 120 מ״ר · השכרה, ‎2,400,000 ₪ לחודש\.\nלתמונות ופרטים: \S+p\.html\?s=shr\S+\n\nליאה ארז, פריים לוקיישן$/);
+  assert.ok(!/לכיש|קריית גת|מירב|ברחוב ראשי/.test(t7), 'no address, owner or description in the message');
+  const call7 = await page.evaluate(() => PL_TEST_DB.calls.filter(c => c.share).at(-1).share);
+  assert.equal(call7.photos.length, 1); assert.ok(call7.photos[0].endsWith('/p1.jpg')); assert.ok(call7.lead_id && !call7.contact);
+  ok('share: share button (icon) on the owner row; lead required; pick a lead; choose photos; WhatsApp to the lead with type · size · deal, price and the link — no address, no owner, no description');
+  await page.click('#rows .row-share'); await page.waitForSelector('#sh-form');
+  await page.fill('#sh_find', 'יוסי'); await page.click('#sh-results button >> nth=0');
+  assert.match(await page.locator('#sh-again').innerText(), /כבר שיתפת את הנכס הזה עם יוסי אברהם/);
+  await page.click('#sh-change'); await page.fill('#sh_find', '050-1231234'); await page.click('#sh-new-btn');
+  assert.equal(await page.inputValue('#sh_phone'), '050-1231234'); await page.fill('#sh_name', 'נועם משיתוף');
+  assert.ok(await page.locator('#sh-again').isHidden());
+  const [pop8] = await Promise.all([page.waitForEvent('popup'), page.click('#sh-send')]); await pop8.close();
+  await page.waitForFunction(() => PL_TEST_DB._db.lead.some(l => l.is_draft && /נוצר משיתוף נכס/.test(l.notes)));
+  ok('share again to the same lead → "כבר שיתפת…" with the date; "+ מתעניין חדש" (name + phone) → a draft lead');
+  const yossiLead = await page.evaluate(() => PL_TEST_DB._db.shares[0].lead_deal_id);
+  await page.goto(BASE + '#/m/lead/' + yossiLead); await page.waitForSelector('#shares');
+  assert.match(await page.locator('#shares').innerText(), /נכסים ששותפו[\s\S]*חנות · 120 מ״ר · השכרה[\s\S]*קישור נוצר[\s\S]*טרם נפתח/);
+  await shot('s14-lead-shares', true);
+  ok('lead card: "נכסים ששותפו" lists the property with the time the link was made and whether it was opened');
 
   // owners list search
   await page.goto(BASE + '#/m/owner'); await page.waitForSelector('#rows');

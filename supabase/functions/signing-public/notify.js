@@ -21,7 +21,7 @@ export function notifyTexts(info) {
 </div>`;
   const whatsapp = [`✍️ ${r.signer_full_name} חתם/ה על ${info.kind_label}`, `הסכם ${r.agreement_no}${prop ? ' · ' + prop : ''}`,
     `ת״ז / ח.פ. ${r.signer_id_number}${coop && r.signer_license ? ` · רשיון ${r.signer_license}` : ''}`, `נחתם ${when}`, `לכרטיס הנכס: ${link}`].join('\n');
-  return { subject, html, whatsapp, filename: `${coop ? 'הסכם-שתפ' : 'הזמנת-תיווך'}-${r.agreement_no}.pdf` };
+  return { subject, html, whatsapp, filename: `${coop ? 'הסכם-שתפ' : r.kind === 'owner_order' ? 'הסכם-בעלים' : 'הזמנת-תיווך'}-${r.agreement_no}.pdf` };
 }
 
 export async function notifyLeah({ requestId, pdf, deps }) {

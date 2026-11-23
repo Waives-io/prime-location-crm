@@ -219,6 +219,9 @@ try {
   assert.equal(await page.inputValue('#address'), 'אזור התעשייה חולון, חולון');
   ok('approximate search "אזור התעשיה חולון" (missing י) finds the zone, fills the one address field + pin');
   assert.equal(await page.locator('path.leaflet-interactive').count(), 1);
+  assert.equal(await page.getAttribute('#radius', 'max'), '40000');
+  await page.locator('#radius').fill('40000');
+  assert.equal(await text('#radius-out'), '40 ק״מ');
   await page.locator('#radius').fill('10000');
   assert.equal(await text('#radius-out'), '10 ק״מ');
   ok('map: address search → pin + radius circle, slider 10 km');

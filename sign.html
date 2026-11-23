@@ -54,6 +54,7 @@ h1{font-size:1.45rem;line-height:1.25;font-weight:800;margin:6px 0 4px}
 .hidden-addr svg{flex:0 0 auto;width:22px;height:22px;margin-top:2px}
 .agreement p{margin:0 0 12px}
 .agreement p:last-child{margin-bottom:0}
+.agreement h3.part{font-family:var(--font-head);font-size:1.12rem;line-height:1.3;margin:24px 0 12px;padding-top:18px;border-top:3px solid var(--yellow)}
 
 .sticky{position:fixed;inset-inline:0;bottom:0;z-index:10;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 .sticky .btn{display:flex;width:100%;max-width:688px;margin-inline:auto}
@@ -112,8 +113,12 @@ const token = new URLSearchParams(location.search).get('t') || '';
 const app = $('#app'), sticky = $('#sticky');
 let D = null;
 const isCoop = () => D?.kind === 'broker_coop';
+const isOwner = () => D?.kind === 'owner_order';   // the property's owner: brokerage order + exclusivity, sees his own address
 const WORD = () => isCoop() ? { doc: 'ההסכם', consent: 'קראתי ואני מאשר/ת את הסכם שיתוף הפעולה בין המתווכים', done: 'ההסכם נחתם בהצלחה' }
+  : isOwner() ? { doc: 'ההסכם', consent: 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך ואת הסכם הבלעדיות', done: 'ההסכם נחתם בהצלחה' }
   : { doc: 'ההזמנה', consent: 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך', done: 'ההזמנה נחתמה בהצלחה' };
+// agreement text: a line "## …" is the title of the next part (the owner's exclusivity agreement)
+const bodyHTML = (b) => String(b || '').split(/\n+/).map(p => p.startsWith('## ') ? `<h3 class="part">${esc(p.slice(3))}</h3>` : `<p>${esc(p)}</p>`).join('');
 
 // ת״ז with its check digit; a company / non-profit number (9 digits starting with 5) only by its length
 function validId(raw) {
@@ -152,19 +157,29 @@ function facts(t) {
   return rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 
+function ownerFacts(t) {
+  const price = (on, v, unit = '') => on && v ? `<bdi class="num" dir="ltr">${money(v)}</bdi>${unit}` : '-';
+  return `<section class="card" aria-labelledby="client-h"><h2 id="client-h">פרטי לקוח</h2>
+      <dl class="facts"><dt>שם לקוח</dt><dd>${esc(D.signer?.name || '')}</dd><dt>טלפון</dt><dd><bdi class="num" dir="ltr">${esc(D.signer?.phone || '')}</bdi></dd></dl></section>
+    <section class="card" aria-labelledby="prop-h"><h2 id="prop-h">פרטי הנכס</h2>
+      <dl class="facts"><dt>כתובת</dt><dd>${esc(D.address || '—')}</dd>
+        <dt>מחיר מכירה מבוקש</dt><dd>${price(t.deal_kind === 'sale', t.sale_price)}</dd>
+        <dt>מחיר שכירות מבוקש</dt><dd>${price(t.deal_kind === 'rent', t.monthly_rent, ' לחודש')}</dd></dl></section>`;
+}
+
 function step1() {
   const t = D.teaser || {};
   app.innerHTML = `<h1>${esc(D.title)}</h1>
     <p class="agr-no">מספר הסכם: <bdi class="num">${esc(D.agreement_no)}</bdi></p>
     <p class="agr-by">${esc(D.office?.broker_name || 'ליאה ארז')} · רשיון תיווך <bdi class="num">${esc(D.office?.broker_license || '3156857')}</bdi></p>
-    <section class="card" aria-labelledby="prop-h"><h2 id="prop-h">פרטי הנכס</h2>
+    ${isOwner() ? ownerFacts(t) : `<section class="card" aria-labelledby="prop-h"><h2 id="prop-h">פרטי הנכס</h2>
       <dl class="facts">${facts(t)}</dl>
       ${t.teaser_text ? `<p class="teaser-text">${esc(t.teaser_text)}</p>` : ''}
       <p class="hidden-addr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
         הכתובת המלאה תוצג מיד לאחר החתימה</p>
-    </section>
+    </section>`}
     <section class="card agreement" aria-labelledby="agr-h"><h2 id="agr-h">נוסח ${WORD().doc}</h2>
-      ${String(D.body || '').split(/\n+/).map(p => `<p>${esc(p)}</p>`).join('')}</section>`;
+      ${bodyHTML(D.body)}</section>`;
   sticky.innerHTML = '<button class="btn primary" id="to-sign" type="button">מעבר לחתימה</button>'; sticky.hidden = false;
   $('#to-sign').onclick = step2;
   window.scrollTo(0, 0);
@@ -177,12 +192,12 @@ function step2() {
     <p class="agr-by">${esc(D.office?.broker_name || 'ליאה ארז')} · רשיון תיווך <bdi class="num">${esc(D.office?.broker_license || '3156857')}</bdi></p>
     <form id="sign-form" novalidate>
       <div class="field" data-f="full_name"><label for="full_name">שם מלא <span class="req" aria-hidden="true">*</span></label>
-        <input class="input" id="full_name" autocomplete="name" required aria-describedby="full_name-err"><p class="err" id="full_name-err" aria-live="polite"></p></div>
-      <div class="field" data-f="id_number"><label for="id_number">ת״ז / ח.פ. <span class="req" aria-hidden="true">*</span></label>
+        <input class="input" id="full_name" autocomplete="name" required aria-describedby="full_name-err" value="${esc(isOwner() ? D.signer?.name || '' : '')}"><p class="err" id="full_name-err" aria-live="polite"></p></div>
+      <div class="field" data-f="id_number"><label for="id_number">${isOwner() ? 'ת.ז. / ח.פ.' : 'ת״ז / ח.פ.'} <span class="req" aria-hidden="true">*</span></label>
         <input class="input num" id="id_number" inputmode="numeric" maxlength="9" dir="ltr" required aria-describedby="id_number-err"><p class="err" id="id_number-err" aria-live="polite"></p></div>
       ${isCoop() ? `<div class="field" data-f="license"><label for="license">מספר רשיון תיווך <span class="req" aria-hidden="true">*</span></label>
         <input class="input num" id="license" inputmode="numeric" maxlength="9" dir="ltr" required aria-describedby="license-err"><p class="err" id="license-err" aria-live="polite"></p></div>` : ''}
-      <div class="field" data-f="home_address"><label for="home_address">${isCoop() ? 'כתובת' : 'כתובת מגורים'} <span class="req" aria-hidden="true">*</span></label>
+      <div class="field" data-f="home_address"><label for="home_address">${isCoop() || isOwner() ? 'כתובת' : 'כתובת מגורים'} <span class="req" aria-hidden="true">*</span></label>
         <input class="input" id="home_address" autocomplete="street-address" required aria-describedby="home_address-err"><p class="err" id="home_address-err" aria-live="polite"></p></div>
       <div class="field" data-f="signature"><div class="pad-row"><label id="pad-lbl">חתימה <span class="req" aria-hidden="true">*</span></label>
           <button class="link" type="button" id="clear">ניקוי חתימה</button></div>
@@ -201,7 +216,7 @@ function step2() {
     full_name: () => val('full_name').length >= 2 ? '' : 'נא למלא שם מלא',
     id_number: () => !val('id_number') ? 'נא למלא ת״ז או ח.פ.' : validId(val('id_number')) ? '' : 'המספר אינו תקין. בדקו את 9 הספרות של הת״ז (כולל ספרת הביקורת) או של הח.פ.',
     ...(isCoop() ? { license: () => /^\d{4,9}$/.test(val('license')) ? '' : 'נא למלא מספר רשיון תיווך (ספרות בלבד)' } : {}),
-    home_address: () => val('home_address').length >= 3 ? '' : 'נא למלא כתובת מגורים',
+    home_address: () => val('home_address').length >= 3 ? '' : isCoop() || isOwner() ? 'נא למלא כתובת' : 'נא למלא כתובת מגורים',
     signature: () => pad.isEmpty() ? 'נא לחתום במסגרת' : '',
     consent: () => $('#consent').checked ? '' : 'יש לסמן את האישור כדי לחתום',
   };
@@ -242,6 +257,7 @@ function step2() {
 
 function done(r) {
   sticky.hidden = true; setOffice(r.office);
+  if (r.kind === 'owner_order') return ownerDone(r);
   const a = r.address || '';
   app.innerHTML = `<div class="done">
     <div class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
@@ -255,6 +271,18 @@ function done(r) {
     </section>
     ${r.pdf_url ? `<a class="btn primary" id="pdf" href="${esc(r.pdf_url)}" target="_blank" rel="noopener">הורדת עותק חתום</a>` : ''}
     <p class="next">ליאה תיצור איתך קשר לתיאום</p></div>`;
+  window.scrollTo(0, 0);
+}
+
+// the owner knows his property's address: the signed agreement is what he needs
+function ownerDone(r) {
+  app.innerHTML = `<div class="done">
+    <div class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1>ההסכם נחתם בהצלחה</h1>
+    <p class="agr-no">מספר הסכם: <bdi class="num">${esc(r.agreement_no)}</bdi></p>
+    ${r.address ? `<p class="addr" id="address">${esc(r.address)}</p>` : ''}
+    ${r.pdf_url ? `<a class="btn primary" id="pdf" href="${esc(r.pdf_url)}" target="_blank" rel="noopener">הורדת ההסכם החתום</a>` : ''}
+    <p class="next">אפשר לחזור להסכם החתום בכל עת דרך הקישור שבהודעה.</p></div>`;
   window.scrollTo(0, 0);
 }
 

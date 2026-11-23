@@ -39,7 +39,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   insert into auth.users values ('${LEAH}', 'leah@example.com');`);
 await db.exec(sql('schema.sql').replace('LEAH_EMAIL@example.com', 'leah@example.com'));
-for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql', '010_signing2.sql'])
+for (const f of ['002_feedback.sql', '004_photos.sql', '005_round2.sql', '006_field_remove.sql', '007_multi_need.sql', '008_multi_purpose.sql', '009_signing.sql', '010_signing2.sql', '011_matches.sql', '012_match_colors.sql', '013_match_yield.sql', '014_owner_share.sql'])
   await db.exec(sql(f).replace('LEAH_EMAIL@example.com', 'leah2@example.com'));
 const q = (s, p) => db.query(s, p).then(r => r.rows);
 async function as(role, uid, fn) {
@@ -243,6 +243,60 @@ try {
   const lf = (await q('select status, notified_email_at, notified_whatsapp_at, notify_error from signing_requests where id=$1', [rf.id]))[0];
   assert.ok(lf.status === 'signed' && lf.notified_email_at && !lf.notified_whatsapp_at); assert.match(lf.notify_error, /whatsapp: down/);
   ok('a WhatsApp failure is logged on the request; the signature and the email are not affected');
+
+  // the owner's agreement (014): brokerage order + exclusivity, two pages, one signature
+  const od = (await q('select d.deal_kind, d.address, c.name, c.phone from owner_deals d join contacts c on c.id = d.contact_id where d.id=$1', [OWNER]))[0];
+  const ro = await as('authenticated', LEAH, async () => (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: OWNER, kind: 'owner_order', fee_value: 1.5, price: 8000 }]))[0].r);
+  await page.goto(`${BASE}?t=${ro.token}`); await page.waitForSelector('#to-sign');
+  const ot = await page.locator('#app').innerText();
+  const sale = od.deal_kind === 'sale';
+  assert.ok(ot.includes(sale ? 'הסכם הזמנת שירותי תיווך למכירת נכס' : 'הסכם הזמנת שירותי תיווך להשכרת נכס'), 'owner title');
+  for (const s of ['פרטי לקוח', od.name, od.address, 'מחיר מכירה מבוקש', 'מחיר שכירות מבוקש', 'הסכם הזמנת שירותי תיווך בבלעדיות', String(ro.agreement_no),
+    sale ? 'במכירה: סך של 1.5% מהמחיר הכולל של הנכס' : 'בהשכרה: סך של 1.5 חודשי שכירות']) assert.ok(ot.includes(s), 'owner page missing ' + s);
+  assert.ok(!/\{\{/.test(ot) && !ot.includes('הכתובת המלאה תוצג'));
+  await shot('c10-owner-agreement');
+  await page.click('#to-sign'); await page.waitForSelector('#sign-form');
+  assert.equal(await page.inputValue('#full_name'), od.name);
+  assert.match(await page.locator('#sign-form').innerText(), /ת\.ז\. \/ ח\.פ\.[\s\S]*כתובת[\s\S]*קראתי ואני מאשר\/ת את הסכם הזמנת שירותי התיווך ואת הסכם הבלעדיות/);
+  assert.equal(await page.locator('#license').count(), 0);
+  await page.fill('#id_number', '515555555'); await page.fill('#home_address', 'הנשיא 3, אשקלון');
+  await draw(); await page.check('#consent');
+  await shot('c11-owner-form');
+  await page.click('#submit'); await page.waitForSelector('#pdf');
+  assert.match(await page.locator('#app').innerText(), /ההסכם נחתם בהצלחה/);
+  await shot('c12-owner-done', false);
+  const rowO = (await q('select status, signer_id_number, signer_home_address, pdf_path from signing_requests where id=$1', [ro.id]))[0];
+  assert.deepEqual([rowO.status, rowO.signer_id_number, rowO.signer_home_address], ['signed', '515555555', 'הנשיא 3, אשקלון']);
+  const pdfO = await renderPdfPages(store.get(rowO.pdf_path), [SHOTS + 'c13-owner-pdf-1.png', SHOTS + 'c13-owner-pdf-2.png', SHOTS + 'c13-owner-pdf-3.png'], { browser });
+  assert.equal(pdfO.pages, 2, 'owner PDF pages ' + pdfO.pages);
+  for (const s of [String(ro.agreement_no), '515555555', od.phone, '3156857', '203.0.113.7']) assert.ok(pdfO.text.includes(s), 'owner PDF missing ' + s);
+  const emO = sent.email.at(-1);
+  assert.match(emO.subject, /חתם\/ה על הסכם בעלים/); assert.match(emO.filename, /^הסכם-בעלים-\d+\.pdf$/);
+  await page.goto(`${BASE}?t=${ro.token}`); await page.waitForSelector('#pdf');
+  ok('owner agreement: title by deal type, client + property boxes with the address, fee line, exclusivity part; name filled in, ת.ז. / ח.פ. + כתובת; signed → 2-page PDF (number, ID, phone, licence, IP); email "הסכם בעלים"; the link reopens to the signed copy');
+
+  // a property shared with a lead (014): the public page shows no address, no owner, no description
+  const photoPath = `${OWNER}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`;
+  const shr = await as('authenticated', LEAH, async () => {
+    await q('select set_deal_photos($1, $2, $3::jsonb)', ['owner', OWNER, [{ path: photoPath, thumb: `${OWNER}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa_t.jpg`, w: 4, h: 3 }]]);
+    return (await q('select share_create($1::jsonb) r', [{ owner_deal_id: OWNER, contact: { phone: '054-7770010', name: 'מתעניין שיתוף' }, photos: [photoPath] }]))[0].r;
+  });
+  store.set(photoPath, await page.screenshot());
+  apiBodies.length = 0;
+  await page.goto(`${BASE}p.html?s=${shr.token}`); await page.waitForSelector('.facts');
+  const desc = (await q('select description from owner_deals where id=$1', [OWNER]))[0].description;
+  const shareSeen = apiBodies.map(x => x.body).join('\n') + await page.content();
+  for (const part of addrParts) assert.ok(!shareSeen.includes(part), 'share page leaks address part ' + part);
+  assert.ok(!shareSeen.includes(od.name), 'share page leaks the owner name');
+  if (desc) assert.ok(!shareSeen.includes(desc), 'share page leaks the description');
+  assert.equal(await page.locator('.gallery img').count(), 1);
+  assert.match(await page.locator('h1').innerText(), sale ? /למכירה/ : /להשכרה/);
+  await shot('c14-share-page');
+  await q(`update owner_deals set status = 'closed', closed_at = now() where id=$1`, [OWNER]);
+  await page.goto(`${BASE}p.html?s=${shr.token}`); await page.waitForSelector('text=הנכס הזה כבר לא זמין');
+  await q(`update owner_deals set status = 'active', closed_at = null where id=$1`, [OWNER]);
+  await page.goto(`${BASE}p.html?s=${'x'.repeat(43)}`); await page.waitForSelector('text=הקישור אינו תקין');
+  ok('shared property page: chosen photo + purpose / deal type; no address part, no owner name, no description anywhere; a closed property → "כבר לא זמין"; unknown link → "אינו תקין"');
 
   // cancelled and expired links
   const r4 = await create('054-7770004', 'מבוטל', null);

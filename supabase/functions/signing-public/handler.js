@@ -2,11 +2,12 @@
 //   GET  ?t=TOKEN  → office, agreement number, teaser, agreement text. Never the address before a signature.
 //   POST {token, full_name, id_number, home_address, consent, signature}  → stores signature + signed PDF, returns the address.
 // Plain JS with its dependencies passed in, so the same code runs in the Edge Function (Deno) and in the QA tests (Node).
-import { buildAgreementPdf } from './pdf.js';
+import { buildAgreementPdf, buildOwnerPdf } from './pdf.js';
 import { notifyLeah } from './notify.js';
 
 export const ALLOWED_ORIGINS = ['https://waives-io.github.io'];
 const BUCKET = 'signed-agreements';
+const PHOTOS = 'deal-photos';
 
 // Israeli ID: 9 digits (shorter ones are left-padded with zeros), Luhn-like check digit
 export function validIsraeliId(raw) {
@@ -59,15 +60,29 @@ export async function handle(req, deps) {
 
   try {
     if (req.method === 'GET') {
-      const t = new URL(req.url).searchParams.get('t') || '';
+      const params = new URL(req.url).searchParams;
+      // a property shared with a lead (p.html?s=…): the snapshot and the chosen photos, nothing else
+      if (params.has('s')) {
+        const s = params.get('s') || '';
+        if (!/^[A-Za-z0-9_-]{40,60}$/.test(s)) return json({ state: 'not_found' }, 404);
+        const r = await deps.rpc('share_public_get', { p_token: s });
+        if (r.state !== 'open') return json({ state: r.state, office: r.office }, r.state === 'not_found' ? 404 : 410);
+        const { purpose, built_sqm, plot_sqm, deal_kind, price } = r.property || {};
+        const photos = [];
+        for (const p of (r.photos || []).slice(0, 5)) { try { photos.push(await deps.signedUrl(PHOTOS, p, 3600, { download: false })); } catch (e) { console.error(e); } }
+        return json({ state: 'open', office: r.office, property: { purpose, built_sqm, plot_sqm, deal_kind, price }, photos });
+      }
+      const t = params.get('t') || '';
       if (!/^[A-Za-z0-9_-]{40,60}$/.test(t)) return json({ state: 'not_found' }, 404);
       const r = await deps.rpc('signing_public_get', { p_token: t });
       if (r.state === 'signed') return json(await signedBody(r, deps));
       if (r.state !== 'open') return json({ state: r.state, office: r.office }, r.state === 'not_found' ? 404 : 410);
       // only these fields leave the server before a signature
       const { purpose, built_sqm, plot_sqm, deal_kind, sale_price, monthly_rent, teaser_text } = r.teaser || {};
+      const owner = r.kind === 'owner_order';   // the owner signs on his own property: address and his own details are his
       return json({ state: 'open', kind: r.kind, office: r.office, agreement_no: r.agreement_no, title: r.title, body: r.body,
-        teaser: { purpose, built_sqm, plot_sqm, deal_kind, sale_price, monthly_rent, teaser_text } });
+        teaser: { purpose, built_sqm, plot_sqm, deal_kind, sale_price, monthly_rent, teaser_text },
+        ...(owner ? { address: r.address, signer: r.signer } : {}) });
     }
 
     if (req.method === 'POST') {
@@ -99,11 +114,11 @@ export async function handle(req, deps) {
       // one file name per attempt, so a retry or a parallel submit never overwrites a stored, hashed PDF
       const nonce = hex(crypto.getRandomValues(new Uint8Array(4)));
       const base = `${r.owner_deal_id}/${r.id}-${nonce}`;
-      const pdf = await buildAgreementPdf({
+      const pdf = await (r.kind === 'owner_order' ? buildOwnerPdf : buildAgreementPdf)({
         pdfLib: deps.pdfLib, fontkit: deps.fontkit, fonts: deps.fonts, signaturePng: sig,
-        office: { office_name: t.office_name, broker_name: t.broker_name, broker_license: t.broker_license },
-        agreementNo: r.agreement_no, title: t.title, body: begin.body ?? t.body, teaser: r.teaser_snapshot, address: r.address_snapshot, kind: r.kind,
-        signer: { full_name, id_number: id_number.padStart(9, '0'), home_address, license: coop ? license : null },
+        office: { office_name: t.office_name, broker_name: t.broker_name, broker_license: t.broker_license, phone: begin.office_phone || null },
+        agreementNo: r.agreement_no, title: begin.title ?? t.title, body: begin.body ?? t.body, teaser: r.teaser_snapshot, address: r.address_snapshot, kind: r.kind,
+        signer: { full_name, id_number: id_number.padStart(9, '0'), home_address, license: coop ? license : null, phone: begin.contact?.phone || null },
         audit: { sent_at: r.sent_at, opened_at: r.first_opened_at || begin.now, signed_at: signedAt.toISOString(), ip, ua,
                  template_version: r.template_version, request_id: r.id },
       });

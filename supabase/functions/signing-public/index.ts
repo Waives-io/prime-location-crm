@@ -25,8 +25,9 @@ const deps = {
     const { error } = await sb.storage.from(bucket).upload(path, bytes, { contentType, upsert: false });
     if (error) throw error;
   },
-  async signedUrl(bucket: string, path: string, seconds: number) {
-    const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, seconds, { download: true });
+  // a PDF opens as a download; a shared photo is shown in the page
+  async signedUrl(bucket: string, path: string, seconds: number, opts: { download?: boolean } = {}) {
+    const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, seconds, { download: opts.download !== false });
     if (error) throw error;
     return data.signedUrl;
   },

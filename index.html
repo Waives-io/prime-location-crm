@@ -539,6 +539,33 @@ dialog:has(.cat-sheet){width:min(480px,calc(100% - 16px));padding:0;border-top-w
   .ms-form{padding-bottom:144px}
   .ms-form .sticky-save{right:272px;grid-template-columns:minmax(280px,620px) auto;justify-content:center}
 }
+/* round 8: owner signing + sharing a property */
+.row-acts{flex-wrap:wrap}
+.row-share{display:inline-flex;align-items:center;gap:6px;background:var(--yellow);border-color:var(--ink)}
+.row-share .ico{width:18px;height:18px;flex:0 0 18px}
+.sg-kind.owner{display:inline-block;padding:1px 8px;border-radius:6px;background:#E3F0FF;color:var(--ink)}
+.os-owner{background:var(--surface);border-width:1.5px;border-color:var(--line);margin-bottom:14px}
+.os-owner .meta{color:var(--charcoal);font-size:.92rem}
+.os-fee{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.os-fee .input{flex:0 0 140px;width:140px}
+.os-fee span{font-weight:700}
+.os-line{margin:0 0 14px}
+.sh-photos-f{border:0;padding:0;margin:0 0 14px;min-width:0}
+.sh-photos-f legend{padding:0;margin-bottom:6px;font-weight:700}
+.sh-photos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:6px}
+.sh-ph{position:relative;display:block;aspect-ratio:1;border:2px solid var(--ink);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--surface);box-shadow:3px 3px 0 var(--ink);transition:opacity .15s,filter .15s,box-shadow .15s}
+.sh-ph img{display:block;width:100%;height:100%;object-fit:cover}
+.sh-ph input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1}
+.sh-ph:not(:has(input:checked)){opacity:.4;filter:grayscale(1);box-shadow:none}
+.sh-ph:has(input:checked)::after{content:"✓";position:absolute;top:6px;inset-inline-start:6px;width:26px;height:26px;border:2px solid var(--ink);border-radius:50%;background:var(--yellow);color:var(--ink);font-weight:800;font-size:.95rem;line-height:22px;text-align:center}
+.sh-ph:has(input:focus-visible){outline:3px solid var(--ink);outline-offset:3px}
+.sh-again{margin:10px 0 0;padding:10px 12px;border:2px dashed #c9a400;border-radius:12px;background:#FFF4D6;font-weight:700;font-size:.95rem}
+.sh-pv{white-space:pre-line;font-size:.95rem;margin:8px 0 2px;overflow-wrap:anywhere}
+.sh-section{margin:22px 0 6px;padding-top:6px}
+.sh-section h3{margin:0 0 10px;font-size:1.1rem;font-weight:800}
+.sh-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.sh-list a{display:flex;flex-direction:column;gap:2px;min-height:var(--tap);padding:12px 14px;border:2px solid var(--ink);border-radius:12px;background:#fff;box-shadow:3px 3px 0 var(--ink);text-decoration:none;color:var(--ink)}
+.sh-list .meta{color:var(--charcoal);font-size:.9rem}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
@@ -562,6 +589,7 @@ const GOVMAP_TOKEN = (window.PL_APP && 'govmapToken' in window.PL_APP) ? window.
 // On for everyone since 2026-11-11 (Galli + Leah tested on the live site; Leah approved the wording). PL_APP.features.signing = false turns it off.
 const FEATURES = { signing: window.PL_APP?.features?.signing ?? true };
 const SIGN_PAGE = new URL('sign.html', location.href.split('#')[0].split('?')[0]).href;
+const SHARE_PAGE = new URL('p.html', location.href.split('#')[0].split('?')[0]).href;   // a property shared with a lead (014)
 const LISTS = { need: 'lead_need', lead_purpose: 'lead_purpose', owner_purpose: 'owner_purpose', category: 'category', lead_source: 'lead_source' };
 const MODULES = {
   lead:  { title: 'מתעניינים',     one: 'מתעניין',  empty: 'אין עדיין מתעניינים.' },
@@ -676,12 +704,15 @@ function supabaseDB() {
     // signing: requests + notifications (read with RLS); every change goes through an RPC
     async loadSigning() {
       const [reqs, notes] = await Promise.all([
-        sb.from('signing_requests').select('id, token, agreement_no, kind, coop_type, coop_notes, owner_deal_id, contact_id, lead_deal_id, status, sent_at, first_opened_at, signed_at, expires_at, signer_full_name, signer_id_number, signer_license, pdf_path, teaser_snapshot, contact:contacts(name, phone, entity_type)').order('sent_at', { ascending: false }),
+        sb.from('signing_requests').select('id, token, agreement_no, kind, coop_type, coop_notes, owner_deal_id, contact_id, lead_deal_id, status, sent_at, first_opened_at, signed_at, expires_at, signer_full_name, signer_id_number, signer_license, pdf_path, teaser_snapshot, fee_value, address_snapshot, contact:contacts(name, phone, entity_type)').order('sent_at', { ascending: false }),
         sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(200),
       ]);
       return { signing: must(reqs), notifications: must(notes) };
     },
     async createSigning(p) { return must(await sb.rpc('signing_create', { p })); },
+    // properties shared with leads (014): read with RLS, created by an RPC
+    async loadShares() { return must(await sb.from('property_shares').select('id, owner_deal_id, lead_deal_id, contact_id, created_at, first_opened_at').order('created_at', { ascending: false })); },
+    async createShare(p) { return must(await sb.rpc('share_create', { p })); },
     // matches (011): weights + must-conditions, and the pairs Leah marked "לא מתאים"
     async loadMatches() {
       const [set, dis] = await Promise.all([
@@ -731,6 +762,8 @@ async function reload() {
     S.data.signing = []; S.data.notifications = [];
     // signing must never block the CRM: if it fails to load, the rest works and the bell stays empty
     if (FEATURES.signing) try { Object.assign(S.data, await DB.loadSigning()); } catch (e) { console.warn('signing', e); }
+    S.data.shares = [];
+    try { S.data.shares = await DB.loadShares(); } catch (e) { console.warn('shares', e); }   // never blocks the CRM
     S.data.matchSettings = null; S.data.dismissals = [];
     try { Object.assign(S.data, await DB.loadMatches()); } catch (e) { console.warn('matches', e); }   // defaults if it fails
   }
@@ -834,6 +867,7 @@ const ICON_PATHS = {
   lead: '<path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>',
   owner: '<path d="M3 21l18 0"/><path d="M9 8l1 0"/><path d="M9 12l1 0"/><path d="M9 16l1 0"/><path d="M14 8l1 0"/><path d="M14 12l1 0"/><path d="M14 16l1 0"/><path d="M5 21v-16a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v16"/>',
   matches: '<path d="M7 10h14l-4 -4"/><path d="M17 14h-14l4 4"/>',
+  share: '<path d="M6 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M18 6m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M18 18m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M8.7 10.7l6.6 -3.4"/><path d="M8.7 13.3l6.6 3.4"/>',
   settings: '<path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/>',
 };
 const icon = (k) => `<svg class="ico ico-${k}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[k]}</svg>`;
@@ -1087,7 +1121,7 @@ function listView(module) {
         <div class="r1"><span><span class="name">${esc(d.contact?.name)}</span>${d.contact?.company_name ? ` · ${esc(d.contact.company_name)}` : ''}${d.is_draft ? ' <span class="chip draft row-chip">טיוטה</span>' : ''}${d.status !== 'active' ? ' <span class="chip archived row-chip">ארכיון</span>' : ''}</span>
         <span class="meta">${fmt.ltr(fmt.date(dealDate(module, d)))}</span></div>
         <div class="meta">${rowSummary(module, d).filter(Boolean).map(esc).join(' · ')}</div></a>
-        <div class="row-acts">${module === 'owner' ? `<button type="button" class="btn row-act" data-a="dup">שכפול</button>` : ''}${d.status === 'active'
+        <div class="row-acts">${module === 'owner' && d.status === 'active' ? `<button type="button" class="btn row-act row-share" data-a="share" aria-label="שיתוף הנכס עם מתעניין">${icon('share')}שיתוף</button>` : ''}${module === 'owner' ? `<button type="button" class="btn row-act" data-a="dup">שכפול</button>` : ''}${d.status === 'active'
           ? '<button type="button" class="btn row-act" data-a="close">סגירת עסקה</button>'
           : '<button type="button" class="btn row-act" data-a="restore">החזרה לפעילות</button>'}</div></li>`).join('');
       Photos.hydrate(ul);
@@ -1098,6 +1132,7 @@ function listView(module) {
       const b = e.target.closest('button.row-act'); if (!b) return;
       const d = findDeal(module, b.closest('li').dataset.id); if (!d) return;
       if (b.dataset.a === 'dup') { location.hash = `#/m/${module}/new/dup/${d.id}`; return; }
+      if (b.dataset.a === 'share') return shareDialog(d);
       if (b.dataset.a === 'close') return closeDialog(module, d, draw);
       b.disabled = true;
       try { await setStatusWithUndo(module, d, 'active', 'העסקה הוחזרה לפעילות', draw); }
@@ -1436,6 +1471,7 @@ function cardView(module, id) {
     <dl class="dl">${rows.join('')}</dl>
     ${has(d.lat) && has(d.lng) ? '<div id="card-map" class="map small" style="margin-top:16px" dir="ltr"></div>' : ''}
     ${matchSectionHTML(module, d)}
+    ${sharesSectionHTML(module, d)}
     ${signingSectionHTML(module, d)}
   </div>`;
   const mount = () => {
@@ -1581,11 +1617,18 @@ function signingHitHTML(r) {
 
 const COOP = { shared: 'קופה משותפת', each_side: 'כל אחד מייצג צד שלו', referral: 'הפניה' };
 const isCoopReq = (r) => r.kind === 'broker_coop';
-const kindLabel = (r) => isCoopReq(r) ? `שת״פ · ${COOP[r.coop_type] || ''}` : 'הזמנת תיווך';
+const isOwnerReq = (r) => r.kind === 'owner_order';
+const kindLabel = (r) => isCoopReq(r) ? `שת״פ · ${COOP[r.coop_type] || ''}` : isOwnerReq(r) ? 'הסכם בעלים' : 'הזמנת תיווך';
+// the owner's message (Leah's previous system's wording): the owner knows his property, so it carries the address
+function ownerWaText(address, link) {
+  return `מצורף הסכם לחתימה בכתובת:\n\n1. ${address || ''}\n\nלצפייה בהסכם: ${link}\n\nלאחר החתימה, לחיצה על הלינק ⬆️ תעביר אותך להסכם החתום.\n\nבברכה,\nפריים לוקיישן`;
+}
 function coopWaText(name, link) {
   return `היי ${firstName(name)}, מצורף הסכם לחתימה\n\nלצפייה בהסכם: ${link}\n\nלאחר החתימה, לחיצה על הלינק ⬆️ תעביר אותך להסכם החתום.\n\nבברכה,\nליאה ארז`;
 }
-const waTextFor = (r) => isCoopReq(r) ? coopWaText(r.contact?.name, signLink(r)) : signWaText(r.contact?.name, r.teaser_snapshot, signLink(r));
+const waTextFor = (r) => isCoopReq(r) ? coopWaText(r.contact?.name, signLink(r))
+  : isOwnerReq(r) ? ownerWaText(r.address_snapshot || findDeal('owner', r.owner_deal_id)?.address, signLink(r))
+  : signWaText(r.contact?.name, r.teaser_snapshot, signLink(r));
 
 function signingRowHTML(r, { showProperty } = {}) {
   const st = signStatus(r), live = st === 'sent' || st === 'opened';
@@ -1593,7 +1636,8 @@ function signingRowHTML(r, { showProperty } = {}) {
   const times = [['קישור נוצר', r.sent_at], ['נפתח', r.first_opened_at], ['נחתם', r.signed_at]].filter(x => x[1])
     .map(([k, v]) => `<span>${k} ${fmt.ltr(ilTime(v))}</span>`).join('');
   return `<li class="sg-row" data-id="${r.id}">
-    <div class="sg-kind ${isCoopReq(r) ? 'coop' : ''}">${esc(kindLabel(r))}</div>
+    <div class="sg-kind ${isCoopReq(r) ? 'coop' : isOwnerReq(r) ? 'owner' : ''}">${esc(kindLabel(r))}</div>
+    ${isOwnerReq(r) && r.fee_value ? `<div class="meta">דמי תיווך: ${fmt.bi(fmt.num(r.fee_value))} ${r.teaser_snapshot?.deal_kind === 'sale' ? '% מהמחיר' : 'חודשי שכירות'}</div>` : ''}
     <div class="r1"><span><strong>הסכם <bdi class="num">${r.agreement_no}</bdi></strong> · ${esc(r.signer_full_name || r.contact?.name || '')}</span>
       <span class="chip sg-${st}">${SIGN_STATUS[st]}</span></div>
     ${prop ? `<div class="meta">${esc(prop)}</div>` : ''}
@@ -1609,12 +1653,13 @@ function signingSectionHTML(module, d) {
   if (!FEATURES.signing) return '';
   // a lead card shows the agreements sent for that lead (older rows without a lead: by the contact)
   const list = signings().filter(r => module === 'owner' ? r.owner_deal_id === d.id
-    : r.lead_deal_id ? r.lead_deal_id === d.id : r.kind !== 'broker_coop' && r.contact_id === d.contact_id);
+    : r.lead_deal_id ? r.lead_deal_id === d.id : r.kind === 'client_order' && r.contact_id === d.contact_id);
   if (module !== 'owner' && !list.length) return '';
   return `<section class="sg-section" id="signing" aria-labelledby="signing-h">
     <div class="sg-head"><h3 id="signing-h">הזמנות תיווך ושת״פ</h3>
-      ${module === 'owner' && d.status === 'active' ? `<div class="sg-head-acts"><button type="button" class="btn primary" id="send-sign">שליחה להחתמה</button>
-        <button type="button" class="btn" id="send-coop">החתמת שת״פ</button></div>` : ''}</div>
+      ${module === 'owner' && d.status === 'active' ? `<div class="sg-head-acts"><button type="button" class="btn primary" id="send-sign">החתמת מתעניין</button>
+        <button type="button" class="btn" id="send-coop">החתמת שת״פ</button>
+        <button type="button" class="btn" id="send-owner">החתמת בעלים</button></div>` : ''}</div>
     ${list.length ? `<ul class="sg-list">${list.map(r => signingRowHTML(r, { showProperty: module !== 'owner' })).join('')}</ul>`
       : '<p class="hint">עדיין לא נשלחו הסכמים לחתימה על הנכס הזה.</p>'}</section>`;
 }
@@ -1623,6 +1668,7 @@ function mountSigningSection(module, d) {
   if (S.focus === 'signing') { S.focus = null; sec.scrollIntoView({ block: 'start' }); }
   $('#send-sign')?.addEventListener('click', () => signingDialog(d, 'client_order'));
   $('#send-coop')?.addEventListener('click', () => signingDialog(d, 'broker_coop'));
+  $('#send-owner')?.addEventListener('click', () => ownerSigningDialog(d));
   sec.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
     const r = signings().find(x => x.id === b.closest('[data-id]').dataset.id); if (!r) return;
@@ -1669,7 +1715,7 @@ function signingDialog(d, kind = 'client_order') {
     t.deal_kind === 'rent' && ['השכרה', t.monthly_rent ? fmt.ltr(fmt.money(t.monthly_rent)) + ' לחודש' : '—']]
     .filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   const all = signingCandidates(kind);
-  dlg.innerHTML = `<form id="sg-form" novalidate><h2>${coop ? 'החתמת שת״פ' : 'שליחה להחתמה'}</h2>
+  dlg.innerHTML = `<form id="sg-form" novalidate><h2>${coop ? 'החתמת שת״פ' : 'החתמת מתעניין'}</h2>
     <p class="hint">${coop ? 'המתווך יקבל קישור, יראה את פרטי הנכס בלי הכתובת, ויחתום על הסכם שיתוף פעולה.' : 'הלקוח יקבל קישור, יראה את פרטי הנכס בלי הכתובת, ויחתום על הזמנת שירותי תיווך.'} אחרי החתימה תוצג הכתובת.</p>
     ${coop ? `<fieldset class="field sg-types" data-field="sg_type"><legend>סוג שיתוף הפעולה <span class="req" aria-hidden="true">*</span></legend>
       ${Object.entries(COOP).map(([v, l]) => `<label class="sg-type"><input type="radio" name="sg_type" value="${v}"><span>${l}</span></label>`).join('')}
@@ -1771,6 +1817,175 @@ function signingDialog(d, kind = 'client_order') {
   dlg.showModal(); (coop ? dlg.querySelector('input[name=sg_type]') : find).focus();
 }
 
+// "החתמת בעלים": the property's owner signs the brokerage order + 3 months exclusivity (2 pages, Leah's previous wording).
+// Leah fills the fee and checks the asking price; the owner fills ת.ז. / ח.פ. and his address, and signs once.
+const ownerFeeUnit = (sale) => sale ? '% מהמחיר הכולל של הנכס' : 'חודשי שכירות';
+function ownerSigningDialog(d) {
+  const dlg = $('#dlg'); dlg.oninput = null;
+  const c = d.contact || {}, sale = d.deal_kind === 'sale';
+  dlg.innerHTML = `<form id="os-form" novalidate><h2>החתמת בעלים</h2>
+    <p class="hint">בעל הנכס יקבל בוואטסאפ קישור להסכם הזמנת שירותי תיווך ובלעדיות ל־3 חודשים מיום החתימה. הוא ימלא ת.ז. / ח.פ. וכתובת, ויחתום פעם אחת.</p>
+    <div class="sg-chosen os-owner"><div><strong>${esc(c.name)}</strong><div class="meta">${fmt.ltr(c.phone)}</div><div class="meta">${esc(d.address || '')}</div></div></div>
+    <div class="field" data-field="os_price"><label for="os_price">${sale ? 'מחיר מכירה מבוקש' : 'מחיר שכירות מבוקש (לחודש)'} <span class="req" aria-hidden="true">*</span></label>
+      <input class="input num" id="os_price" inputmode="numeric" dir="ltr" autocomplete="off" value="${has(d.asking_price) ? fmt.num(d.asking_price) : ''}" aria-describedby="os_price-err">
+      <p class="err" id="os_price-err" aria-live="polite"></p></div>
+    <div class="field" data-field="os_fee"><label for="os_fee">דמי התיווך <span class="req" aria-hidden="true">*</span></label>
+      <div class="os-fee"><input class="input num" id="os_fee" inputmode="decimal" dir="ltr" autocomplete="off" aria-describedby="os_fee-unit os_fee-err"><span id="os_fee-unit">${ownerFeeUnit(sale)}</span></div>
+      <p class="err" id="os_fee-err" aria-live="polite"></p></div>
+    <p class="note os-line" id="os-line" hidden></p>
+    <p class="err" id="os-form-err" aria-live="polite"></p>
+    <div class="stack"><button class="btn primary" type="submit" id="os-send">שליחה בוואטסאפ</button>
+      <button class="link" type="button" id="os-cancel">ביטול</button></div></form>`;
+  const price = $('#os_price'), fee = $('#os_fee');
+  const setErr = (id, m) => { $(`#${id}-err`).textContent = m; dlg.querySelector(`[data-field=${id}]`)?.classList.toggle('invalid', !!m); return !m; };
+  const feeVal = () => { const v = parseNum(fee.value); return v != null && v > 0 && v <= 100 ? v : null; };
+  const line = () => { const v = feeVal(), el = $('#os-line'); el.hidden = !v;
+    if (v) el.textContent = `כך זה ייכתב בהסכם: "${sale ? 'במכירה' : 'בהשכרה'}: סך של ${fmt.num(v)}${sale ? '% מהמחיר הכולל של הנכס' : ' חודשי שכירות'}" + מע״מ`; };
+  fee.addEventListener('input', () => { line(); if (feeVal()) setErr('os_fee', ''); });
+  price.addEventListener('blur', () => { const v = parseNum(price.value); if (v) price.value = fmt.num(v); });
+  $('#os-cancel').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+  $('#os-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const pv = parseNum(price.value), fv = feeVal();
+    const ok = [setErr('os_price', pv > 0 ? '' : 'יש למלא מחיר מבוקש'), setErr('os_fee', fv ? '' : `יש למלא דמי תיווך (${ownerFeeUnit(sale)})`)];
+    if (ok.includes(false)) { dlg.querySelector('.invalid input')?.focus(); return; }
+    const btn = $('#os-send'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> יוצרת קישור…'; $('#os-form-err').textContent = '';
+    try {
+      await openLater(async () => {
+        const res = await DB.createSigning({ owner_deal_id: d.id, kind: 'owner_order', fee_value: fv, price: pv });
+        return Phone.wa(c.phone) + '?text=' + encodeURIComponent(ownerWaText(d.address, `${SIGN_PAGE}?t=${res.token}`));
+      });
+      Object.assign(S.data, await DB.loadSigning());
+      dlg.close(); toast('הקישור נוצר. אם ההודעה לא נשלחה, אפשר "שליחה שוב בוואטסאפ".');
+      S.focus = 'signing'; render();
+    } catch (ex) {
+      console.error(ex);
+      $('#os-form-err').textContent = 'השליחה נכשלה. בדקי את החיבור ונסי שוב.';
+      btn.disabled = false; btn.textContent = 'שליחה בוואטסאפ';
+    }
+  };
+  dlg.showModal(); (price.value ? fee : price).focus();
+}
+
+/* ════════════ sharing a property with a lead ════════════ */
+// the lead gets a link to a small page: the chosen photos, purpose, size, deal type and price. Never the address or the owner.
+const shares = () => S.data?.shares || [];
+const shekel = (n) => `\u200e${Math.round(Number(n)).toLocaleString('en-US')} ₪`;
+function shareWaText(name, o, link) {
+  const price = has(o.asking_price) ? `, ${shekel(o.asking_price)}${o.deal_kind === 'rent' ? ' לחודש' : ''}` : '';
+  return `היי ${firstName(name)}, יש לי נכס שיכול להתאים לך: ${ownerShort(o)}${price}.\nלתמונות ופרטים: ${link}\n\nליאה ארז, פריים לוקיישן`;
+}
+const shortTime = (iso) => ilTime(iso).slice(0, 16);
+function sharesSectionHTML(module, d) {
+  if (module !== 'lead') return '';
+  const list = shares().filter(x => x.lead_deal_id === d.id);
+  if (!list.length) return '';
+  return `<section class="sh-section" id="shares" aria-labelledby="shares-h"><h3 id="shares-h">נכסים ששותפו</h3>
+    <ul class="sh-list">${list.map(x => { const o = findDeal('owner', x.owner_deal_id);
+      return `<li><a href="#/m/owner/${x.owner_deal_id}"><strong>${esc(o ? ownerShort(o) : 'נכס')}</strong>${o?.address ? `<span class="meta">${esc(o.address)}</span>` : ''}
+        <span class="meta">קישור נוצר ${fmt.ltr(shortTime(x.created_at))} · ${x.first_opened_at ? `נפתח ${fmt.ltr(shortTime(x.first_opened_at))}` : 'טרם נפתח'}</span></a></li>`; }).join('')}</ul></section>`;
+}
+function shareDialog(o) {
+  const dlg = $('#dlg'); dlg.oninput = null;
+  const all = signingCandidates('client_order'), photos = o.photos || [];
+  dlg.innerHTML = `<form id="sh-form" novalidate><h2>שיתוף נכס</h2>
+    <p class="hint"><strong>${esc(ownerShort(o))}</strong><br>המתעניין יקבל קישור לדף עם התמונות שתבחרי, הייעוד, השטח, סוג העסקה והמחיר. בלי כתובת ובלי שם הבעלים.</p>
+    <div class="field" data-field="sh_who"><label for="sh_find">המתעניין <span class="req" aria-hidden="true">*</span></label>
+      <div id="sh-pick">
+        <input class="input" id="sh_find" type="search" autocomplete="off" placeholder="חיפוש לפי שם או טלפון" aria-controls="sh-results" aria-describedby="sh_who-err">
+        <ul class="sg-results" id="sh-results" role="listbox" aria-label="מתעניינים"></ul>
+        <button type="button" class="link" id="sh-new-btn">+ מתעניין חדש</button>
+      </div>
+      <div class="sg-chosen" id="sh-chosen" hidden></div>
+      <div id="sh-new" hidden>
+        <p class="note">מתעניין חדש: שם וטלפון מספיקים. הוא יתווסף למתעניינים כטיוטה, ואת שאר הפרטים תשלימי אחר כך.</p>
+        <label for="sh_phone">טלפון <span class="req" aria-hidden="true">*</span></label>
+        <input class="input num" id="sh_phone" type="tel" inputmode="tel" dir="ltr" autocomplete="off"><p class="err" id="sh_phone-err" aria-live="polite"></p>
+        <label for="sh_name">שם <span class="req" aria-hidden="true">*</span></label>
+        <input class="input" id="sh_name"><p class="err" id="sh_name-err" aria-live="polite"></p>
+        <button type="button" class="link" id="sh-back-btn">חזרה לחיפוש ברשימה</button>
+      </div>
+      <p class="sh-again" id="sh-again" role="status" hidden></p>
+      <p class="err" id="sh_who-err" aria-live="polite"></p></div>
+    <fieldset class="field sh-photos-f"><legend>תמונות לשיתוף</legend>
+      ${photos.length ? `<div class="sh-photos">${photos.map((ph, i) => `<label class="sh-ph"><input type="checkbox" value="${esc(ph.path)}" checked><img data-photo="${esc(ph.thumb)}" alt="תמונה ${i + 1}"></label>`).join('')}</div>
+        <p class="hint">מסומנות יישלחו. לחיצה על תמונה מסירה או מחזירה אותה.</p>`
+      : '<p class="hint">אין לנכס תמונות. הדף יוצג בלי תמונות.</p>'}</fieldset>
+    <details class="sg-preview"><summary>ההודעה שתישלח</summary><p class="sh-pv" id="sh-pv"></p></details>
+    <p class="err" id="sh-form-err" aria-live="polite"></p>
+    <div class="stack"><button class="btn primary" type="submit" id="sh-send">שליחה בוואטסאפ</button>
+      <button class="link" type="button" id="sh-cancel">ביטול</button></div></form>`;
+  Photos.hydrate(dlg);
+  const phone = $('#sh_phone'), name = $('#sh_name'), find = $('#sh_find');
+  const setErr = (id, m) => { const el = $(`#${id}-err`); if (el) el.textContent = m;
+    dlg.querySelector(`[data-field=${id}]`)?.classList.toggle('invalid', !!m); return !m; };
+  let chosen = null, isNew = false;
+  const who = () => isNew ? { name: name.value.trim(), phone: Phone.normalize(phone.value) } : chosen;
+  const preview = () => { const w = who(); $('#sh-pv').textContent = shareWaText(w?.name || '…', o, `${SHARE_PAGE}?s=…`); };
+  // the same property already went to this lead: say when, before sending again
+  const again = () => {
+    const el = $('#sh-again'), lead = !isNew && chosen?.lead_id;
+    const prev = lead ? shares().filter(x => x.owner_deal_id === o.id && x.lead_deal_id === lead) : [];
+    el.hidden = !prev.length;
+    if (prev.length) el.textContent = `כבר שיתפת את הנכס הזה עם ${chosen.name} (${prev.map(x => shortTime(x.created_at)).join(', ')}). אפשר לשלוח שוב.`;
+  };
+  const mode = (m) => { isNew = m === 'new';
+    $('#sh-pick').hidden = m !== 'pick'; $('#sh-chosen').hidden = m !== 'chosen'; $('#sh-new').hidden = m !== 'new'; setErr('sh_who', ''); again(); preview(); };
+  const drawResults = () => {
+    const q = find.value.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+    const hits = all.filter(x => !q || String(x.name || '').toLowerCase().includes(q) || (qd.length >= 3 && String(x.phone || '').replace(/\D/g, '').includes(qd))).slice(0, 6);
+    $('#sh-results').innerHTML = hits.length ? hits.map(x => `<li role="option"><button type="button" data-i="${all.indexOf(x)}">
+        <span class="nm">${esc(x.name)}${x.draft ? ' <span class="chip draft">טיוטה</span>' : ''}</span>
+        <span class="meta">${fmt.ltr(x.phone)}${x.sub ? ' · ' + esc(x.sub) : ''}</span></button></li>`).join('')
+      : `<li class="sg-none">${q ? 'לא נמצא מתעניין בשם או בטלפון הזה.' : 'אין עדיין מתעניינים.'}</li>`;
+  };
+  const choose = (x) => { chosen = x;
+    $('#sh-chosen').innerHTML = `<div><strong>${esc(x.name)}</strong>${x.draft ? ' <span class="chip draft">טיוטה</span>' : ''}<div class="meta">${fmt.ltr(x.phone)}${x.sub ? ' · ' + esc(x.sub) : ''}</div></div>
+      <button type="button" class="link" id="sh-change">החלפה</button>`;
+    $('#sh-change').onclick = () => { chosen = null; mode('pick'); find.focus(); };
+    mode('chosen');
+  };
+  find.addEventListener('input', drawResults); find.addEventListener('focus', drawResults);
+  $('#sh-results').addEventListener('click', (e) => { const b = e.target.closest('button[data-i]'); if (b) choose(all[+b.dataset.i]); });
+  $('#sh-new-btn').onclick = () => { mode('new'); const n = Phone.normalize(find.value); if (n) phone.value = n;
+    else if (find.value.trim() && !/\d/.test(find.value)) name.value = find.value.trim(); (phone.value ? name : phone).focus(); preview(); };
+  $('#sh-back-btn').onclick = () => { mode('pick'); find.focus(); };
+  name.addEventListener('input', preview);
+  phone.addEventListener('blur', () => { if (!phone.value.trim()) return; const n = Phone.normalize(phone.value);
+    setErr('sh_phone', n ? '' : Phone.error); if (n) { phone.value = n;   // the phone is already in the list → use that one
+      const x = all.find(c => c.phone === n); if (x) { choose(x); toast(`${x.name} כבר ברשימה, ונבחר/ה`); } } });
+  drawResults(); preview();
+  $('#sh-cancel').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+  $('#sh-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const ok = isNew ? setErr('sh_phone', Phone.normalize(phone.value) ? '' : Phone.error) && setErr('sh_name', name.value.trim() ? '' : 'יש למלא שם')
+      : setErr('sh_who', chosen ? '' : 'יש לבחור מתעניין מהרשימה, או "+ מתעניין חדש"');
+    if (!ok) { dlg.querySelector('.err:not(:empty)')?.closest('.field')?.scrollIntoView({ block: 'center' }); return; }
+    const btn = $('#sh-send'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> יוצרת קישור…'; $('#sh-form-err').textContent = '';
+    const target = who();
+    const p = { owner_deal_id: o.id, photos: $$('.sh-ph input:checked', dlg).map(i => i.value),
+      ...(!isNew && chosen.lead_id ? { lead_id: chosen.lead_id } : { contact: { phone: target.phone, name: target.name } }) };
+    try {
+      let res;
+      await openLater(async () => {
+        res = await DB.createShare(p);
+        return Phone.wa(target.phone) + '?text=' + encodeURIComponent(shareWaText(target.name, o, `${SHARE_PAGE}?s=${res.token}`));
+      });
+      if (res.draft_created) await reload(); else S.data.shares = await DB.loadShares();
+      dlg.close();
+      toast(res.draft_created ? `הקישור נוצר. ${target.name} נוסף/ה למתעניינים כטיוטה.` : 'הקישור נוצר. הוא מופיע בכרטיס המתעניין, תחת "נכסים ששותפו".');
+      render();
+    } catch (ex) {
+      console.error(ex);
+      $('#sh-form-err').textContent = 'השיתוף נכשל. בדקי את החיבור ונסי שוב.';
+      btn.disabled = false; btn.textContent = 'שליחה בוואטסאפ';
+    }
+  };
+  dlg.showModal(); find.focus();
+}
+
 // a signature can arrive while the app is open in the background: refresh the bell when Leah comes back
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !FEATURES.signing || !S.data || !S.session || Dirty.on) return;
@@ -1835,7 +2050,7 @@ function optionsDialog(listKey, onDone) {
 /* ════════════ map helpers ════════════ */
 const tiles = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
-const zoomForRadius = (r) => r > 12000 ? 10 : r > 6000 ? 11 : r > 2500 ? 12 : 13;
+const zoomForRadius = (r) => r > 25000 ? 9 : r > 12000 ? 10 : r > 6000 ? 11 : r > 2500 ? 12 : 13;
 
 // Search: Photon (komoot, free, tolerant of approximate text and spelling) limited to Israel;
 // if it finds nothing, Nominatim with normalized spelling. Nominatim: max 1 request/second, cached.
@@ -1992,7 +2207,7 @@ function formView(r) {
     <p class="note" id="geo-note" hidden aria-live="polite">מספר הבית לא קיים במפה, אז הסיכה על הרחוב. הקישי על המפה במקום המדויק (או גררי את הסיכה).</p>
     ${field('pin', 'מיקום על המפה', `<div id="form-map" class="map" dir="ltr"></div>`, { hint: 'הקשה על המפה מציבה סיכה; אפשר לגרור את הסיכה כדי לדייק' })}
     ${isLead ? `<div class="range-row"><label for="radius" style="font-weight:700">רדיוס</label>
-      <input type="range" id="radius" min="500" max="20000" step="500" value="${d.radius_m || 5000}">
+      <input type="range" id="radius" min="500" max="40000" step="500" value="${d.radius_m || 5000}">
       <output id="radius-out" class="num"></output></div>` : ''}`;
   const photoField = `
     <div class="field" data-field="photos"><span class="lbl">${MEDIA_LABEL} <small>(עד ${MAX_PHOTOS} קבצים, תמונה עד 30MB${ALLOW_VIDEO ? ', סרטון עד 50MB' : ''})</small></span>

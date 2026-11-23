@@ -17,6 +17,7 @@ const signing2Sql = readFileSync(new URL('../supabase/010_signing2.sql', import.
 const matchesSql = readFileSync(new URL('../supabase/011_matches.sql', import.meta.url), 'utf8');
 const colorsSql = readFileSync(new URL('../supabase/012_match_colors.sql', import.meta.url), 'utf8');
 const yieldSql = readFileSync(new URL('../supabase/013_match_yield.sql', import.meta.url), 'utf8');
+const ownerShareSql = readFileSync(new URL('../supabase/014_owner_share.sql', import.meta.url), 'utf8');
 const LEAH = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -666,5 +667,113 @@ await as('authenticated', LEAH, async () => {
   await fails(() => q('select save_match_settings($1::jsonb)', [{ version: 1, weights: { ...w7, extra: 0 }, must: ms.must }]));
 });
 ok('013: "yield" weight added at 0 (runs twice, colours kept); 7 weights saved; an older app (6 weights) keeps the stored yield; sum still 100');
+
+// ---- 014: owner agreement, sharing a property, radius 40 km
+const cnt = () => q('select (select count(*)::int from lead_deals) l, (select count(*)::int from owner_deals) o, (select count(*)::int from contacts) c, (select count(*)::int from signing_requests) s');
+const before14 = (await cnt())[0];
+await db.exec(ownerShareSql); await db.exec(ownerShareSql);
+assert.deepEqual((await cnt())[0], before14);
+assert.equal((await q(`select count(*)::int n from agreement_templates where kind = 'owner_order' and is_active`))[0].n, 1);
+ok('014: runs twice on existing data; nothing deleted; one active owner agreement');
+
+await as('authenticated', LEAH, async () => {
+  const c = { phone: '0547555003', name: 'רדיוס', entity_type: 'private' };
+  await q('select save_lead_deal($1::jsonb)', [{ contact: c, lat: 31.6, lng: 34.7, radius_m: 40000 }]);
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: c, lat: 31.6, lng: 34.7, radius_m: 40500 }]));
+  await fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: c, lat: 31.6, lng: 34.7, radius_m: 400 }]));
+});
+ok('014: a lead radius up to 40 km is saved; above 40 km or under 500 m refused');
+
+const ilDate = (d) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+const in3m = (() => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', year: 'numeric' }).formatToParts(new Date()).map(x => [x.type, +x.value]));
+  const d = new Date(Date.UTC(p.year, p.month - 1 + 3, p.day)); if (d.getUTCDate() !== p.day) d.setUTCDate(0); return ilDate(d); })();
+let o1, o2;
+const oRent = '55555555-5555-4555-8555-555555555552';   // the rent property saved in the 011 test
+await as('authenticated', LEAH, async () => {
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order' }]), /דמי תיווך/);
+  await fails(() => q('select signing_create($1::jsonb)', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 0 }]), /דמי תיווך/);
+  const leads = (await q('select count(*)::int n from lead_deals'))[0].n;
+  o1 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: oRent, kind: 'owner_order', fee_value: 1.5, price: 8000 }]))[0].r;
+  const own = (await q('select contact_id from owner_deals where id=$1', [oRent]))[0].contact_id;
+  assert.equal(o1.contact_id, own); assert.equal(o1.lead_id, null); assert.equal((await q('select count(*)::int n from lead_deals'))[0].n, leads, 'an owner is not a lead');
+  const row = (await q('select teaser_snapshot t, fee_value::float f, agreement_no from signing_requests where id=$1', [o1.id]))[0];
+  assert.equal(row.t.monthly_rent, 8000); assert.equal(row.f, 1.5);
+  const prev = (await q(`select max(agreement_no) m from signing_requests where id <> $1`, [o1.id]))[0].m;
+  assert.equal(row.agreement_no, prev + 1);
+  // a sale property: sale words, % fee
+  const sale = (await q(`select id from owner_deals where deal_kind = 'sale' limit 1`))[0].id;
+  o2 = (await q('select signing_create($1::jsonb) r', [{ owner_deal_id: sale, kind: 'owner_order', fee_value: 2 }]))[0].r;
+});
+await as('service_role', null, async () => {
+  const g = (await q('select signing_public_get($1) r', [o1.token]))[0].r;
+  assert.equal(g.kind, 'owner_order'); assert.equal(g.title, 'הסכם הזמנת שירותי תיווך להשכרת נכס');
+  const addr = (await q('select address from owner_deals where id=$1', [oRent]))[0].address;
+  assert.equal(g.address, addr); assert.equal(g.signer.name, 'בעלים קטגוריה'); assert.equal(g.signer.phone, '054-7555002');
+  assert.ok(!/\{\{/.test(g.body), 'no placeholder left');
+  assert.ok(g.body.includes('בהשכרה: סך של 1.5 חודשי שכירות'));
+  assert.ok(g.body.includes('למציאת שוכרים לנכס') && g.body.includes('לצורך השכרה של הנכס'));
+  assert.ok(g.body.includes(`מספר ${g.agreement_no} מיום ${ilDate(new Date())}`), 'page 2 points to this order and its date');
+  assert.ok(g.body.includes(`מיום ${ilDate(new Date())} ועד ליום ${in3m}`), 'exclusivity: 3 months from the signing date');
+  assert.match(g.body, /\n## הסכם הזמנת שירותי תיווך בבלעדיות\n1\. /);
+  const s = (await q('select signing_public_get($1) r', [o2.token]))[0].r;
+  assert.equal(s.title, 'הסכם הזמנת שירותי תיווך למכירת נכס');
+  assert.ok(s.body.includes('במכירה: סך של 2% מהמחיר הכולל של הנכס') && s.body.includes('למציאת קונים') && !/שוכר|השכר/.test(s.body));
+  const b = (await q('select signing_public_begin($1) r', [o1.token]))[0].r;
+  assert.equal(b.title, g.title); assert.equal(b.body, g.body); assert.equal(b.contact.phone, '054-7555002');
+  await q('select signing_public_complete($1::jsonb)', [{ id: o1.id, signed_at: new Date().toISOString(), full_name: 'בעלים קטגוריה', id_number: '515555555',
+    home_address: 'הרצל 3, אשדוד', signature_png_path: 'a', pdf_path: 'b', pdf_sha256: 'c', ip: '1', user_agent: 'u' }]);
+  assert.equal((await q(`select title from notifications where signing_request_id=$1 and type='signing_signed'`, [o1.id]))[0].title, 'בעלים קטגוריה חתם/ה על הסכם הבעלים');
+  assert.equal((await q('select signing_public_notify_info($1) r', [o1.id]))[0].r.kind_label, 'הסכם בעלים');
+});
+await q(`update signing_requests set signed_at = now() - interval '5 days' where id=$1`, [o1.id]);
+await as('service_role', null, async () => {
+  const g = (await q('select signing_public_get($1) r', [o1.token]))[0].r;
+  const d5 = new Date(Date.now() - 5 * 864e5);
+  assert.ok(g.body.includes(`מיום ${ilDate(d5)}`), 'once signed, the dates are the signing date');
+});
+ok('014: owner agreement — fee required; signed by the property\'s owner (no lead); numbering continues; owner sees address + own name/phone; rent / sale wording; fee line; page 2 → this order, exclusivity 3 months from the signing date; "חתם/ה על הסכם הבעלים"');
+
+let sh1, sh2;
+const photoId = '6a6a6a6a-6a6a-4a6a-8a6a-6a6a6a6a6a6a';
+await as('authenticated', LEAH, async () => {
+  await q('select set_deal_photos($1, $2, $3::jsonb)', ['owner', oRent, [{ path: `${oRent}/${photoId}.jpg`, thumb: `${oRent}/${photoId}_t.jpg`, w: 10, h: 10 },
+    { path: `${oRent}/7b7b7b7b-7b7b-4b7b-8b7b-7b7b7b7b7b7b.jpg`, thumb: `${oRent}/7b7b7b7b-7b7b-4b7b-8b7b-7b7b7b7b7b7b_t.jpg`, w: 10, h: 10 }]]);
+  const lead = (await q(`select id, contact_id from lead_deals where not is_draft limit 1`))[0];
+  sh1 = (await q('select share_create($1::jsonb) r', [{ owner_deal_id: oRent, lead_id: lead.id, photos: [`${oRent}/${photoId}.jpg`] }]))[0].r;
+  assert.equal(sh1.lead_id, lead.id); assert.equal(sh1.draft_created, false); assert.ok(/^[A-Za-z0-9_-]{40,60}$/.test(sh1.token));
+  await fails(() => q('select share_create($1::jsonb)', [{ owner_deal_id: oRent, lead_id: lead.id, photos: ['other/x.jpg'] }]), /לא שייכת/);
+  sh2 = (await q('select share_create($1::jsonb) r', [{ owner_deal_id: oRent, contact: { phone: '0547555004', name: 'מתעניין משיתוף' }, photos: [] }]))[0].r;
+  assert.equal(sh2.draft_created, true);
+  const l = (await q('select is_draft, notes from lead_deals where id=$1', [sh2.lead_id]))[0];
+  assert.equal(l.is_draft, true); assert.match(l.notes, /נוצר משיתוף נכס/);
+  const rows = await q('select lead_deal_id, photos from property_shares order by created_at');
+  assert.equal(rows.length, 2); assert.deepEqual(rows[0].photos, [{ path: `${oRent}/${photoId}.jpg`, thumb: `${oRent}/${photoId}_t.jpg` }]);
+});
+await q(`update owner_deals set address = 'הנרקיסים 12, קריית גת', description = 'חזית לרחוב, חניה פרטית' where id=$1`, [oRent]);
+const o14 = (await q('select address, description, c.name from owner_deals d join contacts c on c.id = d.contact_id where d.id=$1', [oRent]))[0];
+const parts14 = (await q('select address_parts($1) p', [o14.address]))[0].p;
+await as('service_role', null, async () => {
+  const g = (await q('select share_public_get($1) r', [sh1.token]))[0].r;
+  assert.equal(g.state, 'open'); assert.deepEqual(g.photos, [`${oRent}/${photoId}.jpg`]);
+  assert.deepEqual(Object.keys(g.property).sort(), ['built_sqm', 'deal_kind', 'plot_sqm', 'price', 'purpose']);
+  const o = o14, flat = JSON.stringify(g);
+  for (const part of parts14) assert.ok(!flat.includes(part), 'share leaks address part ' + part);
+  assert.ok(!flat.includes(o.name), 'share leaks the owner name');
+  if (o.description) assert.ok(!flat.includes(o.description));
+  assert.ok((await q('select first_opened_at from property_shares where token=$1', [sh1.token]))[0].first_opened_at);
+  assert.equal((await q('select share_public_get($1) r', ['nope']))[0].r.state, 'not_found');
+});
+await q(`update owner_deals set status = 'closed', closed_at = now() where id=$1`, [oRent]);
+await as('service_role', null, async () => assert.equal((await q('select share_public_get($1) r', [sh1.token]))[0].r.state, 'closed'));
+await as('authenticated', LEAH, () => fails(() => q('select share_create($1::jsonb)', [{ owner_deal_id: oRent, lead_id: sh1.lead_id }]), /בארכיון/));
+await q(`update owner_deals set status = 'active', closed_at = null where id=$1`, [oRent]);
+for (const role of ['anon', 'authenticated']) {
+  await as(role, role === 'anon' ? null : LEAH, () => fails(() => q('select share_public_get($1)', [sh1.token]), /denied/));
+  await as(role, role === 'anon' ? null : OTHER, async () => {
+    await fails(() => q('select share_create($1::jsonb)', [{ owner_deal_id: oRent, lead_id: sh1.lead_id }]));
+    assert.equal((await q('select * from property_shares').catch(() => [])).length, 0);
+  });
+}
+ok('014: share — existing lead or a new phone (→ draft lead); only the property\'s own photos; public page gets purpose / size / deal / price + chosen photos, no address part, no owner name, no description; marks opened; archived property → closed and cannot be shared; closed to anon, non-members and Leah\'s login');
 
 console.log(`\nDB tests passed: ${pass}`);

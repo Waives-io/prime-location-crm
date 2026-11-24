@@ -76,7 +76,7 @@ const waTo = (p) => 'https://wa.me/972' + digits(p).replace(/^0/, '');
 function contact(office) {
   if (!office?.phone) return;
   sticky.innerHTML = `<div class="acts">
-    <a class="btn primary" href="${waTo(office.phone)}?text=${encodeURIComponent('היי ליאה, ראיתי את הנכס ששלחת ואשמח לפרטים נוספים')}" target="_blank" rel="noopener">וואטסאפ לליאה</a>
+    <a class="btn primary" href="${waTo(office.phone)}?text=${encodeURIComponent('היי ליאה, ראיתי את הנכס ששלחת ואשמח לפרטים נוספים')}" target="_blank" rel="noopener">וואטסאפ</a>
     <a class="btn" href="tel:${digits(office.phone)}">שיחה</a></div>`;
   sticky.hidden = false;
 }
@@ -94,7 +94,7 @@ function show(d) {
     <h1>${esc([p.purpose, deal].filter(Boolean).join(' '))}</h1>
     ${p.price ? `<p class="price"><bdi class="num" dir="ltr">${money(p.price)}</bdi>${rent ? ' לחודש' : ''}</p>` : ''}
     <dl class="facts">${p.purpose ? `<dt>ייעוד</dt><dd>${esc(p.purpose)}</dd>` : ''}${size ? `<dt>שטח</dt><dd>${size}</dd>` : ''}${deal ? `<dt>סוג עסקה</dt><dd>${rent ? 'השכרה' : 'מכירה'}</dd>` : ''}</dl>
-    <p class="more">לפרטים נוספים ולתיאום ביקור, דברו עם ליאה</p>`;
+    <p class="more">לפרטים נוספים ולתיאום ביקור, דברו איתנו</p>`;
   contact(d.office);
   const g = $('#gallery'), dots = [...document.querySelectorAll('.dots span')];
   if (g && dots.length) g.addEventListener('scroll', () => {

@@ -254,6 +254,8 @@ try {
   for (const s of ['פרטי לקוח', od.name, od.address, 'מחיר מכירה מבוקש', 'מחיר שכירות מבוקש', 'הסכם הזמנת שירותי תיווך בבלעדיות', String(ro.agreement_no),
     sale ? 'במכירה: סך של 1.5% מהמחיר הכולל של הנכס' : 'בהשכרה: סך של 1.5 חודשי שכירות']) assert.ok(ot.includes(s), 'owner page missing ' + s);
   assert.ok(!/\{\{/.test(ot) && !ot.includes('הכתובת המלאה תוצג'));
+  assert.match(await page.locator('.agreement .excl').innerText(), /^לתקופה מיום \d\d\/\d\d\/\d{4} ועד ליום \d\d\/\d\d\/\d{4} \(להלן: "תקופת הבלעדיות"\)$/);
+  assert.ok(+await page.locator('.agreement .excl').evaluate(e => getComputedStyle(e).fontWeight) >= 700, 'the exclusivity period is bold');
   await shot('c10-owner-agreement');
   await page.click('#to-sign'); await page.waitForSelector('#sign-form');
   assert.equal(await page.inputValue('#full_name'), od.name);

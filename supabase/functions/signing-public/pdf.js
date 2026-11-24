@@ -151,6 +151,33 @@ export async function buildAgreementPdf({ pdfLib, fontkit, fonts, signaturePng, 
 
 const shortTime = (iso) => { const s = ilTime(iso); return s === '—' ? s : s.slice(0, 16); };   // DD/MM/YYYY HH:mm
 
+// the exclusivity period and its dates are printed in bold (sign.html marks the same words)
+const EXCL = /לתקופה מיום \d\d\/\d\d\/\d{4} ועד ליום \d\d\/\d\d\/\d{4} \(להלן: "תקופת הבלעדיות"\)/;
+/** a paragraph with one bold part → lines of runs [{ text, font }] in reading order, that fit `width` */
+export function wrapRuns(para, mark, reg, bold, size, width) {
+  const m = para.match(mark);
+  const words = [];
+  const add = (txt, font) => txt.split(/\s+/).filter(Boolean).forEach(w => words.push({ w, font, glue: false }));
+  if (!m) add(para, reg);
+  else {
+    add(para.slice(0, m.index), reg); add(m[0], bold);
+    const after = para.slice(m.index + m[0].length), n = words.length;
+    add(after, reg);
+    if (words[n] && !/^\s/.test(after)) words[n].glue = true;   // e.g. the comma right after the bold part
+  }
+  const lines = []; let line = [], used = 0;
+  for (const x of words) {
+    const gap = line.length && !x.glue ? reg.widthOfTextAtSize(' ', size) : 0, w = x.font.widthOfTextAtSize(x.w, size);
+    if (line.length && !x.glue && used + gap + w > width) { lines.push(line); line = []; used = 0; }
+    used += (line.length ? gap : 0) + w;
+    const last = line[line.length - 1];
+    if (last && last.font === x.font && !x.glue) last.text += ' ' + x.w;
+    else line.push({ text: x.w, font: x.font, gap: line.length > 0 && !x.glue });
+  }
+  if (line.length) lines.push(line);
+  return lines;
+}
+
 /**
  * The owner's agreement, in the layout of Leah's previous system: two pages (brokerage order, exclusivity), each with the
  * broker line, the title and agreement number, the client and property boxes, the sections, and the one signature + date.
@@ -222,9 +249,14 @@ export async function buildOwnerPdf({ pdfLib, fontkit, fonts, signaturePng, offi
   const SIG_H = 92, FOOT = 50;
   const paragraphs = (lines, pageTitle) => {
     for (const para of lines) {
-      for (const line of wrap(para, reg, 9.2, R - M)) {
+      for (const runs of wrapRuns(para, EXCL, reg, bold, 9.2, R - M)) {
         if (y - 13 < FOOT + 10) { header(pageTitle); }
-        text(line, { size: 9.2 }); y -= 12.9;
+        let x = R;
+        for (const run of runs) {   // right to left
+          if (run.gap) x -= reg.widthOfTextAtSize(' ', 9.2);
+          text(run.text, { size: 9.2, font: run.font, x }); x -= run.font.widthOfTextAtSize(toGlyphOrder(run.text), 9.2);
+        }
+        y -= 12.9;
       }
       y -= 1.2;
     }

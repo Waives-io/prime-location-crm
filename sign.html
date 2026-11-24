@@ -96,6 +96,7 @@ h1{font-size:1.45rem;line-height:1.25;font-weight:800;margin:6px 0 4px}
 .spinner{width:22px;height:22px;border:3px solid currentColor;border-inline-end-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.agreement .excl{font-weight:700}
 #changed-note{margin:0 0 16px;padding:12px 14px;border:2px solid var(--ink,#1A1A1A);border-radius:12px;background:#FFF4B8;font-weight:700}
 </style>
 </head>
@@ -124,7 +125,10 @@ const WORD = () => isCoop() ? { doc: 'ההסכם', consent: 'קראתי ואני
   : isOwner() ? { doc: 'ההסכם', consent: 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך ואת הסכם הבלעדיות', done: 'ההסכם נחתם בהצלחה' }
   : { doc: 'ההזמנה', consent: 'קראתי ואני מאשר/ת את הסכם הזמנת שירותי התיווך', done: 'ההזמנה נחתמה בהצלחה' };
 // agreement text: a line "## …" is the title of the next part (the owner's exclusivity agreement)
-const bodyHTML = (b) => String(b || '').split(/\n+/).map(p => p.startsWith('## ') ? `<h3 class="part">${esc(p.slice(3))}</h3>` : `<p>${esc(p)}</p>`).join('');
+// the exclusivity period and its dates stand out (the signed PDF marks the same words: EXCL in pdf.js)
+const EXCL = /לתקופה מיום \d\d\/\d\d\/\d{4} ועד ליום \d\d\/\d\d\/\d{4} \(להלן: "תקופת הבלעדיות"\)/;
+const paraHTML = (p) => { const m = p.match(EXCL); return m ? esc(p.slice(0, m.index)) + `<strong class="excl">${esc(m[0])}</strong>` + esc(p.slice(m.index + m[0].length)) : esc(p); };
+const bodyHTML = (b) => String(b || '').split(/\n+/).map(p => p.startsWith('## ') ? `<h3 class="part">${esc(p.slice(3))}</h3>` : `<p>${paraHTML(p)}</p>`).join('');
 
 // ת״ז with its check digit; a company / non-profit number (9 digits starting with 5) only by its length
 function validId(raw) {

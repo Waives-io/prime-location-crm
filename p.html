@@ -110,7 +110,7 @@ function show(d) {
     const r = await fetch(`${API}?s=${encodeURIComponent(token)}`, { headers: { apikey: ANON } });
     let d = {}; try { d = await r.json(); } catch {}
     if (d.state === 'open') return show(d);
-    if (d.state === 'closed') return message('הנכס הזה כבר לא זמין. ליאה תשמח להציע נכסים אחרים.', d.office);
+    if (d.state === 'closed') return message('הנכס הזה כבר לא זמין. נשמח להציע נכסים אחרים.', d.office);
     return message('הקישור אינו תקין');
   } catch (e) { console.error(e); message('לא הצלחנו לטעון את הנכס. בדקו את החיבור לאינטרנט ונסו שוב.'); }
 })();

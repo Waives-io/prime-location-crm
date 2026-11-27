@@ -77,6 +77,8 @@ textarea.input{min-height:90px;resize:vertical}
 .err{color:var(--error);font-size:.9rem;margin:4px 0 0;min-height:0}
 .err:empty{display:none}
 .hint{color:var(--charcoal);font-size:.9rem;margin:4px 0 0}
+.warn{margin:6px 0 0;padding:8px 10px;border-inline-start:4px solid var(--yellow);border-radius:8px;background:#FFF8E1;color:var(--ink);font-size:.9rem}
+.warn:empty{display:none}.warn .link{min-height:32px;padding:0 6px;font-weight:700}
 .note{background:var(--surface);border-radius:10px;padding:8px 12px;font-size:.95rem;margin:-6px 0 14px}
 .row{display:flex;gap:10px;align-items:flex-start}
 .row>*{flex:1}
@@ -610,6 +612,25 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 
+// email: optional, never blocks saving; we only warn and offer a one-tap fix for common domain typos
+const Email = {
+  clean: (s) => String(s || '').trim().toLowerCase(),
+  typos: { 'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmal.com': 'gmail.com', 'gmaill.com': 'gmail.com',
+    'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com', 'gmail.cm': 'gmail.com', 'gmail.om': 'gmail.com', 'gnail.com': 'gmail.com',
+    'hotmial.com': 'hotmail.com', 'hotmal.com': 'hotmail.com', 'hotmail.co': 'hotmail.com', 'hotmail.con': 'hotmail.com',
+    'walla.com': 'walla.co.il', 'wala.co.il': 'walla.co.il', 'walla.co': 'walla.co.il', 'walla.co.l': 'walla.co.il',
+    'yahooo.com': 'yahoo.com', 'yaho.com': 'yahoo.com', 'yahoo.con': 'yahoo.com', 'outlok.com': 'outlook.com', 'outlook.co': 'outlook.com', 'iclod.com': 'icloud.com' },
+  suggest(s) { const i = s.lastIndexOf('@'); const fix = i > 0 && this.typos[s.slice(i + 1)]; return fix ? s.slice(0, i + 1) + fix : null; },
+  // '' = fine (or empty); otherwise a Hebrew warning
+  problem(s) {
+    if (!s) return '';
+    if (/[\u0590-\u05FF]/.test(s)) return 'במייל יש אותיות בעברית. אולי המקלדת הייתה בעברית?';
+    if (/\s/.test(s)) return 'במייל יש רווח. מייל תקין נכתב בלי רווחים.';
+    if (!/^[^@]+@[^@]+$/.test(s)) return 'חסר @ במייל (לדוגמה: name@gmail.com).';
+    if (!/^[a-z0-9._%+'-]+@([a-z0-9-]+\.)+[a-z]{2,}$/.test(s) || /\.\.|@\.|\.@|^\./.test(s)) return 'המייל לא נראה תקין (לדוגמה: name@gmail.com).';
+    return '';
+  },
+};
 const Phone = {
   // returns '05X-XXXXXXX' or null
   normalize(raw) {
@@ -1082,7 +1103,7 @@ function renderHome(app) {
 /* ════════════ list ════════════ */
 function dealSearchText(d) {
   const c = d.contact || {};
-  return [c.name, c.company_name, c.company_number, c.broker_license, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
+  return [c.name, c.company_name, c.company_number, c.broker_license, c.email, c.phone, (c.phone || '').replace(/\D/g, ''), d.address].join(' ').toLowerCase();
 }
 function rowSummary(module, d) {
   if (module === 'lead') return [needText(d), purposeText(d), leadSize(d)];
@@ -1409,6 +1430,7 @@ function cardView(module, id) {
   let sec = 'contact';
   const add = (k, v) => { if (v !== '' && v != null) groups[sec].push(`<dt>${k}</dt><dd>${v}</dd>`); };
   add('טלפון', fmt.ltr(c.phone));
+  if (has(c.email)) add('מייל', `<a href="mailto:${esc(c.email)}" dir="ltr">${esc(c.email)}</a>`);
   add('סוג', ENTITY[c.entity_type] || 'פרטי');
   if (c.entity_type === 'company') add('ח.פ.', has(c.company_number) ? fmt.ltr(c.company_number) : '');
   if (c.entity_type === 'broker') add('מס׳ רישיון תיווך', has(c.broker_license) ? fmt.ltr(c.broker_license) : '');
@@ -2247,6 +2269,8 @@ function formView(r) {
         <button type="button" class="btn" id="pick-contact" hidden>מאנשי הקשר</button></div>`, { required: true, hint: 'אפשר להדביק מספר שהועתק מאנשי הקשר' })}
       <p class="note" id="existing-note" hidden aria-live="polite">לקוח קיים – אין צורך למלא שוב פרטים</p>
       ${field('name', 'שם', textInput('name', c.name, 'autocomplete="name"'), { required: true })}
+      ${field('email', 'מייל', textInput('email', c.email, 'inputmode="email" autocomplete="email" dir="ltr" placeholder="name@gmail.com" spellcheck="false" autocapitalize="off" aria-describedby="email-warn"')
+        + '<p class="warn" id="email-warn" aria-live="polite"></p>')}
       ${field('lead_source_id', 'איך הגיע/ה אליי?', optSelect('lead_source_id', LISTS.lead_source, c.lead_source_id))}
       ${field('entity_type', isLead ? 'פרטי / חברה / מתווך' : 'פרטי / חברה', seg('entity_type', [['private', 'פרטי'], ['company', 'חברה'], ['broker', 'מתווך']], c.entity_type || 'private'))}
       ${field('company_name', 'שם החברה', textInput('company_name', c.company_name, 'autocomplete="organization"'), { cls: 'company-only', required: true })}
@@ -2341,6 +2365,21 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
   form.addEventListener('focusout', (e) => { if (e.target.classList?.contains('num') && e.target.inputMode === 'decimal') {
     const n = parseNum(e.target.value); e.target.value = n == null ? '' : fmt.num(n); } });
 
+  /* email: a warning only, saving is never blocked */
+  const emailEl = $('#email'), emailWarn = $('#email-warn');
+  const checkEmail = (live) => {
+    const v = Email.clean(emailEl.value), fix = v && Email.suggest(v), msg = Email.problem(v);
+    if (!v) { emailWarn.textContent = ''; return; }
+    if (live && !emailWarn.textContent) return;   // while typing: only update a warning that is already shown
+    if (fix) {
+      emailWarn.innerHTML = `אולי התכוונת ל־<bdi dir="ltr">${esc(fix)}</bdi>? <button type="button" class="link" id="email-fix">לתקן</button>`;
+      $('#email-fix').onclick = () => { emailEl.value = fix; emailWarn.textContent = ''; emailEl.focus(); };
+    } else emailWarn.textContent = msg ? msg + ' אפשר לשמור גם כך.' : '';
+  };
+  emailEl.addEventListener('blur', () => { emailEl.value = Email.clean(emailEl.value); checkEmail(false); });
+  emailEl.addEventListener('input', () => checkEmail(true));
+  if (emailEl.value) checkEmail(false);
+
   /* phone first: existing contact prefill */
   const phoneEl = $('#phone');
   let lastPhone = Phone.normalize(phoneEl.value);
@@ -2361,6 +2400,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
         form.elements.company_number.value = c.company_number || '';
         form.elements.broker_license.value = c.broker_license || '';
         if (c.lead_source_id && !form.elements.lead_source_id.value) form.elements.lead_source_id.value = c.lead_source_id;
+        if (c.email && !emailEl.value.trim()) { emailEl.value = c.email; checkEmail(false); }
         ['name', 'company_name'].forEach(id => { if (touched.has(id) || form.querySelector(`[data-field="${id}"]`).classList.contains('invalid')) check(id); });
         sync();
       }
@@ -2672,6 +2712,7 @@ function mountForm({ module, mode, dealId, src, lat, lng }) {
       broker_license: et === 'broker' ? val('broker_license').trim() || null : null };
     const optId = (id) => (val(id) && val(id) !== '__new' ? val(id) : null);
     contact.lead_source_id = optId('lead_source_id');
+    contact.email = Email.clean(val('email')) || null;
     let p;
     if (isLead) {
       const smin = parseNum(val('size_min')), smax = parseNum(val('size_max'));

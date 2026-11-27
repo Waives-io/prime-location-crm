@@ -46,6 +46,7 @@
       company_number: t === 'company' ? (('company_number' in c) ? c.company_number : row.company_number) || null : null,
       broker_license: t === 'broker' ? (('broker_license' in c) ? c.broker_license : row.broker_license) || null : null });
     if ('lead_source_id' in c) row.lead_source_id = c.lead_source_id || null;
+    if ('email' in c) row.email = (c.email || '').trim().toLowerCase() || null;
     return row.id;
   };
   const delay = () => new Promise(r => setTimeout(r, 60));

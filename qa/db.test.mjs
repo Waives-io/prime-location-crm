@@ -805,4 +805,31 @@ await as('service_role', null, async () => {
 await q(`update owner_deals set status = 'active', closed_at = null where id=$1`, [oRent]);
 ok('015: runs twice; rent fee above 12 months refused; 1 month → "חודש שכירות אחד"; sale unchanged; no owner agreement for a closed property, and an open link to one is cancelled; signed stays signed; the old function is not callable');
 
+// ---- 016: optional email on the shared contact
+const emailSql = readFileSync(new URL('../supabase/016_contact_email.sql', import.meta.url), 'utf8');
+const before16 = (await cnt())[0];
+await db.exec(emailSql); await db.exec(emailSql);
+assert.deepEqual((await cnt())[0], before16);
+await as('authenticated', LEAH, async () => {
+  const mail = async (ph) => (await q('select email from contacts where phone=$1', [ph]))[0].email;
+  const base = { id: '66666666-6666-4666-8666-666666666661', contact: { phone: '0547666001', name: 'מתעניין מייל', entity_type: 'private', email: '  Dana.Levi@Gmail.COM ' } };
+  await q('select save_lead_deal($1::jsonb)', [base]);
+  assert.equal(await mail('054-7666001'), 'dana.levi@gmail.com', 'trimmed + lower case');
+  // an older app (no email key) keeps it
+  await q('select save_lead_deal($1::jsonb)', [{ id: base.id, contact: { phone: '0547666001', name: 'מתעניין מייל', entity_type: 'private' } }]);
+  assert.equal(await mail('054-7666001'), 'dana.levi@gmail.com');
+  // a doubtful address is still saved (the app only warns)
+  await q('select save_lead_deal($1::jsonb)', [{ ...base, contact: { ...base.contact, email: 'dana@gmial' } }]);
+  assert.equal(await mail('054-7666001'), 'dana@gmial');
+  // empty clears
+  await q('select save_lead_deal($1::jsonb)', [{ ...base, contact: { ...base.contact, email: '' } }]);
+  assert.equal(await mail('054-7666001'), null);
+  // owner: same shared contact field
+  await q('select save_owner_deal($1::jsonb)', [{ id: '66666666-6666-4666-8666-666666666662', v: 1, contact: { phone: '0547666002', name: 'בעלים מייל', entity_type: 'private', email: 'owner@walla.co.il' },
+    built_sqm: 100, deal_kind: 'rent', asking_price: 5000 }]);
+  assert.equal(await mail('054-7666002'), 'owner@walla.co.il');
+});
+await as('authenticated', OTHER, () => fails(() => q('select save_lead_deal($1::jsonb)', [{ contact: { phone: '0547666003', name: 'x', email: 'a@b.co' } }])));
+ok('016: runs twice; email trimmed + lower case; kept when an older app does not send it; a doubtful address is saved; empty clears; owners too; non-members refused');
+
 console.log(`\nDB tests passed: ${pass}`);
